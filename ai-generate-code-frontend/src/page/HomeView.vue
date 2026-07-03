@@ -20,6 +20,7 @@ import {
   appGoodListPageVoUsingPost,
   appDeployUsingPost,
   appUndeployUsingPost,
+  appOpenApiDeleteUsingPost,
 } from '@/api/appController'
 import { UserLoginStore } from '@/stores/UserLogin'
 import { CodeGenTypeEnum } from '@/utils/CodeGenTypeEnum'
@@ -573,7 +574,6 @@ async function handleDeleteApp(app: AppVO) {
     cancelText: '取消',
     async onOk() {
       try {
-        const { appOpenApiDeleteUsingPost } = await import('@/api/appController')
         const res = await appOpenApiDeleteUsingPost({
           body: { id: app.id as any },
         })

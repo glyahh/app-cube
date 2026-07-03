@@ -7,6 +7,8 @@ import com.dbts.glyahhaigeneratecode.core.handler.StreamHandlerExecutor;
 import com.dbts.glyahhaigeneratecode.core.memory.MemoryMessageXmlSupport;
 import com.dbts.glyahhaigeneratecode.core.memory.MemorySessionInjectSupport;
 import com.dbts.glyahhaigeneratecode.exception.ErrorCode;
+import com.dbts.glyahhaigeneratecode.monitor.MonitorContext;
+import com.dbts.glyahhaigeneratecode.monitor.MonitorContextHolder;
 import dev.langchain4j.guardrail.InputGuardrailException;
 import com.dbts.glyahhaigeneratecode.exception.MyException;
 import com.dbts.glyahhaigeneratecode.guardrail.PromptSafetyAuditEvaluator;
@@ -131,8 +133,18 @@ public class ChatToGenCodeImpl implements ChatToGenCode {
         }
         log.info("【最终拼接结果】\n{}", enhancedMessage);
         log.info("===== Prompt 拼接日志结束 =====");
+
+        MonitorContext monitorContext = MonitorContext.builder()
+                .userId(String.valueOf(user.getId()))
+                .appId(String.valueOf(app.getId()))
+                .roundId(String.valueOf(roundId))
+                .build();
+
         Flux<String> result = aiCodeGeneratorFacade.generateAndSaveCodeStream(enhancedMessage, codeGenTypeEnum, appId, firstRound);
-        Flux<String> handlerFlux = streamHandlerExecutor.doExecute(result, chatHistoryService, appId, user, codeGenTypeEnum, false, firstRound, message, roundId);
+        Flux<String> handlerFlux = withMonitorContext(
+                streamHandlerExecutor.doExecute(result, chatHistoryService, appId, user, codeGenTypeEnum, false, firstRound, message, roundId),
+                monitorContext
+        );
 
         // 7. 在 AI 生成流前插入压缩阶段
         //    压缩在 boundedElastic 线程异步执行，避免阻塞 Netty event loop
@@ -198,14 +210,23 @@ public class ChatToGenCodeImpl implements ChatToGenCode {
         memorySessionInjectSupport.injectOrUpdateSessionStyle(appId, user.getId());
         // 用户原话包裹（workflow 无 loopId）
         String enhancedMessage = MemoryMessageXmlSupport.wrapUserOriginal(message);
+        MonitorContext monitorContext = MonitorContext.builder()
+                .userId(String.valueOf(user.getId()))
+                .appId(String.valueOf(app.getId()))
+                .roundId(String.valueOf(roundId))
+                .build();
+
         Flux<String> result = workflowCodeGeneratorFacade.generateAndSaveCodeStream(
                 enhancedMessage, codeGenTypeEnum, appId, firstRound);
 
-        Flux<String> handlerFlux = streamHandlerExecutor.doExecute(result, chatHistoryService, appId, user, codeGenTypeEnum, true, firstRound, message, roundId)
-                .doOnError(InputGuardrailException.class, e -> {
-                    chatHistoryService.removeUserMessageByContent(appId, user.getId(), originalPrompt);
-                    log.warn("Guardrail 拒绝，已回滚 DB user 消息，appId={}", appId);
-                });
+        Flux<String> handlerFlux = withMonitorContext(
+                streamHandlerExecutor.doExecute(result, chatHistoryService, appId, user, codeGenTypeEnum, true, firstRound, message, roundId)
+                        .doOnError(InputGuardrailException.class, e -> {
+                            chatHistoryService.removeUserMessageByContent(appId, user.getId(), originalPrompt);
+                            log.warn("Guardrail 拒绝，已回滚 DB user 消息，appId={}", appId);
+                        }),
+                monitorContext
+        );
 
         // 在 AI 生成流前插入压缩阶段
         Flux<String> compressPhase = Flux.defer(() -> {
@@ -229,6 +250,13 @@ public class ChatToGenCodeImpl implements ChatToGenCode {
             }
         }
         return codeGenTypeEnum;
+    }
+
+    private Flux<String> withMonitorContext(Flux<String> source, MonitorContext monitorContext) {
+        return Flux.defer(() -> {
+            MonitorContextHolder.setContext(monitorContext);
+            return source.doFinally(signalType -> MonitorContextHolder.clearContext());
+        });
     }
 
     /**

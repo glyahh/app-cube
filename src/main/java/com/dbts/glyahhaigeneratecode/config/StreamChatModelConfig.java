@@ -1,9 +1,11 @@
 package com.dbts.glyahhaigeneratecode.config;
 
 import com.dbts.glyahhaigeneratecode.Listener.ai.StreamingChatModelDiagnosticsListener;
+import com.dbts.glyahhaigeneratecode.monitor.AiModelMonitorListener;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiChatRequestParameters;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import lombok.RequiredArgsConstructor;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -16,7 +18,9 @@ import java.util.List;
 @Configuration
 @ConfigurationProperties(prefix = "langchain4j.open-ai.streaming-chat-model")
 @Data
+@RequiredArgsConstructor
 public class StreamChatModelConfig {
+    private final AiModelMonitorListener aiModelMonitorListener;
 
     private String apiKey;
 
@@ -57,7 +61,10 @@ public class StreamChatModelConfig {
                 .logRequests(logRequests == null || logRequests.isBlank() ? true : Boolean.parseBoolean(logRequests))
                 // 如果logResponses为空，则设置为false
                 .logResponses(logResponses == null || logResponses.isBlank() ? false : Boolean.parseBoolean(logResponses))
-                .listeners(List.of(new StreamingChatModelDiagnosticsListener(maxTokens)))
+                .listeners(List.of(
+                        new StreamingChatModelDiagnosticsListener(maxTokens),
+                        aiModelMonitorListener
+                ))
                 .build();
     }
 }

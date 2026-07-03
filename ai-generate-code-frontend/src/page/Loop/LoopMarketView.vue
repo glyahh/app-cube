@@ -127,6 +127,7 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   loopGoodListPageVoUsingPost,
+  loopMarketImportUsingPost,
   loopPublicListPageVoUsingPost,
 } from '@/api/loopController'
 
@@ -195,7 +196,6 @@ const loadExplore = async () => {
 const importToMyLoop = async (loopId: number) => {
   try {
     // 调用 /loop/market/import 克隆到用户个人库
-    const { loopMarketImportUsingPost } = await import('@/api/loopController')
     const res = await loopMarketImportUsingPost({ params: { loopId } })
     if (res.data.code === 0 || res.data.code === 20000) {
       message.success('已导入到「我的 Loop」，可在创建应用时绑定使用')

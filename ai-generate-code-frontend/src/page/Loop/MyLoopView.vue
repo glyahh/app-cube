@@ -281,7 +281,6 @@ const handleFileSelect = async (file: File): Promise<boolean> => {
   }
   importing.value = true
   try {
-    const { loopOpenApiImportUsingPost } = await import('@/api/loopController')
     const res = await loopOpenApiImportUsingPost({ body: text.trim() })
     if (res.data.code === 0 || res.data.code === 20000) {
       message.success('导入成功')

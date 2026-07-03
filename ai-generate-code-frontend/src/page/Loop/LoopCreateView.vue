@@ -136,7 +136,8 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { loopAddUsingPost, loopUpdateUsingPost, loopGetVoUsingGet } from '@/api/loopController'
+import { loopAddUsingPost } from '@/api/loopController'
+import { loopGetVoById, loopUpdateById } from '@/api/longIdApi'
 
 const props = defineProps<{
   editId?: string
@@ -235,9 +236,7 @@ const handleSave = async () => {
     }
 
     if (isEditMode.value) {
-      const res = await loopUpdateUsingPost({
-        body: { id: resolvedEditId.value, ...payload },
-      })
+      const res = await loopUpdateById(resolvedEditId.value, payload)
       if (res.data.code === 0 || res.data.code === 20000) {
         message.success('更新成功')
       } else {
@@ -271,7 +270,7 @@ const handleCancel = () => {
 onMounted(async () => {
   if (resolvedEditId.value) {
     try {
-      const res = await loopGetVoUsingGet({ params: { id: resolvedEditId.value } })
+      const res = await loopGetVoById(resolvedEditId.value)
       if ((res.data.code === 0 || res.data.code === 20000) && res.data.data) {
         const data = res.data.data
         form.loopName = data.loopName || ''

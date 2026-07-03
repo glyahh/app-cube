@@ -58,6 +58,7 @@ import {
 } from '@/utils/toolWaitStatus'
 import { CodeGenTypeEnum } from '@/utils/CodeGenTypeEnum'
 import AppLoopInjectBar from '@/components/loop/AppLoopInjectBar.vue'
+import { loopGetVoById } from '@/api/longIdApi'
 import {
   attachVisualWebsiteEditor,
   formatSelectedElementForPrompt,
@@ -280,8 +281,7 @@ function onLoopSelect(loopId: string | number) {
   // 获取 Loop 详情以获得 compiledPrompt（Snowflake ID 用字符串传递避免精度丢失）
   if (loopId) {
     const idStr = String(loopId)
-    import('@/api/loopController').then(({ loopGetVoUsingGet }) => {
-      loopGetVoUsingGet({ params: { id: idStr as any } }).then(res => {
+    loopGetVoById(idStr).then(res => {
         if ((res.data.code === 0 || res.data.code === 20000) && res.data.data) {
           selectedLoopCompiledPrompt.value = res.data.data.compiledPrompt || ''
           selectedLoopName.value = res.data.data.loopName || ''
@@ -290,7 +290,6 @@ function onLoopSelect(loopId: string | number) {
         selectedLoopCompiledPrompt.value = ''
         selectedLoopName.value = ''
       })
-    })
   } else {
     selectedLoopCompiledPrompt.value = ''
     selectedLoopName.value = ''
@@ -2894,14 +2893,12 @@ async function loadAppInfo() {
 
           // 先获取 Loop 详情以填充 compiledPrompt（用于调试日志），再发送消息
           const loopDetailPromise = (autoLoopId && String(autoLoopId).trim())
-            ? import('@/api/loopController').then(({ loopGetVoUsingGet }) =>
-                loopGetVoUsingGet({ params: { id: String(autoLoopId).trim() as any } }).then(res => {
+            ? loopGetVoById(String(autoLoopId).trim()).then(res => {
                   if ((res.data.code === 0 || res.data.code === 20000) && res.data.data) {
                     selectedLoopCompiledPrompt.value = res.data.data.compiledPrompt || ''
                     selectedLoopName.value = res.data.data.loopName || ''
                   }
                 }).catch(() => {})
-              )
             : Promise.resolve()
 
           // 清除 query 参数，避免刷新页面时重复自动发送

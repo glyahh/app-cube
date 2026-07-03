@@ -51,28 +51,28 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { appLoopListVoUsingPost } from '@/api/appLoopController'
 import { loopMyListPageVoUsingPost } from '@/api/loopController'
+import { appLoopBatchAddByAppId, appLoopListVoByAppId, type LongId } from '@/api/longIdApi'
 
 const router = useRouter()
 
 const props = defineProps<{
-  appId: string
+  appId: LongId
 }>()
 
 const emit = defineEmits<{
-  (e: 'select', loopId: string | number): void
+  (e: 'select', loopId: LongId): void
 }>()
 
 // 已有绑定
 const loopList = ref<any[]>([])
-const selectedLoopId = ref(0)
+const selectedLoopId = ref<LongId>(0)
 const searchText = ref('')
 
 // 「我的 Loop」添加弹窗
 const addPopoverOpen = ref(false)
 const myLoopList = ref<any[]>([])
-const selectedAddIds = ref<string[]>([])
+const selectedAddIds = ref<LongId[]>([])
 const adding = ref(false)
 
 const filteredList = computed(() => {
@@ -96,20 +96,13 @@ async function handleAddToApp() {
   adding.value = true
   try {
     // 使用 bulk request 调用批量添加端点
-    const { default: request } = await import('@/request')
-    const res = await request({
-      url: '/app/loop/batch/add',
-      method: 'POST',
-      params: { appId: props.appId },
-      data: selectedAddIds.value.map(Number),
-      headers: { 'Content-Type': 'application/json' },
-    })
+    const res = await appLoopBatchAddByAppId(props.appId, selectedAddIds.value)
     if (res.data.code === 0 || res.data.code === 20000) {
       message.success('批量添加成功')
       addPopoverOpen.value = false
       selectedAddIds.value = []
       // 刷新列表
-      const listRes = await appLoopListVoUsingPost({ params: { appId: props.appId } })
+      const listRes = await appLoopListVoByAppId(props.appId)
       if ((listRes.data.code === 0 || listRes.data.code === 20000) && listRes.data.data) {
         loopList.value = listRes.data.data
       }
@@ -127,7 +120,7 @@ async function handleAddToApp() {
 onMounted(async () => {
   try {
     // 加载当前应用已绑定的 Loop
-    const res = await appLoopListVoUsingPost({ params: { appId: props.appId } })
+    const res = await appLoopListVoByAppId(props.appId)
     if ((res.data.code === 0 || res.data.code === 20000) && res.data.data) {
       loopList.value = res.data.data
     }
