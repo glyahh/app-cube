@@ -25,6 +25,8 @@ import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -39,6 +41,7 @@ public class ConversationMemoryStateServiceImpl implements ConversationMemorySta
     private final ConversationMemoryRefMapper conversationMemoryRefMapper;
     private final ConversationMemoryProperties properties;
     private final TransactionTemplate transactionTemplate;
+    private final CodeChunkIndexService codeChunkIndexService;
 
     @Override
     public void onRoundCompleted(Long appId, Long roundId, Long userId, CodeGenTypeEnum codeGenTypeEnum,
@@ -103,9 +106,12 @@ public class ConversationMemoryStateServiceImpl implements ConversationMemorySta
                 log.warn("conversation memory redis backfill failed, fallback to DB, appId={}, roundId={}",
                         appId, roundId, redisEx);
             }
+
+            // --- RAG 增量索引：changedFiles 稳定落盘后，对新增/修改文件切块写 ES ---
+            indexChangedFiles(appId, changedFiles, previous, current, projectRoot);
         } catch (Exception e) {
             dbStatus = "skip";
-            log.warn("onRoundCompleted persistence failed and was isolated, appId={}, roundId={}", appId, roundId, e);
+            log.warn("onRoundCompleted 整体回滚或 RAG 索引失败，已隔离，appId={}, roundId={}", appId, roundId, e);
         } finally {
             long finalElapsed = System.currentTimeMillis() - start;
             log.info("onRoundCompleted metrics appId={} roundId={} snapshotId={} manifestFilesCount={} changedFilesCount={} bufferChars={} summarizeLevel={} refArchivedCount={} fileNoteStatus={} elapsedMs={} redisHit={} dbFallback={} workflowMode={} userId={}",
@@ -141,6 +147,57 @@ public class ConversationMemoryStateServiceImpl implements ConversationMemorySta
                 .injectedMessageCount(Math.min(taggedInjected, Math.max(0, maxCount)))
                 .changedFiles(changedFiles)
                 .build();
+    }
+
+    /**
+     * 对 changedFiles 增量索引 ES（新增/修改）并清理已删除文件 chunks。
+     * 失败降级：仅 warn 日志，不阻断主链路。
+     */
+    private void indexChangedFiles(Long appId, List<String> changedFiles,
+                                   ConversationMemoryManifestSupport.ManifestBundle previous,
+                                   ConversationMemoryManifestSupport.ManifestBundle current,
+                                   Path projectRoot) {
+        if (appId == null || appId <= 0) {
+            return;
+        }
+        if (codeChunkIndexService == null) {
+            return;
+        }
+        try {
+            // 1. 计算已删除的文件（在 previous 中但不在 current 中）
+            List<String> deletedFiles = computeDeletedFiles(previous, current);
+            for (String deleted : deletedFiles) {
+                codeChunkIndexService.deleteFileChunks(appId, deleted);
+            }
+            // 2. 对新增/修改文件增量索引
+            if (changedFiles != null && !changedFiles.isEmpty()) {
+                codeChunkIndexService.indexFiles(appId, changedFiles, projectRoot);
+            }
+        } catch (Exception e) {
+            log.warn("RAG 增量索引失败，已降级，appId={}", appId, e);
+        }
+    }
+
+    /**
+     * 比较前后 manifest，返回已删除的文件路径。
+     */
+    private static List<String> computeDeletedFiles(
+            ConversationMemoryManifestSupport.ManifestBundle previous,
+            ConversationMemoryManifestSupport.ManifestBundle current) {
+        if (previous == null || previous.items() == null || previous.items().isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (current == null || current.items() == null || current.items().isEmpty()) {
+            // 当前无文件 → 前一轮所有文件都被删了
+            return previous.items().stream().map(ConversationMemoryManifestSupport.ManifestItem::path).toList();
+        }
+        Set<String> currentPaths = current.items().stream()
+                .map(ConversationMemoryManifestSupport.ManifestItem::path)
+                .collect(Collectors.toSet());
+        return previous.items().stream()
+                .map(ConversationMemoryManifestSupport.ManifestItem::path)
+                .filter(p -> !currentPaths.contains(p))
+                .toList();
     }
 
     @Override

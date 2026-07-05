@@ -4,6 +4,9 @@ import cn.hutool.core.util.StrUtil;
 import com.dbts.glyahhaigeneratecode.ai.tool.BaseTool;
 import com.dbts.glyahhaigeneratecode.ai.tool.ToolManager;
 import com.dbts.glyahhaigeneratecode.config.OpenAiOutputGuardrailsConfig;
+import com.dbts.glyahhaigeneratecode.core.memory.ConversationMemoryInjectTexts;
+import com.dbts.glyahhaigeneratecode.core.memory.MemorySessionInjectSupport;
+import com.dbts.glyahhaigeneratecode.service.impl.CodeChunkRetrievalService;
 import com.dbts.glyahhaigeneratecode.exception.MyException;
 import com.dbts.glyahhaigeneratecode.guardrail.PromptSafetyInputGuardrail;
 import com.dbts.glyahhaigeneratecode.constant.ChatHistoryConstant;
@@ -25,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Configuration;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -57,6 +61,9 @@ public class aiCodeGeneratorServiceFactory {
     @Resource
     private OpenAiOutputGuardrailsConfig outputGuardrailsConfig;
 
+    @Resource
+    private CodeChunkRetrievalService codeChunkRetrievalService;
+
     /**
      * AI 服务实例缓存
      * 缓存策略：
@@ -82,6 +89,9 @@ public class aiCodeGeneratorServiceFactory {
 
     /** 每 app 最近一次注入的 style body；无变化时跳过清空重建 */
     private final ConcurrentHashMap<Long, String> appLastSessionStyle = new ConcurrentHashMap<>();
+
+    /** 每 app 待注入 RAG 检索的 user query；在 prepareChatMemory / cache hit 时 flush */
+    private final ConcurrentHashMap<Long, String> appPendingRagQuery = new ConcurrentHashMap<>();
 
     /** Cached service -> memory version observed when binding its MessageWindowChatMemory. */
     private final ConcurrentHashMap<String, String> serviceBoundMemoryVersion = new ConcurrentHashMap<>();
@@ -127,6 +137,7 @@ public class aiCodeGeneratorServiceFactory {
                     // 这里先比对 version，命中才复用，避免 silent stale；不一致就落到下方 build 链路重建。
                 } else {
                     chatHistoryService.refreshAiChatMemoryTtl(appId);
+                    flushPendingRagInject(appId);
                     log.info("从缓存中获取 AI 服务实例，appId: {}", appId);
                     return service;
                 }
@@ -193,6 +204,7 @@ public class aiCodeGeneratorServiceFactory {
                 if (styleBody != null) {
                     applySessionStyleToMemory(appId, messageWindowChatMemory, styleBody);
                 }
+                flushPendingRagInject(appId);
                 log.info("为应用预加载历史对话到内存，appId={}, loadedCount={}", appId, loadedCount);
             } catch (Exception e) {
                 log.error("预加载历史对话到内存失败，appId={}", appId, e);
@@ -282,6 +294,146 @@ public class aiCodeGeneratorServiceFactory {
     }
 
     /**
+     * 缓存本轮 RAG 检索 query，待 {@link #flushPendingRagInject} 在 memory 就绪后注入。
+     */
+    public void stageRagQuery(Long appId, String userMessage) {
+        if (appId == null || appId <= 0 || StrUtil.isBlank(userMessage)) {
+            return;
+        }
+        appPendingRagQuery.put(appId, userMessage);
+    }
+
+    /**
+     * 消费 pending query 并注入 {@code [memory_inject]}（memory 已就绪时调用）。
+     */
+    void flushPendingRagInject(Long appId) {
+        if (appId == null || appId <= 0) {
+            return;
+        }
+        String userMessage = appPendingRagQuery.remove(appId);
+        if (StrUtil.isBlank(userMessage)) {
+            return;
+        }
+        MessageWindowChatMemory memory = appMemoryMap.get(appId);
+        if (memory == null) {
+            log.debug("memory 实例尚未创建，跳过 RAG code chunks 注入，appId={}", appId);
+            return;
+        }
+        applyRagInjectToMemory(appId, memory, userMessage);
+    }
+
+    private void applyRagInjectToMemory(Long appId, MessageWindowChatMemory memory, String userMessage) {
+        try {
+            // 核心 !!
+            // 1. 检索 Top-K, 拿到命中的chunk
+            List<CodeChunkRetrievalService.CodeChunkHit> codeChunkHits = codeChunkRetrievalService.searchTopK(appId, userMessage);
+            if (codeChunkHits == null || codeChunkHits.isEmpty()) {
+                // 无命中时移除旧 [memory_inject]（如果有的话）
+                removeOldInjectIfPresent(appId, memory);
+                return;
+            }
+            // 2. 格式化
+            String injectText = codeChunkRetrievalService.formatAsInject(codeChunkHits);
+            if (injectText == null || StrUtil.isBlank(injectText)) {
+                // 格式化结果为空时移除旧 [memory_inject]
+                removeOldInjectIfPresent(appId, memory);
+                return;
+            }
+
+            // 3. 读写 ChatMemoryStore，替换或追加 [memory_inject]
+            List<ChatMessage> msgs;
+            try {
+                msgs = chatMemoryStore.getMessages(appId);
+            } catch (Exception e) {
+                log.warn("读取 ChatMemoryStore 失败，跳过 RAG 注入，appId={}", appId, e);
+                return;
+            }
+            if (msgs == null) msgs = new ArrayList<>();
+            else msgs = new ArrayList<>(msgs);
+
+            // 移除旧 [memory_inject]
+            msgs.removeIf(msg -> msg instanceof SystemMessage sm
+                    && sm.text() != null && sm.text().startsWith(ConversationMemoryInjectTexts.INJECT_TAG));
+
+            // 找插入位置：在 [memory_file_note] 之后、第一个非 SystemMessage 之前
+            int insertPos = findInjectInsertPosition(msgs);
+            msgs.add(insertPos, SystemMessage.from(injectText));
+
+            // 4. 同步写回 store 与 Java 实例
+            replaceMemoryMessages(memory, appId, msgs);
+            log.debug("RAG code chunks 注入完成，appId={}, hits={}", appId, codeChunkHits.size());
+        } catch (Exception e) {
+            log.warn("RAG code chunks 注入失败，已降级，appId={}", appId, e);
+        }
+    }
+
+    /**
+     * 移除 ChatMemory 中已有的 [memory_inject]（无命中时清理用）。
+     */
+    private void removeOldInjectIfPresent(Long appId, MessageWindowChatMemory memory) {
+        try {
+            List<ChatMessage> msgs = chatMemoryStore.getMessages(appId);
+            if (msgs == null || msgs.isEmpty()) return;
+            msgs = new ArrayList<>(msgs);
+            // 如果有旧 [memory_inject]被移除, 说明这次是更新
+            boolean changed = msgs.removeIf(msg -> msg instanceof SystemMessage sm
+                    && sm.text() != null && sm.text().startsWith(ConversationMemoryInjectTexts.INJECT_TAG));
+            if (changed) {
+                replaceMemoryMessages(memory, appId, msgs);
+            }
+        } catch (Exception e) {
+            log.debug("清理旧 [memory_inject] 失败，appId={}", appId, e);
+        }
+    }
+
+    /**
+     * 替换 {@link MessageWindowChatMemory} 内部消息列表，避免 {@code memory.clear()}+{@code memory.add()} 循环产生的逐条 store 写竞态。
+     * <p>先持久化完整列表到 store，再通过反射替换内存列表，跳过 store 写入。反射失败时回退 clear+add 模式。</p>
+     */
+    private void replaceMemoryMessages(MessageWindowChatMemory memory, Long appId, List<ChatMessage> msgs) {
+        chatMemoryStore.updateMessages(appId, msgs);
+        try {
+            Field msgField = MessageWindowChatMemory.class.getDeclaredField("messages");
+            msgField.setAccessible(true);
+            // 把 memory 这个实例内部的 messages 字段，整表替换成 msgs 的副本
+            msgField.set(memory, new ArrayList<>(msgs));
+        } catch (Exception e) {
+            log.warn("内存消息列表直接替换失败，回退 clear+add 模式，appId={}", appId, e);
+            memory.clear();
+            for (ChatMessage msg : msgs) {
+                memory.add(msg);
+            }
+        }
+    }
+
+    /**
+     * 在消息列表中找 [memory_inject] 的插入位置。
+     * 默认在 [memory_file_note] / {@code <inject_prompt>} 之后、第一个非 SystemMessage 之前；
+     * 若没有上述锚点则在其他 memory_* tag 之后。
+     */
+    static int findInjectInsertPosition(List<ChatMessage> msgs) {
+        int lastMemoryTag = -1;
+        for (int i = 0; i < msgs.size(); i++) {
+            if (msgs.get(i) instanceof SystemMessage sm) {
+                if (sm.text() != null) {
+                    String text = sm.text();
+                    if (text.startsWith("[memory_policy]") || text.startsWith("[memory_index]")
+                            || text.startsWith("[memory_file_note]")
+                            || text.startsWith(MemorySessionInjectSupport.SESSION_PREFIX)
+                            || text.startsWith(ConversationMemoryInjectTexts.INJECT_TAG)) {
+                        lastMemoryTag = i;
+                    }
+                }
+                // null-text SystemMessage 不能判断 memory tag，但继续往后扫
+            } else {
+                // 遇到第一个非 SystemMessage（即用户消息），返回之前的最后一个 memory tag 后面
+                break;
+            }
+        }
+        return lastMemoryTag + 1;
+    }
+
+    /**
      * 将会话级风格 SystemMessage（或 null 表示移除）应用到已缓存的 MessageWindowChatMemory。
      */
     public void applySessionStyle(Long appId, String styleBody) {
@@ -340,10 +492,7 @@ public class aiCodeGeneratorServiceFactory {
             }
         }
 
-        memory.clear();
-        for (ChatMessage msg : currentMsgs) {
-            memory.add(msg);
-        }
+        replaceMemoryMessages(memory, appId, currentMsgs);
         log.debug("会话级风格已应用，appId={}, hasStyle={}", appId, styleBody != null);
     }
 

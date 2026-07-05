@@ -267,34 +267,19 @@ public interface ChatHistoryService extends IService<ChatHistory> {
     boolean removeUserMessageByContent(Long appId, Long userId, String message);
 
     /**
-     * 对话轮次结束后的收口：快照、差异、摘要状态、ref 归档与缓存回填
+     * 对话轮次结束后的收口：快照、差异、摘要状态、ref 归档、缓存回填与 RAG 增量索引。
      *
      * @param appId           应用 id
      * @param roundId         本轮 roundId（即用户消息 chat_history.id）
      * @param userId          用户 id
      * @param codeGenTypeEnum 代码生成类型
      * @param workflowMode    是否 workflow 模式
+     * @param bufferChars     本轮输出字符数（无可观测数据时传 0）
+     * @param elapsedMs       本轮耗时毫秒（无可观测数据时传 0）
      * @return 无
      */
-    void onRoundCompleted(Long appId, Long roundId, Long userId, CodeGenTypeEnum codeGenTypeEnum, boolean workflowMode);
-
-
-    /**
-     * 对话轮次结束后的收口（带实时指标）。
-     *
-     * @param appId           应用 id
-     * @param roundId         本轮 roundId（即用户消息 chat_history.id）
-     * @param userId          用户 id
-     * @param codeGenTypeEnum 代码生成类型
-     * @param workflowMode    是否 workflow 模式
-     * @param bufferChars     本轮输出字符数
-     * @param elapsedMs       本轮耗时（毫秒）
-     * @return 无
-     */
-    default void onRoundCompleted(Long appId, Long roundId, Long userId, CodeGenTypeEnum codeGenTypeEnum,
-                                  boolean workflowMode, int bufferChars, long elapsedMs) {
-        onRoundCompleted(appId, roundId, userId, codeGenTypeEnum, workflowMode);
-    }
+    void onRoundCompleted(Long appId, Long roundId, Long userId, CodeGenTypeEnum codeGenTypeEnum,
+                          boolean workflowMode, int bufferChars, long elapsedMs);
 
     /**
      * workflow 入口是否应触发会话级总结压缩。

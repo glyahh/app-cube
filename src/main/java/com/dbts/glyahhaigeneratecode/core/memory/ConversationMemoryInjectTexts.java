@@ -18,6 +18,8 @@ public final class ConversationMemoryInjectTexts {
     private static final String INDEX_TAG = "[memory_index]";
     // 各文件中文说明（fileNote）标签
     private static final String FILE_NOTE_TAG = "[memory_file_note]";
+    // ES 检索源码片段标签（在 fileNote 之后、ChatMemory 历史之前注入）
+    public static final String INJECT_TAG = "[memory_inject]";
     private static final String DISCLAIMER = "以下索引与文件说明仅供参考，请以用户当轮指令与磁盘 readFile 结果为准。";
 
     private static final String STATE_PRIORITY_BODY = """
@@ -82,5 +84,4 @@ public final class ConversationMemoryInjectTexts {
         }
         // 2. 加上 [memory_file_note] 标签后返回，供 ChatMemory 注入
         return FILE_NOTE_TAG + "\n" + body;
-    }
-}
+    }}

@@ -1061,26 +1061,7 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
     }
 
     /**
-     * 对话轮次完成后的统一收口。
-     *
-     * @param appId 应用 id
-     * @param roundId 本轮 roundId（chat_history.id）
-     * @param userId 用户 id
-     * @param codeGenTypeEnum 代码生成类型
-     * @param workflowMode 是否 workflow 模式
-     * @return 无
-     */
-    @Override
-    public void onRoundCompleted(Long appId, Long roundId, Long userId, CodeGenTypeEnum codeGenTypeEnum, boolean workflowMode) {
-        // 方法大纲：
-        // 1. 无 buffer 与耗时指标时，以 0 委托带指标的重载实现    L1268-L1269
-
-        // 1. 无 buffer 与耗时的默认收口,将指标置零后委托重载实现
-        onRoundCompleted(appId, roundId, userId, codeGenTypeEnum, workflowMode, 0, 0L);
-    }
-
-    /**
-     * 对话轮次完成后的统一收口（带可观测指标参数）如果没有抛异常就说明成功了
+     * 对话轮次完成后的统一收口；未抛异常即视为成功。
      *
      * @param appId 应用 id
      * @param roundId 本轮 roundId（chat_history.id）
@@ -1091,6 +1072,7 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
      * @param elapsedMs 本轮耗时
      * @return 无
      */
+    @Override
     public void onRoundCompleted(Long appId, Long roundId, Long userId, CodeGenTypeEnum codeGenTypeEnum, boolean workflowMode, int bufferChars, long elapsedMs) {
         // 方法大纲：
         // 1. 关键主键缺失时直接返回（幂等）    L1289-L1292

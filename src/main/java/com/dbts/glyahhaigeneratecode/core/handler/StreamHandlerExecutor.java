@@ -85,7 +85,7 @@ public class StreamHandlerExecutor {
 
         return handledFlux
                 .doOnNext(chunk -> {
-                    // 1. 累加已输出字符数，供 onRoundCompleted 上报
+                    // 1. 累加已输出字符数，便于监控token是否异常
                     if (chunk != null) {
                         bufferChars[0] += chunk.length();
                     }

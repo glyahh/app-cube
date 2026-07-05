@@ -4,6 +4,7 @@ import com.dbts.glyahhaigeneratecode.config.ConversationMemoryProperties;
 import com.dbts.glyahhaigeneratecode.core.memory.ConversationMemoryRefArchiver;
 import com.dbts.glyahhaigeneratecode.core.memory.ConversationMemoryStateCache;
 import com.dbts.glyahhaigeneratecode.core.memory.ConversationMemoryStateInjectSupport;
+import com.dbts.glyahhaigeneratecode.service.impl.CodeChunkIndexService;
 import com.dbts.glyahhaigeneratecode.mapper.ChatHistoryMapper;
 import com.dbts.glyahhaigeneratecode.mapper.ConversationMemoryRefMapper;
 import com.dbts.glyahhaigeneratecode.mapper.SnapshotHistoryMapper;
@@ -26,7 +27,8 @@ class ConversationMemoryStateServiceImplTransactionTest {
                 mock(SnapshotHistoryMapper.class),
                 mock(ConversationMemoryRefMapper.class),
                 new ConversationMemoryProperties(),
-                mock(TransactionTemplate.class)
+                mock(TransactionTemplate.class),
+                mock(CodeChunkIndexService.class)
         );
 
         assertNotNull(getField(service, "transactionTemplate"));

@@ -62,6 +62,42 @@ conversation:
     # 用户回显全文 echo Redis TTL，秒
     echo-memory-ttl-seconds: 3600
 
+# ---------------------------------------------------------------------------
+# 工程记忆 RAG（Phase 1）：ES 向量检索 + Embedding
+# ---------------------------------------------------------------------------
+rag:
+  elasticsearch:
+    # ES 地址，逗号分隔
+    uris: http://localhost:9200
+    # 检索索引名
+    index-name: code_chunks
+    # 连接超时毫秒
+    connect-timeout-ms: 3000
+    # socket 超时毫秒
+    socket-timeout-ms: 10000
+  embedding:
+    # OpenAI 兼容的 embedding API 地址（通常与 ai.platform.base-url 相同）
+    base-url: ${ai.platform.base-url}
+    api-key: ${ai.platform.api-key}
+    # 模型名：DashScope text-embedding-v3 输出 1024 维；OpenAI text-embedding-3-small 输出 1536
+    model-name: text-embedding-v3
+    # 向量维度（必须与模型输出一致）
+    dimension: 1024
+  chunk:
+    # 每块最大行数
+    max-lines: 200
+    # 块间重叠行数
+    overlap-lines: 20
+    # 单文件超过该行数时跳过大文件（0=不限制）
+    max-file-lines: 5000
+  retrieval:
+    # 每轮检索 Top-K
+    top-k: 5
+    # [memory_inject] 总字符预算
+    char-budget: 8000
+  # 主开关；false 时跳过索引与检索，日志记录降级
+  enabled: true
+
 
 server:
   port: 8124

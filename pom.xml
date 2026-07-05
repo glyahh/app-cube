@@ -129,6 +129,12 @@
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
         </dependency>
+        <!-- Elasticsearch Java Client -->
+        <dependency>
+            <groupId>co.elastic.clients</groupId>
+            <artifactId>elasticsearch-java</artifactId>
+            <version>8.16.0</version>
+        </dependency>
         <!-- Spring Session + Redis 把用户登录session放到Redis中去保存 -->
         <dependency>
             <groupId>org.springframework.session</groupId>

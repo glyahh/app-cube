@@ -24,7 +24,7 @@ public class MemorySessionInjectSupport {
     private final aiCodeGeneratorServiceFactory aiCodeGeneratorServiceFactory;
 
     /** 会话级 SystemMessage 前缀标识，用于定位替换 */
-    static final String SESSION_PREFIX = "<inject_prompt>";
+    public static final String SESSION_PREFIX = "<inject_prompt>";
 
     /**
      * 每轮请求时调用：读取最新风格，构建 XML 正文，委托 factory 应用。
