@@ -18,8 +18,8 @@ public class RagProperties {
 
     @Data
     public static class Elasticsearch {
-        private String uris = "http://localhost:9200";
-        private String indexName = "code_chunks";
+        private String uris = "http://localhost:9201";
+        private String indexName = "code_chunks_v4";
         private int connectTimeoutMs = 3000;
         private int socketTimeoutMs = 10000;
     }
@@ -28,7 +28,7 @@ public class RagProperties {
     public static class Embedding {
         private String baseUrl;
         private String apiKey;
-        private String modelName = "text-embedding-v3";
+        private String modelName = "text-embedding-v4";
         private int dimension = 1024;
     }
 

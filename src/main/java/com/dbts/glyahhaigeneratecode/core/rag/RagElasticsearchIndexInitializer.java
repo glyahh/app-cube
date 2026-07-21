@@ -10,7 +10,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
- * 应用就绪后确保 ES {@code code_chunks} 索引存在（含 dense_vector 映射）。
+ * 应用就绪后确保配置的版本化 ES 索引存在（含 dense_vector 映射）。
  * <p>与 {@link RagConfiguration} 分离，复用容器内单例 {@link ElasticsearchClient}。</p>
  */
 @Slf4j

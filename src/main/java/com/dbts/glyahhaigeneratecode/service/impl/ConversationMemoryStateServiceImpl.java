@@ -4,7 +4,6 @@ import com.dbts.glyahhaigeneratecode.config.ConversationMemoryProperties;
 import com.dbts.glyahhaigeneratecode.core.memory.ConversationMemoryDirStabilitySupport;
 import com.dbts.glyahhaigeneratecode.core.memory.ConversationMemoryManifestSupport;
 import com.dbts.glyahhaigeneratecode.core.memory.ConversationMemoryManifestSupport.ManifestBundle;
-import com.dbts.glyahhaigeneratecode.core.memory.ConversationMemoryRefArchiver;
 import com.dbts.glyahhaigeneratecode.core.memory.ConversationMemoryStateCache;
 import com.dbts.glyahhaigeneratecode.core.memory.ConversationMemoryStateInjectSupport;
 import com.dbts.glyahhaigeneratecode.core.memory.ConversationMemorySummarySupport;
@@ -93,8 +92,6 @@ public class ConversationMemoryStateServiceImpl implements ConversationMemorySta
                 }
             });
             snapshotId = snapshotIdHolder[0];
-
-            // refArchivedCount = refArchiver.archiveLargeChangedFilesIfNeeded(appId, roundId, projectRoot, changedFiles);
 
             try {
                 stateCache.cacheToRedis(appId);

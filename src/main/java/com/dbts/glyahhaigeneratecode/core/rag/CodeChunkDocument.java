@@ -2,7 +2,7 @@ package com.dbts.glyahhaigeneratecode.core.rag;
 
 /**
  * ES 索引中一条代码块文档。
- * <p>对应 index {@code code_chunks}，包含元数据与向量字段。</p>
+ * <p>对应配置项 {@code rag.elasticsearch.index-name} 指向的版本化索引，包含元数据与向量字段。</p>
  *
  * @param appId       应用 id（用于隔离检索）
  * @param filePath    文件相对路径（如 {@code src/App.vue}）
