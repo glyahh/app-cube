@@ -91,39 +91,30 @@ public class StreamHandlerExecutor {
                     }
                 })
                 .doFinally(signal -> {
-                    // 只有当当前值是 false 时，才把它原子地改成 true，并返回 true；
-                    // 如果当前值已经不是 false（例如已经是 true），则不改，返回 false。
-
-                    /**
-                     * 第一次进入 doFinally 时：值是 false → compareAndSet(false, true) 成功 → 返回 true → !true 为假 → 不 return，继续执行后面的 onRoundCompleted。
-                     * 若再次进入同一段逻辑
-                     * （理论上 Reactor 对单次订阅的 doFinally 通常只调一次，但这里属于防御式写法，或应对重试/重复终止等边界）：
-                     *  值已是 true → CAS 失败 → 返回 false → !false 为真 → 直接 return，后面的收尾不会再跑。
-                     */
+                    // 确保 doFinally 只被进入一次
                     if (!once.compareAndSet(false, true)) {
                         return;
                     }
-                    // CANCEL：跳过 onRoundCompleted，回滚已入库的 user 消息，
-                    // 避免本轮 canceled round 进入后续会话记忆（Redis/DB）。
                     if (signal == SignalType.CANCEL) {
                         log.warn("代码类型:{} 用户取消 跳过 onRoundCompleted，回滚用户消息 appId={} roundId={} bufferedChars={}",
                                 codeGenType, appId, roundId, bufferChars[0]);
                         try {
+                            // 当用户取消时删除之前添加的用户消息
                             chatHistoryService.removeUserMessageByContent(appId, loginUser.getId(), userMessage);
                         } catch (Exception e) {
                             log.warn("回滚用户消息失败，appId={}, roundId={}", appId, roundId, e);
                         }
                         return;
                     }
-                    // 2. roundId 非法则跳过统计回调（避免脏数据）
+                    // 2. roundId 非法则跳过统计回调, 避免脏数据持久化到数据库中
                     if (roundId == null || roundId <= 0) {
                         log.warn("onRoundCompleted 跳过，roundId 非法，appId={}, roundId={}", appId, roundId);
                         return;
                     }
                     try {
-                        // 1. 统一在执行器层收口，确保 complete/error/cancel 只触发一次。
-                        // 2. onRoundCompleted 内部自吞异常，保证不反向影响 SSE 主链路。
+                        // 上报统计回调
                         long elapsedMs = Math.max(0L, System.currentTimeMillis() - startMs);
+                        // 写入 RAG 记忆库
                         chatHistoryService.onRoundCompleted(appId, roundId, loginUser.getId(), codeGenType, workflowMode, bufferChars[0], elapsedMs);
                     } catch (Exception e) {
                         log.warn("onRoundCompleted 执行失败已忽略，appId={}, roundId={}, signal={}",

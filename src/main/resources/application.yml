@@ -68,7 +68,7 @@ conversation:
 rag:
   elasticsearch:
     # ES 地址，逗号分隔
-    uris: http://localhost:9200
+    uris: http://localhost:9201
     # 检索索引名
     index-name: code_chunks
     # 连接超时毫秒
@@ -79,8 +79,8 @@ rag:
     # OpenAI 兼容的 embedding API 地址（通常与 ai.platform.base-url 相同）
     base-url: ${ai.platform.base-url}
     api-key: ${ai.platform.api-key}
-    # 模型名：DashScope text-embedding-v3 输出 1024 维；OpenAI text-embedding-3-small 输出 1536
-    model-name: text-embedding-v3
+    # 模型名：DashScope text-embedding-v4/v3 默认 1024 维；OpenAI text-embedding-3-small 为 1536
+    model-name: text-embedding-v4
     # 向量维度（必须与模型输出一致）
     dimension: 1024
   chunk:

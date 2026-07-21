@@ -34,7 +34,6 @@ import java.util.stream.Collectors;
 public class ConversationMemoryStateServiceImpl implements ConversationMemoryStateService {
 
     private final ConversationMemoryStateCache stateCache;
-    private final ConversationMemoryRefArchiver refArchiver;
     private final ConversationMemoryStateInjectSupport injectSupport;
     private final ChatHistoryMapper chatHistoryMapper;
     private final SnapshotHistoryMapper snapshotHistoryMapper;
@@ -107,7 +106,8 @@ public class ConversationMemoryStateServiceImpl implements ConversationMemorySta
                         appId, roundId, redisEx);
             }
 
-            // --- RAG 增量索引：changedFiles 稳定落盘后，对新增/修改文件切块写 ES ---
+            // 核心 !!
+            // 将本轮新增/修改的文件增量索引保存到 ES
             indexChangedFiles(appId, changedFiles, previous, current, projectRoot);
         } catch (Exception e) {
             dbStatus = "skip";

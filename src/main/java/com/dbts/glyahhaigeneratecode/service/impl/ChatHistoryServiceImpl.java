@@ -1074,10 +1074,6 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
      */
     @Override
     public void onRoundCompleted(Long appId, Long roundId, Long userId, CodeGenTypeEnum codeGenTypeEnum, boolean workflowMode, int bufferChars, long elapsedMs) {
-        // 方法大纲：
-        // 1. 关键主键缺失时直接返回（幂等）    L1289-L1292
-        // 2. 委托 ConversationMemoryStateService 收口（失败自吞）    L1293-L1301
-
         // 1. 关键主键缺失时直接返回,得到幂等无操作的收口
         if (appId == null || appId <= 0 || roundId == null || roundId <= 0 || userId == null || userId <= 0) {
             return;
