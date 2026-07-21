@@ -6,6 +6,7 @@ import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.UserMessage;
+import dev.langchain4j.service.V;
 import reactor.core.publisher.Flux;
 
 public interface aiCodeGeneratorService {
@@ -16,7 +17,8 @@ public interface aiCodeGeneratorService {
      * @return 解析结果
      */
     @SystemMessage(fromResource = "Prompt/Single_File_Prompt.txt")
-    HtmlCodeResult generateCodeHTML(@MemoryId Long appId, @UserMessage String userMessage);
+    @UserMessage("{{userMessage}}")
+    HtmlCodeResult generateCodeHTML(@MemoryId Long appId, @V("userMessage") String userMessage);
 
 
     /**
@@ -26,7 +28,8 @@ public interface aiCodeGeneratorService {
      * @return 解析结果
      */
     @SystemMessage(fromResource = "Prompt/Various_File_Prompt.txt")
-    MultiFileCodeResult generateCodeMultiFile(@MemoryId Long appId, @UserMessage String userMessage);
+    @UserMessage("{{userMessage}}")
+    MultiFileCodeResult generateCodeMultiFile(@MemoryId Long appId, @V("userMessage") String userMessage);
 
 
 
@@ -37,7 +40,8 @@ public interface aiCodeGeneratorService {
      * @return 流式片段
      */
     @SystemMessage(fromResource = "Prompt/Single_File_Prompt.txt")
-    Flux<String> generateCodeHTMLStream(@MemoryId Long appId, @UserMessage String userMessage);
+    @UserMessage("{{userMessage}}")
+    Flux<String> generateCodeHTMLStream(@MemoryId Long appId, @V("userMessage") String userMessage);
 
 
     /**
@@ -47,7 +51,8 @@ public interface aiCodeGeneratorService {
      * @return 流式片段
      */
     @SystemMessage(fromResource = "Prompt/Various_File_Prompt.txt")
-    Flux<String> generateCodeMultiFileStream(@MemoryId Long appId, @UserMessage String userMessage);
+    @UserMessage("{{userMessage}}")
+    Flux<String> generateCodeMultiFileStream(@MemoryId Long appId, @V("userMessage") String userMessage);
 
     /**
      * 返回用户提示词的输出单个HTML文件（TokenStream 流式）。
@@ -56,7 +61,8 @@ public interface aiCodeGeneratorService {
      * @return TokenStream 流
      */
     @SystemMessage(fromResource = "Prompt/Single_File_Prompt.txt")
-    TokenStream generateCodeHTMLTokenStream(@MemoryId Long appId, @UserMessage String userMessage);
+    @UserMessage("{{userMessage}}")
+    TokenStream generateCodeHTMLTokenStream(@MemoryId Long appId, @V("userMessage") String userMessage);
 
     /**
      * 返回用户提示词的输出多个文件（TokenStream 流式）。
@@ -65,7 +71,8 @@ public interface aiCodeGeneratorService {
      * @return TokenStream 流
      */
     @SystemMessage(fromResource = "Prompt/Various_File_Prompt.txt")
-    TokenStream generateCodeMultiFileTokenStream(@MemoryId Long appId, @UserMessage String userMessage);
+    @UserMessage("{{userMessage}}")
+    TokenStream generateCodeMultiFileTokenStream(@MemoryId Long appId, @V("userMessage") String userMessage);
 
 
     /**
@@ -75,7 +82,8 @@ public interface aiCodeGeneratorService {
      * @return
      */
     @SystemMessage(fromResource = "Prompt/Vue_File_Prompt.txt")
-    TokenStream generateCodeVueFileStream(@MemoryId Long appId, @UserMessage String userMessage);
+    @UserMessage("{{userMessage}}")
+    TokenStream generateCodeVueFileStream(@MemoryId Long appId, @V("userMessage") String userMessage);
 
 
     // ======================== 以下为次轮修改专用方法  ========================
@@ -84,41 +92,48 @@ public interface aiCodeGeneratorService {
      * 次轮修改：根据用户要求修改已有的单HTML文件（TokenStream 流式，工具直接写盘）
      */
     @SystemMessage(fromResource = "Prompt/Single_File_Prompt_Modify.txt")
-    TokenStream modifyCodeHTML(@MemoryId Long appId, @UserMessage String userMessage);
+    @UserMessage("{{userMessage}}")
+    TokenStream modifyCodeHTML(@MemoryId Long appId, @V("userMessage") String userMessage);
 
     /**
      * 次轮修改：根据用户要求修改已有的多文件项目（TokenStream 流式，工具直接写盘）
      */
     @SystemMessage(fromResource = "Prompt/Various_File_Prompt_Modify.txt")
-    TokenStream modifyCodeMultiFile(@MemoryId Long appId, @UserMessage String userMessage);
+    @UserMessage("{{userMessage}}")
+    TokenStream modifyCodeMultiFile(@MemoryId Long appId, @V("userMessage") String userMessage);
 
     /**
      * 次轮修改：流式输出修改单HTML文件
      */
     @SystemMessage(fromResource = "Prompt/Single_File_Prompt_Modify.txt")
-    Flux<String> modifyCodeHTMLStream(@MemoryId Long appId, @UserMessage String userMessage);
+    @UserMessage("{{userMessage}}")
+    Flux<String> modifyCodeHTMLStream(@MemoryId Long appId, @V("userMessage") String userMessage);
 
     /**
      * 次轮修改：流式输出修改多文件项目
      */
     @SystemMessage(fromResource = "Prompt/Various_File_Prompt_Modify.txt")
-    Flux<String> modifyCodeMultiFileStream(@MemoryId Long appId, @UserMessage String userMessage);
+    @UserMessage("{{userMessage}}")
+    Flux<String> modifyCodeMultiFileStream(@MemoryId Long appId, @V("userMessage") String userMessage);
 
     /**
      * 次轮修改：TokenStream 流式修改单HTML文件
      */
     @SystemMessage(fromResource = "Prompt/Single_File_Prompt_Modify.txt")
-    TokenStream modifyCodeHTMLTokenStream(@MemoryId Long appId, @UserMessage String userMessage);
+    @UserMessage("{{userMessage}}")
+    TokenStream modifyCodeHTMLTokenStream(@MemoryId Long appId, @V("userMessage") String userMessage);
 
     /**
      * 次轮修改：TokenStream 流式修改多文件项目
      */
     @SystemMessage(fromResource = "Prompt/Various_File_Prompt_Modify.txt")
-    TokenStream modifyCodeMultiFileTokenStream(@MemoryId Long appId, @UserMessage String userMessage);
+    @UserMessage("{{userMessage}}")
+    TokenStream modifyCodeMultiFileTokenStream(@MemoryId Long appId, @V("userMessage") String userMessage);
 
     /**
      * 次轮修改：TokenStream 流式修改Vue项目
      */
     @SystemMessage(fromResource = "Prompt/Vue_File_Prompt_Modify.txt")
-    TokenStream modifyCodeVueFileStream(@MemoryId Long appId, @UserMessage String userMessage);
+    @UserMessage("{{userMessage}}")
+    TokenStream modifyCodeVueFileStream(@MemoryId Long appId, @V("userMessage") String userMessage);
 }
