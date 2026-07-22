@@ -4,8 +4,11 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch.core.BulkResponse;
 import co.elastic.clients.elasticsearch.core.DeleteByQueryRequest;
+import co.elastic.clients.elasticsearch.core.SearchRequest;
+import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
 import co.elastic.clients.elasticsearch.core.bulk.IndexOperation;
+import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.dbts.glyahhaigeneratecode.core.rag.CodeChunkDocument;
 import com.dbts.glyahhaigeneratecode.core.rag.CodeChunker;
 import com.dbts.glyahhaigeneratecode.core.rag.EmbeddingService;
@@ -23,7 +26,11 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 代码块索引服务：新增/修改文件时切块 → 生成 embedding → 写入 ES；
@@ -90,13 +97,78 @@ public class CodeChunkIndexService {
                 docs.add(doc);
             }
 
-            // 4. bulk upsert；成功后再清理 chunkIndex >= newCount 的旧文档
+            // 4. ES 中已有完整且同 hash 的 chunks 时，无需重复生成向量和写入。
+            if (isFileIndexCurrent(docs)) {
+                log.debug("RAG 索引未变化，跳过 embedding 与 bulk, appId={}, filePath={}, chunks={}",
+                        appId, filePath, chunks.size());
+                return;
+            }
+
+            // 5. bulk upsert；成功后再清理 chunkIndex >= newCount 的旧文档
             if (indexDocuments(docs)) {
                 deleteStaleChunks(appId, filePath, chunks.size());
                 log.info("RAG 索引完成 appId={}, filePath={}, chunks={}", appId, filePath, chunks.size());
             }
         } catch (Exception e) {
             log.warn("RAG 索引失败，已降级，appId={}, filePath={}", appId, filePath, e);
+        }
+    }
+
+    /**
+     * 校验 ES 中该文件的 chunk 集合是否与当前切块结果完全一致。
+     * 查询失败时返回 false，让调用方重新索引，避免误跳过更新。
+     */
+    boolean isFileIndexCurrent(List<CodeChunkDocument> docs) {
+        if (docs == null || docs.isEmpty()) {
+            return false;
+        }
+
+        CodeChunkDocument first = docs.getFirst();
+        try {
+            // 1. 只查询当前应用和文件的 contentHash，避免把向量和源码拉回应用。
+            SearchRequest request = SearchRequest.of(s -> s
+                    .index(properties.getElasticsearch().getIndexName())
+                    .size(docs.size() + 1)
+                    .query(q -> q.bool(b -> b
+                            .filter(f -> f.term(t -> t.field("appId").value(first.appId())))
+                            .filter(f -> f.term(t -> t.field("filePath").value(first.filePath())))
+                    ))
+                    .source(sc -> sc.filter(sf -> sf.includes("contentHash")))
+            );
+
+            SearchResponse<ObjectNode> response = esClient.search(request, ObjectNode.class);
+            if (response == null || response.hits() == null || response.hits().hits() == null) {
+                return false;
+            }
+
+            // 2. 命中数量必须与当前切块数量一致；多出旧 chunk 或缺少 chunk 都需要重建。
+            List<Hit<ObjectNode>> hits = response.hits().hits();
+            if (hits.size() != docs.size()) {
+                return false;
+            }
+
+            // 3. 按确定性文档 ID 建立当前文件的期望 hash，用于校验每个 chunk。
+            Map<String, String> expectedHashes = new HashMap<>(docs.size());
+            for (CodeChunkDocument doc : docs) {
+                expectedHashes.put(doc.docId(), doc.contentHash());
+            }
+
+            // 4. 逐个核对文档 ID、去重状态和 contentHash，全部通过才允许跳过索引。
+            Set<String> seenIds = new HashSet<>(hits.size());
+            for (Hit<ObjectNode> hit : hits) {
+                String expectedHash = expectedHashes.get(hit.id());
+                ObjectNode source = hit.source();
+                if (expectedHash == null || !seenIds.add(hit.id()) || source == null
+                        || source.get("contentHash") == null
+                        || !expectedHash.equals(source.get("contentHash").asText())) {
+                    return false;
+                }
+            }
+            return seenIds.size() == expectedHashes.size();
+        } catch (Exception e) {
+            log.warn("RAG 索引状态检查失败，将重新索引, appId={}, filePath={}, reason={}",
+                    first.appId(), first.filePath(), e.getMessage());
+            return false;
         }
     }
 
