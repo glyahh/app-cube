@@ -83,6 +83,12 @@ rag:
     model-name: text-embedding-v4
     # 向量维度（必须与模型输出一致）
     dimension: 1024
+    # 单次 embedding API 最多提交的文本数
+    batch-size: 10
+    # 首次失败后的补偿重试次数
+    batch-max-retries: 1
+    # 接口调用失败,等待 毫秒重试
+    retry-base-delay-ms: 300
   chunk:
     # 每块最大行数
     max-lines: 200

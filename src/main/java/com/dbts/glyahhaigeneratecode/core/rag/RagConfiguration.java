@@ -87,6 +87,9 @@ public class RagConfiguration {
                 properties.getEmbedding().getApiKey(),
                 properties.getEmbedding().getModelName(),
                 properties.getEmbedding().getDimension(),
+                properties.getEmbedding().getBatchSize(),
+                properties.getEmbedding().getBatchMaxRetries(),
+                properties.getEmbedding().getRetryBaseDelayMs(),
                 ragRestTemplate,
                 objectMapper
         );

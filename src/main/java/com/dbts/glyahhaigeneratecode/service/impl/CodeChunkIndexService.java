@@ -182,10 +182,14 @@ public class CodeChunkIndexService {
             return false;
         }
         try {
-            // 2. 逐文档 embed、序列化并组装 BulkOperation
+            // 2. 批量生成 embedding，再逐文档序列化并组装 BulkOperation
             List<BulkOperation> operations = new ArrayList<>(docs.size());
-            for (CodeChunkDocument doc : docs) {
-                float[] vector = embeddingService.embed(doc.content());
+            List<String> contents = docs.stream().map(CodeChunkDocument::content).toList();
+            // chunk->向量
+            float[][] vectors = embeddingService.embedBatch(contents);
+            for (int i = 0; i < docs.size(); i++) {
+                CodeChunkDocument doc = docs.get(i);
+                float[] vector = i < vectors.length ? vectors[i] : null;
                 if (vector == null) {
                     log.warn("跳过 chunk embedding 失败, appId={}, file={}, idx={}",
                             doc.appId(), doc.filePath(), doc.chunkIndex());

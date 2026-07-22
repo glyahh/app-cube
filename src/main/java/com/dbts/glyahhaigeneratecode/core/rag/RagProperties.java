@@ -30,6 +30,9 @@ public class RagProperties {
         private String apiKey;
         private String modelName = "text-embedding-v4";
         private int dimension = 1024;
+        private int batchSize = 10;
+        private int batchMaxRetries = 1;
+        private int retryBaseDelayMs = 300;
     }
 
     @Data
