@@ -304,6 +304,7 @@ public class aiCodeGeneratorServiceFactory {
     }
 
     /**
+     * 核心: 将 chunk 注入 memory 中
      * 消费 pending query 并注入 {@code [memory_inject]}（memory 已就绪时调用）。
      */
     void flushPendingRagInject(Long appId) {
@@ -314,11 +315,14 @@ public class aiCodeGeneratorServiceFactory {
         if (StrUtil.isBlank(userMessage)) {
             return;
         }
+        
+        // 确保有可以注入的容器 (memory) 
         MessageWindowChatMemory memory = appMemoryMap.get(appId);
         if (memory == null) {
             log.debug("memory 实例尚未创建，跳过 RAG code chunks 注入，appId={}", appId);
             return;
         }
+        // ES 检索合适的 chunk 并注入
         applyRagInjectToMemory(appId, memory, userMessage);
     }
 
