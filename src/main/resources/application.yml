@@ -101,6 +101,12 @@ rag:
     top-k: 5
     # [memory_inject] 总字符预算
     char-budget: 8000
+    # BM25 关键词检索分数权重
+    keyword-boost: 1.0
+    # KNN 向量检索分数权重
+    vector-boost: 1.0
+    # KNN 候选数 = top-k * 该倍率
+    num-candidates-multiplier: 2
   # 主开关；false 时跳过索引与检索，日志记录降级
   enabled: true
 

@@ -17,7 +17,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 代码块检索服务：根据用户 message 做向量检索 Top-K，返回格式化片段。
+ * 代码块检索服务：根据用户 message 做 BM25 + KNN 混合检索 Top-K，返回格式化片段。
  */
 @Slf4j
 @Service
@@ -29,7 +29,7 @@ public class CodeChunkRetrievalService {
     private final RagProperties properties;
 
     /**
-     * RAG 检索入口：将用户 query 向量化后在 ES 中做 knn 检索，返回 Top-K 相关代码块。
+     * RAG 检索入口：在 ES 中组合 BM25 与 KNN，返回 Top-K 相关代码块。
      *
      * @param appId     应用 id，作为 ES filter 限定检索范围
      * @param userQuery 用户本轮输入，用于生成查询向量
@@ -38,7 +38,7 @@ public class CodeChunkRetrievalService {
     public List<CodeChunkHit> searchTopK(Long appId, String userQuery) {
         // 方法大纲：
         // 1. RAG 开关与入参校验    L46-L48
-        // 2. 生成查询向量并构造 knn SearchRequest    L51-L66
+        // 2. 生成查询向量并构造 BM25 + KNN SearchRequest    L51-L76
         // 3. 执行检索并解析 Hit 为 CodeChunkHit 列表    L68-L94
         // 4. 异常时降级返回空列表    L96-L99
 
@@ -48,28 +48,44 @@ public class CodeChunkRetrievalService {
         }
 
         try {
-            // 核心查询 !!!
-            // 2. 生成查询向量并构造 knn SearchRequest
+            // 2. BM25 始终可用；embedding 失败时仅跳过 KNN 路径。
             float[] queryVector = embeddingService.embed(userQuery);
             if (queryVector == null) {
-                log.warn("RAG 检索跳过：embedding 失败，appId={}", appId);
-                return Collections.emptyList();
+                log.warn("RAG embedding 失败，降级为 BM25-only, appId={}", appId);
             }
 
             int topK = properties.getRetrieval().getTopK();
-            List<Float> queryVectorList = toFloatList(queryVector);
-            SearchRequest searchRequest = SearchRequest.of(s -> s
+            int candidateMultiplier = Math.max(1, properties.getRetrieval().getNumCandidatesMultiplier());
+            int numCandidates = Math.max(topK, topK * candidateMultiplier);
+
+
+            SearchRequest.Builder requestBuilder = new SearchRequest.Builder()
                     .index(properties.getElasticsearch().getIndexName())
-                    .knn(k -> k
+                    .size(topK)
+                    .query(q -> q.bool(b -> b
+                            .must(m -> m.match(mm -> mm
+                                    .field("content")
+                                    .query(userQuery)
+                                    .boost(properties.getRetrieval().getKeywordBoost())
+                            ))
+                            .filter(f -> f.term(t -> t.field("appId").value(appId)))
+                    ))
+                    // 排除出包含embedding的向量
+                    .source(sc -> sc.filter(sf -> sf.excludes("embedding")));
+
+            if (queryVector != null) {
+                List<Float> queryVectorList = toFloatList(queryVector);
+                requestBuilder
+                        .knn(k -> k
                             .field("embedding")
                             .queryVector(queryVectorList)
                             .k(topK)
-                            .numCandidates(topK * 2) // 候选
-                            //knn底层并非直接选择topk,而是选择numCandidates个候选,然后从候选中选择topk个
+                            .numCandidates(numCandidates)
+                            .boost(properties.getRetrieval().getVectorBoost())
                             .filter(f -> f.term(t -> t.field("appId").value(appId)))
-                    )
-                    .source(sc -> sc.filter(sf -> sf.excludes("embedding")))
-            );
+                );
+            }
+            SearchRequest searchRequest = requestBuilder.build();
 
             // 3. 执行检索并解析 Hit 为 CodeChunkHit 列表
             SearchResponse<ObjectNode> response = esClient.search(searchRequest, ObjectNode.class);

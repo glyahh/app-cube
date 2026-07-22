@@ -46,5 +46,8 @@ public class RagProperties {
     public static class Retrieval {
         private int topK = 5;
         private int charBudget = 8000;
+        private float keywordBoost = 1.0f;
+        private float vectorBoost = 1.0f;
+        private int numCandidatesMultiplier = 2;
     }
 }
