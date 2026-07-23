@@ -5,16 +5,23 @@ import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.dbts.glyahhaigeneratecode.core.memory.ConversationMemoryInjectTexts;
+import com.dbts.glyahhaigeneratecode.core.memory.ConversationMemoryManifestSupport;
 import com.dbts.glyahhaigeneratecode.core.rag.EmbeddingService;
+import com.dbts.glyahhaigeneratecode.core.rag.RagFileHash;
 import com.dbts.glyahhaigeneratecode.core.rag.RagProperties;
+import com.dbts.glyahhaigeneratecode.model.enums.CodeGenTypeEnum;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 代码块检索服务：根据用户 message 做 BM25 + KNN 混合检索 Top-K，返回格式化片段。
@@ -35,7 +42,7 @@ public class CodeChunkRetrievalService {
      * @param userQuery 用户本轮输入，用于生成查询向量
      * @return 按相关性排序的代码块命中列表；RAG 禁用、参数无效或检索失败时返回空列表
      */
-    public List<CodeChunkHit> searchTopK(Long appId, String userQuery) {
+    public List<CodeChunkHit> searchTopK(Long appId, String userQuery, CodeGenTypeEnum codeGenType) {
         // 方法大纲：
         // 1. RAG 开关与入参校验    L46-L48
         // 2. 生成查询向量并构造 BM25 + KNN SearchRequest    L51-L76
@@ -43,7 +50,8 @@ public class CodeChunkRetrievalService {
         // 4. 异常时降级返回空列表    L96-L99
 
         // 1. RAG 开关与入参校验
-        if (!properties.isEnabled() || appId == null || appId <= 0 || userQuery == null || userQuery.isBlank()) {
+        if (!properties.isEnabled() || appId == null || appId <= 0 || userQuery == null
+                || userQuery.isBlank() || codeGenType == null) {
             return Collections.emptyList();
         }
 
@@ -89,6 +97,7 @@ public class CodeChunkRetrievalService {
 
             // 3. 执行检索并解析 Hit 为 CodeChunkHit 列表
             SearchResponse<ObjectNode> response = esClient.search(searchRequest, ObjectNode.class);
+
             List<Hit<ObjectNode>> hits = response.hits().hits();
             if (hits == null || hits.isEmpty()) {
                 return Collections.emptyList();
@@ -104,6 +113,7 @@ public class CodeChunkRetrievalService {
                         getString(source, "filePath"),
                         getInt(source, "chunkIndex", 0),
                         getString(source, "content"),
+                        getString(source, "contentHash"),
                         getString(source, "language"),
                         getInt(source, "startLine", 1),
                         getInt(source, "endLine", 1),
@@ -112,12 +122,60 @@ public class CodeChunkRetrievalService {
                 results.add(chunkHit);
             }
 
-            log.debug("RAG 检索完成 appId={}, queryLen={}, hits={}", appId, userQuery.length(), results.size());
-            return results;
+            List<CodeChunkHit> verifiedResults = filterCurrentDiskVersion(appId, codeGenType, results);
+            log.debug("RAG 检索完成 appId={}, queryLen={}, candidates={}, verified={}",
+                    appId, userQuery.length(), results.size(), verifiedResults.size());
+            return verifiedResults;
         } catch (Exception e) {
             // 4. 异常时降级返回空列表
             log.warn("RAG 检索失败，已降级，appId={}", appId, e);
             return Collections.emptyList();
+        }
+    }
+
+    /**
+     * 只保留与磁盘当前文件 hash 一致的命中。
+     */
+    private List<CodeChunkHit> filterCurrentDiskVersion(
+            Long appId, CodeGenTypeEnum codeGenType, List<CodeChunkHit> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Path root = ConversationMemoryManifestSupport.resolveProjectRoot(appId, codeGenType)
+                .toAbsolutePath().normalize();
+        Map<String, String> diskHashes = new HashMap<>();
+        List<CodeChunkHit> verified = new ArrayList<>(candidates.size());
+        for (CodeChunkHit hit : candidates) {
+            if (hit.filePath() == null || hit.filePath().isBlank()
+                    || hit.contentHash() == null || hit.contentHash().isBlank()) {
+                continue;
+            }
+
+            String diskHash = diskHashes.computeIfAbsent(
+                    hit.filePath(), ignored -> readCurrentHash(root, hit.filePath()));
+            if (hit.contentHash().equals(diskHash)) {
+                verified.add(hit);
+            }
+        }
+        return Collections.unmodifiableList(verified);
+    }
+
+    private String readCurrentHash(Path root, String filePath) {
+        try {
+            Path candidate = root.resolve(filePath).normalize();
+            if (!candidate.startsWith(root)) {
+                return "";
+            }
+            Path realRoot = root.toRealPath();
+            Path realFile = candidate.toRealPath();
+            if (!realFile.startsWith(realRoot) || !Files.isRegularFile(realFile)) {
+                return "";
+            }
+            return RagFileHash.sha256Prefix(Files.readAllBytes(realFile));
+        } catch (Exception e) {
+            log.debug("RAG 磁盘文件校验失败, root={}, filePath={}", root, filePath, e);
+            return "";
         }
     }
 
@@ -224,6 +282,7 @@ public class CodeChunkRetrievalService {
             String filePath,
             int chunkIndex,
             String content,
+            String contentHash,
             String language,
             int startLine,
             int endLine,

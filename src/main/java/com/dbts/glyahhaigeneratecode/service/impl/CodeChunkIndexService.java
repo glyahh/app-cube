@@ -4,14 +4,17 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch.core.BulkResponse;
 import co.elastic.clients.elasticsearch.core.DeleteByQueryRequest;
+import co.elastic.clients.elasticsearch.core.DeleteByQueryResponse;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
 import co.elastic.clients.elasticsearch.core.bulk.IndexOperation;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.elasticsearch._types.Refresh;
 import com.dbts.glyahhaigeneratecode.core.rag.CodeChunkDocument;
 import com.dbts.glyahhaigeneratecode.core.rag.CodeChunker;
 import com.dbts.glyahhaigeneratecode.core.rag.EmbeddingService;
+import com.dbts.glyahhaigeneratecode.core.rag.RagFileHash;
 import com.dbts.glyahhaigeneratecode.core.rag.RagProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -23,7 +26,6 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -31,6 +33,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * 代码块索引服务：新增/修改文件时切块 → 生成 embedding → 写入 ES；
@@ -47,6 +53,13 @@ public class CodeChunkIndexService {
     private final RagProperties properties;
     private final ObjectMapper objectMapper;
 
+    // 文件锁
+    private final ConcurrentHashMap<FileIndexKey, ReentrantLock> fileLocks = new ConcurrentHashMap<>();
+    // app锁
+    private final ConcurrentHashMap<Long, ReentrantReadWriteLock> appLocks = new ConcurrentHashMap<>();
+    // 删除的appId
+    private final Set<Long> deletedApps = ConcurrentHashMap.newKeySet();
+
     /**
      * RAG 单文件索引入口：读取磁盘源码 → 切块 → bulk upsert → 清理多余旧 chunk。
      *
@@ -56,7 +69,6 @@ public class CodeChunkIndexService {
      * @param fileNote 预留的文件变更摘要，当前未参与切块，可传 null
      */
     public void indexFile(Long appId, String filePath, Path root, String fileNote) {
-        // 1. RAG 开关与入参校验
         if (!properties.isEnabled()) {
             log.debug("RAG 已禁用，跳过索引 appId={}, filePath={}", appId, filePath);
             return;
@@ -65,24 +77,55 @@ public class CodeChunkIndexService {
             return;
         }
 
+        if (deletedApps.contains(appId)) {
+            return;
+        }
+
+        // 拿到每个app的锁,如果没有就按照方法新建一个锁
+        Lock appReadLock = appLocks.computeIfAbsent(appId, ignored -> new ReentrantReadWriteLock()).readLock();
+        // 锁住!
+        appReadLock.lock();
+
+        if (deletedApps.contains(appId)) {
+            appReadLock.unlock();
+            return;
+        }
+
+        FileIndexKey lockKey = new FileIndexKey(appId, filePath);
+
+        ReentrantLock lock = fileLocks.computeIfAbsent(lockKey, ignored -> new ReentrantLock());
+        lock.lock();
+
         try {
-            // 2. 读取文件内容、计算 hash、按扩展名切块
-            Path fullPath = root.resolve(filePath);
-            if (!Files.isRegularFile(fullPath)) {
-                log.debug("索引文件不存在或不可读，跳过 appId={}, filePath={}", appId, filePath);
+            // 1. 只允许读取项目根目录内的文件
+            Path normalizedRoot = root.toAbsolutePath().normalize();
+            Path candidatePath = normalizedRoot.resolve(filePath).normalize();
+            if (!candidatePath.startsWith(normalizedRoot)) {
+                log.warn("拒绝索引越界路径, appId={}, filePath={}", appId, filePath);
+                deleteFileChunksInternal(appId, filePath);
+                return;
+            }
+            Path realRoot = normalizedRoot.toRealPath();
+            Path fullPath = candidatePath.toRealPath();
+            if (!fullPath.startsWith(realRoot) || !Files.isRegularFile(fullPath)) {
+                log.warn("拒绝索引链接越界路径, appId={}, filePath={}", appId, filePath);
+                deleteFileChunksInternal(appId, filePath);
                 return;
             }
 
+            // 2. 空文件、超限文件或无法生成 chunk 时清理旧索引
             byte[] rawBytes = Files.readAllBytes(fullPath);
             String content = new String(rawBytes, StandardCharsets.UTF_8);
             if (content.isBlank()) {
+                deleteFileChunksInternal(appId, filePath);
                 return;
             }
-            String fileHash = sha256Prefix(rawBytes);
+            String fileHash = RagFileHash.sha256Prefix(rawBytes);
 
             String lang = detectLang(filePath);
             List<CodeChunker.Chunk> chunks = chunker.chunk(filePath, content, lang);
             if (chunks.isEmpty()) {
+                deleteFileChunksInternal(appId, filePath);
                 return;
             }
 
@@ -104,13 +147,22 @@ public class CodeChunkIndexService {
                 return;
             }
 
-            // 5. bulk upsert；成功后再清理 chunkIndex >= newCount 的旧文档
-            if (indexDocuments(docs)) {
-                deleteStaleChunks(appId, filePath, chunks.size());
-                log.info("RAG 索引完成 appId={}, filePath={}, chunks={}", appId, filePath, chunks.size());
+            // 5. 完整写入、清理旧尾块，再校验 ES 中只有本次文件版本
+            if (!indexDocuments(docs)) {
+                return;
             }
+            if (!deleteStaleChunks(appId, filePath, chunks.size()) || !isFileIndexCurrent(docs)) {
+                log.warn("RAG 文件索引最终校验失败，清理该文件索引, appId={}, filePath={}", appId, filePath);
+                deleteFileChunksInternal(appId, filePath);
+                return;
+            }
+            log.info("RAG 索引完成 appId={}, filePath={}, chunks={}", appId, filePath, chunks.size());
         } catch (Exception e) {
             log.warn("RAG 索引失败，已降级，appId={}, filePath={}", appId, filePath, e);
+            deleteFileChunksInternal(appId, filePath);
+        } finally {
+            lock.unlock();
+            appReadLock.unlock();
         }
     }
 
@@ -192,53 +244,112 @@ public class CodeChunkIndexService {
     }
 
     /**
-     * 按 appId + filePath 删除 ES 中该文件的全部 chunk 文档（索引前清理或文件删除时调用）。
+     * 给外部的 按 appId + filePath 删除 ES 中该文件的全部 chunk 文档（索引前清理或文件删除时调用）。
      *
      * @param appId    应用 id
      * @param filePath 项目内相对路径
      */
     public void deleteFileChunks(Long appId, String filePath) {
-
-        // 1. RAG 开关校验
-        if (!properties.isEnabled()) {
+        if (appId == null || appId <= 0 || filePath == null) {
             return;
         }
+
+        Lock appReadLock = appLocks.computeIfAbsent(appId, ignored -> new ReentrantReadWriteLock()).readLock();
+        appReadLock.lock();
+        FileIndexKey lockKey = new FileIndexKey(appId, filePath);
+        ReentrantLock lock = fileLocks.computeIfAbsent(lockKey, ignored -> new ReentrantLock());
+        lock.lock();
         try {
-            // 2. 构造 term 查询并执行 deleteByQuery
+            deleteFileChunksInternal(appId, filePath);
+        } finally {
+            lock.unlock();
+            appReadLock.unlock();
+        }
+    }
+
+    /**
+     * 删除某个应用的全部 chunk。失败只记录日志，不影响应用删除。
+     */
+    public void deleteAppChunks(Long appId) {
+        if (appId == null || appId <= 0) {
+            return;
+        }
+        Lock appWriteLock = appLocks.computeIfAbsent(appId, ignored -> new ReentrantReadWriteLock()).writeLock();
+        appWriteLock.lock();
+        deletedApps.add(appId);
+        try {
             DeleteByQueryRequest request = DeleteByQueryRequest.of(b -> b
                     .index(properties.getElasticsearch().getIndexName())
-                    .query(q -> q.bool(bq -> bq
-                            .must(m -> m.term(t -> t.field("appId").value(appId)))
-                            .must(m -> m.term(t -> t.field("filePath").value(filePath)))
-                    ))
-            );
-            esClient.deleteByQuery(request);
-            log.debug("RAG 已清理旧 chunks, appId={}, filePath={}", appId, filePath);
+                    .refresh(true)
+                    .query(q -> q.term(t -> t.field("appId").value(appId))));
+            DeleteByQueryResponse response = esClient.deleteByQuery(request);
+            if (isDeleteByQuerySuccessful(response)) {
+                log.debug("RAG 已清理应用 chunks, appId={}", appId);
+            } else {
+                log.warn("RAG 清理应用 chunks 未完整成功, appId={}", appId);
+            }
         } catch (Exception e) {
-            log.warn("RAG 清理旧 chunks 失败, appId={}, filePath={}", appId, filePath, e);
+            log.warn("RAG 清理应用 chunks 失败, appId={}", appId, e);
+        } finally {
+            appWriteLock.unlock();
+        }
+    }
+
+    /**
+     * 发给ES的删除 Elasticsearch 中指定 appId + filePath 对应的全部 RAG chunk
+     * @param appId
+     * @param filePath
+     * @return
+     */
+    private boolean deleteFileChunksInternal(Long appId, String filePath) {
+        try {
+            DeleteByQueryRequest request = DeleteByQueryRequest.of(b -> b
+                    .index(properties.getElasticsearch().getIndexName())
+                    .refresh(true)
+                    .query(q -> q.bool(bq -> bq
+                            .filter(f -> f.term(t -> t.field("appId").value(appId)))
+                            .filter(f -> f.term(t -> t.field("filePath").value(filePath)))
+                    )));
+            DeleteByQueryResponse response = esClient.deleteByQuery(request);
+            if (!isDeleteByQuerySuccessful(response)) {
+                log.warn("RAG 清理文件 chunks 未完整成功, appId={}, filePath={}", appId, filePath);
+                return false;
+            }
+            log.debug("RAG 已清理文件 chunks, appId={}, filePath={}", appId, filePath);
+            return true;
+        } catch (Exception e) {
+            log.warn("RAG 清理文件 chunks 失败, appId={}, filePath={}", appId, filePath, e);
+            return false;
         }
     }
 
     /**
      * 删除 chunkIndex &gt;= newChunkCount 的多余旧文档（bulk 成功写入后调用）。
      */
-    void deleteStaleChunks(Long appId, String filePath, int newChunkCount) {
+    boolean deleteStaleChunks(Long appId, String filePath, int newChunkCount) {
         if (!properties.isEnabled()) {
-            return;
+            return false;
         }
         try {
             DeleteByQueryRequest request = DeleteByQueryRequest.of(b -> b
                     .index(properties.getElasticsearch().getIndexName())
+                    .refresh(true)
                     .query(q -> q.bool(bq -> bq
                             .must(m -> m.term(t -> t.field("appId").value(appId)))
                             .must(m -> m.term(t -> t.field("filePath").value(filePath)))
                             .must(m -> m.range(r -> r.number(nr -> nr.field("chunkIndex").gte((double) newChunkCount))))
                     ))
             );
-            esClient.deleteByQuery(request);
+            DeleteByQueryResponse response = esClient.deleteByQuery(request);
+            if (!isDeleteByQuerySuccessful(response)) {
+                log.warn("RAG 清理多余旧 chunks 未完整成功, appId={}, filePath={}", appId, filePath);
+                return false;
+            }
             log.debug("RAG 已清理多余旧 chunks, appId={}, filePath={}, newChunkCount={}", appId, filePath, newChunkCount);
+            return true;
         } catch (Exception e) {
             log.warn("RAG 清理多余旧 chunks 失败, appId={}, filePath={}", appId, filePath, e);
+            return false;
         }
     }
 
@@ -249,29 +360,35 @@ public class CodeChunkIndexService {
      * @return bulk 是否全部成功
      */
     private boolean indexDocuments(List<CodeChunkDocument> docs) {
-        // 1. 空列表早退
         if (docs == null || docs.isEmpty()) {
             return false;
         }
+        CodeChunkDocument first = docs.getFirst();
+        boolean bulkSubmitted = false;
         try {
-            // 2. 批量生成 embedding，再逐文档序列化并组装 BulkOperation
-            List<BulkOperation> operations = new ArrayList<>(docs.size());
+            // 1. 所有向量必须先完整生成，禁止提交部分文件版本
             List<String> contents = docs.stream().map(CodeChunkDocument::content).toList();
-            // chunk->向量
             float[][] vectors = embeddingService.embedBatch(contents);
+            if (vectors == null || vectors.length != docs.size()) {
+                log.warn("RAG embedding 数量不完整, appId={}, file={}, expected={}, actual={}",
+                        first.appId(), first.filePath(), docs.size(), vectors == null ? 0 : vectors.length);
+                return false;
+            }
+            for (int i = 0; i < docs.size(); i++) {
+                if (vectors[i] == null) {
+                    log.warn("RAG embedding 失败，整份文件不提交, appId={}, file={}, idx={}",
+                            first.appId(), first.filePath(), i);
+                    return false;
+                }
+            }
+
+            // 2. 向量完整后再组装包含全部 chunks 的 bulk
+            List<BulkOperation> operations = new ArrayList<>(docs.size());
             for (int i = 0; i < docs.size(); i++) {
                 CodeChunkDocument doc = docs.get(i);
-                float[] vector = i < vectors.length ? vectors[i] : null;
-                if (vector == null) {
-                    log.warn("跳过 chunk embedding 失败, appId={}, file={}, idx={}",
-                            doc.appId(), doc.filePath(), doc.chunkIndex());
-                    continue;
-                }
-                // 将 doc 序列化为 Json
                 ObjectNode docNode = objectMapper.valueToTree(doc);
-                // 将 embedding 数组添加到 docNode 中
                 ArrayNode embeddingArray = docNode.putArray("embedding");
-                for (float v : vector) {
+                for (float v : vectors[i]) {
                     embeddingArray.add(v);
                 }
 
@@ -283,46 +400,32 @@ public class CodeChunkIndexService {
                 operations.add(BulkOperation.of(b -> b.index(indexOp)));
             }
 
-            if (operations.isEmpty()) {
-                log.warn("RAG bulk 跳过：无有效 embedding 操作");
-                return false;
-            }
-
-            // 3. 提交 bulk 请求写入 ES
-            BulkRequest bulkRequest = BulkRequest.of(b -> b.operations(operations));
+            // 3. 刷新后才能执行最终版本校验
+            BulkRequest bulkRequest = BulkRequest.of(b -> b
+                    .operations(operations)
+                    .refresh(Refresh.WaitFor));
+            bulkSubmitted = true;
             BulkResponse response = esClient.bulk(bulkRequest);
-            if (response.errors()) {
-                log.warn("RAG bulk 部分失败，已降级");
+            if (response == null || response.errors()) {
+                log.warn("RAG bulk 部分失败，清理该文件可能写入的文档, appId={}, file={}",
+                        first.appId(), first.filePath());
+                deleteFileChunksInternal(first.appId(), first.filePath());
                 return false;
             }
             return true;
         } catch (Exception e) {
-            log.warn("RAG bulk 写入失败，已降级", e);
+            if (bulkSubmitted) {
+                deleteFileChunksInternal(first.appId(), first.filePath());
+            }
+            log.warn("RAG bulk 写入失败，已降级, appId={}, file={}", first.appId(), first.filePath(), e);
             return false;
         }
     }
 
-    /**
-     * 计算文件内容的 SHA-256 前 20 个十六进制字符，用作 chunk 版本指纹。
-     *
-     * @param bytes 文件原始字节
-     * @return 20 位十六进制前缀；摘要失败时退化为字节长度的十六进制
-     */
-    static String sha256Prefix(byte[] bytes) {
-
-        try {
-            // 1. SHA-256 摘要并截取前 10 字节转 hex
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] hash = md.digest(bytes);
-            StringBuilder sb = new StringBuilder(20);
-            for (int i = 0; i < 10; i++) {
-                sb.append(String.format("%02x", hash[i]));
-            }
-            return sb.toString();
-        } catch (Exception e) {
-            // 2. 算法不可用时退化为字节长度 hex
-            return Long.toHexString(bytes.length);
-        }
+    private boolean isDeleteByQuerySuccessful(DeleteByQueryResponse response) {
+        return response != null
+                && !response.timedOut()
+                && (response.failures() == null || response.failures().isEmpty());
     }
 
     /**
@@ -332,10 +435,6 @@ public class CodeChunkIndexService {
      * @return 语言标识（如 java、vue、typescript）；未知扩展名返回 text
      */
     static String detectLang(String filePath) {
-        // 方法大纲：
-        // 1. 空路径返回 text    L243
-        // 2. 按扩展名后缀匹配语言标识    L245-L258
-
         // 1. 空路径返回 text
         if (filePath == null) return "text";
         // 2. 按扩展名后缀匹配语言标识
@@ -353,5 +452,8 @@ public class CodeChunkIndexService {
         if (lower.endsWith(".yml") || lower.endsWith(".yaml")) return "yaml";
         if (lower.endsWith(".properties")) return "properties";
         return "text";
+    }
+
+    private record FileIndexKey(Long appId, String filePath) {
     }
 }

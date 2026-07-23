@@ -2,6 +2,7 @@ package com.dbts.glyahhaigeneratecode.core.rag;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -90,5 +91,76 @@ class CodeChunkerTest {
         String content = sb.toString();
         List<CodeChunker.Chunk> chunks = alignChunker.chunk("align.java", content, "java");
         assertFalse(chunks.isEmpty());
+    }
+
+    @Test
+    void chunk_201Lines_terminatesWithContinuousIndexes() {
+        CodeChunker productionChunker = new CodeChunker(200, 20, 5000);
+        String content = numberedLines(201, false);
+
+        List<CodeChunker.Chunk> chunks = assertTimeoutPreemptively(
+                Duration.ofSeconds(2),
+                () -> productionChunker.chunk("src/App.java", content, "java"));
+
+        assertContinuousIndexes(chunks);
+        assertEquals(201, chunks.getLast().endLine());
+    }
+
+    @Test
+    void chunk_5000Lines_terminates() {
+        CodeChunker productionChunker = new CodeChunker(200, 20, 5001);
+
+        List<CodeChunker.Chunk> chunks = assertTimeoutPreemptively(
+                Duration.ofSeconds(2),
+                () -> productionChunker.chunk("src/Large.java", numberedLines(5000, false), "java"));
+
+        assertContinuousIndexes(chunks);
+        assertEquals(5000, chunks.getLast().endLine());
+    }
+
+    @Test
+    void chunk_tailAndBoundaryBlankLines_terminates() {
+        CodeChunker boundaryChunker = new CodeChunker(5, 2, 100);
+        String content = "one\ntwo\n\nthree\nfour\n\nfive\nsix\n\n";
+
+        List<CodeChunker.Chunk> chunks = assertTimeoutPreemptively(
+                Duration.ofSeconds(2),
+                () -> boundaryChunker.chunk("notes.txt", content, "text"));
+
+        assertContinuousIndexes(chunks);
+        assertEquals(content.split("\n", -1).length, chunks.getLast().endLine());
+    }
+
+    @Test
+    void chunk_oversizedOverlap_terminates() {
+        CodeChunker overlapChunker = new CodeChunker(4, Integer.MAX_VALUE, 100);
+
+        List<CodeChunker.Chunk> chunks = assertTimeoutPreemptively(
+                Duration.ofSeconds(2),
+                () -> overlapChunker.chunk("notes.txt", numberedLines(20, true), "text"));
+
+        assertContinuousIndexes(chunks);
+        assertEquals(21, chunks.getLast().endLine());
+    }
+
+    private static String numberedLines(int count, boolean trailingNewline) {
+        StringBuilder content = new StringBuilder();
+        for (int i = 1; i <= count; i++) {
+            if (i > 1) {
+                content.append('\n');
+            }
+            content.append("line").append(i);
+        }
+        if (trailingNewline) {
+            content.append('\n');
+        }
+        return content.toString();
+    }
+
+    private static void assertContinuousIndexes(List<CodeChunker.Chunk> chunks) {
+        assertFalse(chunks.isEmpty());
+        for (int i = 0; i < chunks.size(); i++) {
+            assertEquals(i, chunks.get(i).chunkIndex());
+        }
     }
 }

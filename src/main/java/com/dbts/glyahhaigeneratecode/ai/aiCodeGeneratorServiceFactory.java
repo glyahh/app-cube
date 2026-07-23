@@ -91,7 +91,7 @@ public class aiCodeGeneratorServiceFactory {
     private final ConcurrentHashMap<Long, String> appLastSessionStyle = new ConcurrentHashMap<>();
 
     /** 每 app 待注入 RAG 检索的 user query；在 prepareChatMemory / cache hit 时 flush */
-    private final ConcurrentHashMap<Long, String> appPendingRagQuery = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, PendingRagQuery> appPendingRagQuery = new ConcurrentHashMap<>();
 
     /** Cached service -> memory version observed when binding its MessageWindowChatMemory. */
     private final ConcurrentHashMap<String, String> serviceBoundMemoryVersion = new ConcurrentHashMap<>();
@@ -296,11 +296,11 @@ public class aiCodeGeneratorServiceFactory {
     /**
      * 缓存本轮 RAG 检索 query，待 {@link #flushPendingRagInject} 在 memory 就绪后注入。
      */
-    public void stageRagQuery(Long appId, String userMessage) {
-        if (appId == null || appId <= 0 || StrUtil.isBlank(userMessage)) {
+    public void stageRagQuery(Long appId, String userMessage, CodeGenTypeEnum codeGenType) {
+        if (appId == null || appId <= 0 || StrUtil.isBlank(userMessage) || codeGenType == null) {
             return;
         }
-        appPendingRagQuery.put(appId, userMessage);
+        appPendingRagQuery.put(appId, new PendingRagQuery(userMessage, codeGenType));
     }
 
     /**
@@ -311,8 +311,8 @@ public class aiCodeGeneratorServiceFactory {
         if (appId == null || appId <= 0) {
             return;
         }
-        String userMessage = appPendingRagQuery.remove(appId);
-        if (StrUtil.isBlank(userMessage)) {
+        PendingRagQuery pending = appPendingRagQuery.remove(appId);
+        if (pending == null || StrUtil.isBlank(pending.userMessage())) {
             return;
         }
         
@@ -323,14 +323,16 @@ public class aiCodeGeneratorServiceFactory {
             return;
         }
         // ES 检索合适的 chunk 并注入
-        applyRagInjectToMemory(appId, memory, userMessage);
+        applyRagInjectToMemory(appId, memory, pending);
     }
 
-    private void applyRagInjectToMemory(Long appId, MessageWindowChatMemory memory, String userMessage) {
+    private void applyRagInjectToMemory(
+            Long appId, MessageWindowChatMemory memory, PendingRagQuery pending) {
         try {
             // 核心 !!
             // 1. 检索 Top-K, 拿到命中的chunk
-            List<CodeChunkRetrievalService.CodeChunkHit> codeChunkHits = codeChunkRetrievalService.searchTopK(appId, userMessage);
+            List<CodeChunkRetrievalService.CodeChunkHit> codeChunkHits = codeChunkRetrievalService.searchTopK(
+                    appId, pending.userMessage(), pending.codeGenType());
             if (codeChunkHits == null || codeChunkHits.isEmpty()) {
                 // 无命中时移除旧 [memory_inject]（如果有的话）
                 removeOldInjectIfPresent(appId, memory);
@@ -369,6 +371,9 @@ public class aiCodeGeneratorServiceFactory {
         } catch (Exception e) {
             log.warn("RAG code chunks 注入失败，已降级，appId={}", appId, e);
         }
+    }
+
+    record PendingRagQuery(String userMessage, CodeGenTypeEnum codeGenType) {
     }
 
     /**

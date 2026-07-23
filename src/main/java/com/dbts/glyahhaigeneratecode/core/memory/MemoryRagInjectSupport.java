@@ -1,6 +1,7 @@
 package com.dbts.glyahhaigeneratecode.core.memory;
 
 import com.dbts.glyahhaigeneratecode.ai.aiCodeGeneratorServiceFactory;
+import com.dbts.glyahhaigeneratecode.model.enums.CodeGenTypeEnum;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -19,7 +20,7 @@ public class MemoryRagInjectSupport {
      * @param appId       应用 id
      * @param userMessage 用户本轮 message
      */
-    public void stageRagQuery(Long appId, String userMessage) {
-        aiCodeGeneratorServiceFactory.stageRagQuery(appId, userMessage);
+    public void stageRagQuery(Long appId, String userMessage, CodeGenTypeEnum codeGenType) {
+        aiCodeGeneratorServiceFactory.stageRagQuery(appId, userMessage, codeGenType);
     }
 }

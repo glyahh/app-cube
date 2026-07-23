@@ -59,7 +59,9 @@ public class CodeChunker {
         int chunkIndex = 0;
         int start = 0;
 
+        // 将代码块切成 chunk
         while (start < totalLines) {
+            int previousStart = start;
             int end = Math.min(start + maxLines, totalLines);
             // 尝试向前找空行做边界对齐（避免在代码行中间断句）
             if (end < totalLines) {
@@ -78,15 +80,17 @@ public class CodeChunker {
             result.add(new Chunk(filePath, chunkIndex, chunkText, language, start + 1, end));
 
             chunkIndex++;
-            // 下一块从 end - overlapLines 开始
-            start = end - overlapLines;
-            if (start >= totalLines) {
+            // 已经覆盖到 EOF，不再为了 overlap 重复生成尾块
+            if (end >= totalLines) {
                 break;
             }
-            // 防止无限循环：如果 overlap 导致 start 不前进，强制前移
-            if (start >= end) {
-                start = end;
+
+            // 下一块保留 overlap，但起点必须比上一轮严格前进
+            int nextStart = end - overlapLines;
+            if (nextStart <= previousStart) {
+                nextStart = end;
             }
+            start = nextStart;
         }
 
         return Collections.unmodifiableList(result);

@@ -81,6 +81,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     private ChatHistoryService chatHistoryService;
 
     @Resource
+    private CodeChunkIndexService codeChunkIndexService;
+
+    @Resource
     private ProjectDownloadService projectDownloadService;
 
     @Resource
@@ -508,6 +511,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         } catch (Exception e) {
             log.warn("删除应用对话历史失败, appId={}", appId, e);
         }
+        try {
+            codeChunkIndexService.deleteAppChunks(appId);
+        } catch (Exception e) {
+            log.warn("删除应用 RAG 索引失败, appId={}", appId, e);
+        }
         // 清理 code_output 下该应用产物目录
         appServiceSupport.removeCodeOutputDirByAppId(appId);
         return true;
@@ -588,6 +596,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             chatHistoryService.removeByAppId(appId);
         } catch (Exception e) {
             log.warn("管理员删除应用对话历史失败, appId={}", appId, e);
+        }
+        try {
+            codeChunkIndexService.deleteAppChunks(appId);
+        } catch (Exception e) {
+            log.warn("管理员删除应用 RAG 索引失败, appId={}", appId, e);
         }
         // 清理 code_output 下该应用产物目录
         appServiceSupport.removeCodeOutputDirByAppId(appId);

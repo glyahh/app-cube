@@ -122,7 +122,7 @@ public class ChatToGenCodeImpl implements ChatToGenCode {
         // 5.1 每次读取最新的两种style并注入
         memorySessionInjectSupport.injectOrUpdateSessionStyle(appId, user.getId());
         // 5.2 RAG 工程记忆检索：缓存本轮 query，待 memory 就绪后注入 [memory_inject]
-        memoryRagInjectSupport.stageRagQuery(appId, message);
+        memoryRagInjectSupport.stageRagQuery(appId, message, codeGenTypeEnum);
 
         // 6. 包裹用户原话 + 注入 Loop skill
         String enhancedMessage = MemoryMessageXmlSupport.wrapUserOriginal(message);
@@ -213,7 +213,7 @@ public class ChatToGenCodeImpl implements ChatToGenCode {
         // 风格 SystemMessage 注入
         memorySessionInjectSupport.injectOrUpdateSessionStyle(appId, user.getId());
         // RAG 工程记忆检索
-        memoryRagInjectSupport.stageRagQuery(appId, message);
+        memoryRagInjectSupport.stageRagQuery(appId, message, codeGenTypeEnum);
         // 用户原话包裹（workflow 无 loopId）
         String enhancedMessage = MemoryMessageXmlSupport.wrapUserOriginal(message);
         MonitorContext monitorContext = MonitorContext.builder()
