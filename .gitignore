@@ -58,6 +58,7 @@ temp/**
 ### Local Tooling State ###
 .cursor/settings.json
 .windsurf/
+outputs/
 
 ### MCP / local agent config (DO NOT COMMIT) ###
 .mcp.json
