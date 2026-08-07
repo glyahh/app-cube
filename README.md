@@ -1,199 +1,142 @@
 <h1 align="center">
-  AI Application Generation &amp; Delivery Platform
+  AI 应用生成与交付平台
 </h1>
 
 <p align="center">
-  <a href="https://github.com/glyahh/ai-generate-code">
-    <img src="https://img.shields.io/github/stars/glyahh/ai-generate-code?style=flat&label=%E2%98%85&color=08C" alt="GitHub stars" />
-  </a>
+  <sub>中文 · <a href="README.en.md">English</a></sub>
+</p>
+
+<p align="center">
+  <a href="https://github.com/glyahh/ai-generate-code"><img src="https://img.shields.io/github/stars/glyahh/ai-generate-code?style=flat&label=%E2%98%85&color=08C" alt="GitHub stars" /></a>
   <img src="https://img.shields.io/badge/Java-21-ED8B00?style=flat" alt="Java 21" />
   <img src="https://img.shields.io/badge/Spring%20Boot-3.x-6DB33F?style=flat" alt="Spring Boot" />
   <img src="https://img.shields.io/badge/LangChain4j-1.1-6C47FF?style=flat" alt="LangChain4j" />
   <img src="https://img.shields.io/badge/license-MIT-08C?style=flat" alt="License: MIT" />
 </p>
 
-<p align="center">
-  <strong>从自然语言到可预览、可修改、可构建、可发布的 Web 应用。</strong>
-</p>
+<p align="center"><strong>从自然语言到可预览、可修改、可构建、可发布的 Web 应用。</strong></p>
 
-<p align="center">
-  Java · Spring Boot · LangChain4j · LangGraph4j · Redis · Elasticsearch · Vue
-</p>
+## 项目简介
 
----
+这是一个基于 Java、Spring Boot、LangChain4j 和 LangGraph4j 的 AI 应用生成平台。
 
-## Overview
+系统接收用户对应用的描述，通过模型和工作流生成项目代码，再经过解析、保存、检索、构建检查和发布，形成可以访问的 Web 应用制品。
 
-这是一个 AI 应用生成与交付平台。
+项目重点不只是生成代码，还包括生成后的工程问题：多轮对话如何保持项目上下文、用户配置变化后 Memory 如何同步、工具调用如何稳定流式传递，以及生成的 Vue 代码如何经过实际构建验收。
 
-系统接收用户对应用的描述，通过模型和工作流生成项目代码，再经过解析、保存、检索、构建检查和发布，最终形成可以访问的 Web 应用制品。
-
-项目关注的不只是模型能不能写出代码，还包括生成之后的几个问题：
-
-- 多轮对话如何保持项目上下文；
-- 用户配置变化后，Memory 和 AI Service 如何保持一致；
-- 工具调用如何通过 SSE 稳定传递；
-- 生成的 Vue 代码如何进行构建验收；
-- 已有代码如何被检索并重新用于后续生成。
-
-## Features
+## 核心功能
 
 <table>
-<tr>
-<td width="50%" valign="top">
+<tr><td width="50%" valign="top">
 
-### Streaming generation
+### 流式生成
 
-通过 SSE 返回模型文本、工具请求和工具执行事件。
+通过 SSE 返回模型文本、工具请求和工具执行事件，支持普通生成链路和 LangGraph4j 工作流链路。
 
-支持普通生成链路和 LangGraph4j 工作流链路。
+<a href="docs/engineering-journal/cases/04-streaming-tool-state-machine.md">查看工程记录 →</a>
 
-<a href="docs/engineering-journal/cases/04-streaming-tool-state-machine.md">工程记录 →</a>
+</td><td width="50%" valign="top">
 
-</td>
-<td width="50%" valign="top">
+### 分层会话记忆
 
-### Stateful conversations
+MySQL 保存完整历史，Redis 保存模型上下文窗口，并通过摘要和版本机制控制长对话上下文。
 
-使用 MySQL 保存完整历史，Redis 保存模型上下文窗口，并通过摘要和版本机制控制长对话成本。
+<a href="docs/engineering-journal/cases/05-layered-memory-lifecycle.md">查看工程记录 →</a>
 
-<a href="docs/engineering-journal/cases/05-layered-memory-lifecycle.md">工程记录 →</a>
+</td></tr>
+<tr><td width="50%" valign="top">
 
-</td>
-</tr>
+### 面向项目的代码生成
 
-<tr>
-<td width="50%" valign="top">
+将已有代码切块写入 Elasticsearch，结合 KNN 和 BM25 检索相关内容，减少重复生成和无关上下文。
 
-### Project-aware generation
+<a href="docs/engineering-journal/cases/06-rag-artifact-retrieval.md">查看工程记录 →</a>
 
-将生成代码切块后写入 Elasticsearch，结合 KNN 和 BM25 检索已有项目内容，减少重复生成和无关上下文。
+</td><td width="50%" valign="top">
 
-<a href="docs/engineering-journal/cases/06-rag-artifact-retrieval.md">工程记录 →</a>
+### 构建验证
 
-</td>
-<td width="50%" valign="top">
+Vue 项目在发布前经过 SFC 解析、问题修复、二次检查和 `npm run build`，构建失败时不会直接发布。
 
-### Build validation
+<a href="docs/engineering-journal/cases/07-vue-build-validation.md">查看工程记录 →</a>
 
-Vue 项目在发布前经过 SFC 解析、问题修复、二次检查和 `npm run build`。
+</td></tr>
+<tr><td width="50%" valign="top">
 
-构建失败时不会直接进入发布流程。
+### 工具调用流
 
-<a href="docs/engineering-journal/cases/07-vue-build-validation.md">工程记录 →</a>
+处理 partial / complete 回调、重复事件过滤、空流重试和状态回放，减少模型事件顺序变化对前端状态的影响。
 
-</td>
-</tr>
+</td><td width="50%" valign="top">
 
-<tr>
-<td width="50%" valign="top">
+### 可视化编辑
 
-### Tool execution stream
+支持在生成页面中选择元素并编辑。iframe 内部注入不稳定时，由父页面接管 hover 和 selected overlay。
 
-对工具请求进行结构化处理，支持 partial / complete 回调、重复事件过滤、空流重试和状态回放。
+<a href="docs/engineering-journal/cases/01-iframe-visual-editor-fallback.md">查看工程记录 →</a>
 
-</td>
-<td width="50%" valign="top">
+</td></tr>
+<tr><td width="50%" valign="top">
 
-### Visual editing
-
-支持在生成页面中选择元素并进行可视化编辑。iframe 内部注入失败时，由父页面接管 hover 和 selected overlay。
-
-<a href="docs/engineering-journal/cases/01-iframe-visual-editor-fallback.md">工程记录 →</a>
-
-</td>
-</tr>
-
-<tr>
-<td width="50%" valign="top">
-
-### Personalization consistency
+### 个性化配置一致性
 
 用户修改应用风格或回答风格后，同步更新 MySQL、Redis、Memory Version 和缓存中的 `AiService`。
 
-<a href="docs/engineering-journal/cases/02-personalization-memory-consistency.md">工程记录 →</a>
+<a href="docs/engineering-journal/cases/02-personalization-memory-consistency.md">查看工程记录 →</a>
 
-</td>
-<td width="50%" valign="top">
+</td><td width="50%" valign="top">
 
-### Artifact delivery
+### 应用制品交付
 
 生成结果经过解析和保存后，通过 `deployKey` 提供静态资源访问，并支持应用发布与撤回。
 
-</td>
-</tr>
+</td></tr>
 </table>
 
-## Architecture
+## 系统架构
 
 ```mermaid
 flowchart LR
-    U[User request] --> API[Spring Boot API]
-    API --> W[Generation workflow]
+    U[用户需求] --> API[Spring Boot API]
+    API --> W[生成工作流]
     W --> L[LangChain4j / LangGraph4j]
-    L --> S[SSE event stream]
-    W --> M[Memory layer]
+    L --> S[SSE 事件流]
+    W --> M[Memory 层]
     M --> DB[(MySQL)]
     M --> R[(Redis)]
-    W --> RAG[Code retrieval]
+    W --> RAG[代码检索]
     RAG --> ES[(Elasticsearch)]
-    S --> P[Parser and Saver]
-    P --> V[Vue validation and build]
-    V --> D[Deployable artifact]
+    S --> P[Parser / Saver]
+    P --> V[Vue 检查与构建]
+    V --> D[可发布制品]
 ```
 
-## Request flow
+## 技术栈
 
-```text
-User request
-    -> application and session context
-    -> model or workflow execution
-    -> text and tool events over SSE
-    -> code parsing and saving
-    -> project retrieval
-    -> validation and build
-    -> artifact deployment
-```
-
-## Technology stack
-
-| Layer | Technologies |
+| 层次 | 技术 |
 | --- | --- |
-| Backend | Java 21, Spring Boot, Spring Web, Spring AOP |
-| AI orchestration | LangChain4j, LangGraph4j, Reactor |
-| Storage | MySQL, Redis, Caffeine, Redisson |
-| Retrieval | Elasticsearch, KNN, BM25 |
-| Frontend | Vue 3, TypeScript, Vite |
-| Build and delivery | Maven, Vue compiler, static artifact deployment |
+| 后端 | Java 21、Spring Boot、Spring Web、Spring AOP |
+| AI 编排 | LangChain4j、LangGraph4j、Reactor |
+| 存储 | MySQL、Redis、Caffeine、Redisson |
+| 检索 | Elasticsearch、KNN、BM25 |
+| 前端 | Vue 3、TypeScript、Vite |
+| 构建与交付 | Maven、Vue compiler、静态制品发布 |
 
-## Getting started
+## 快速开始
 
-### Requirements
+运行环境：Java 21、MySQL、Redis 和可用的 OpenAI-Compatible 模型接口。
 
-- Java 21
-- MySQL
-- Redis
-- An available OpenAI-compatible model endpoint
+配置文件：`src/main/resources/application.yml`。请使用本地环境变量或未提交的配置文件保存凭证。
 
-### Configuration
-
-The main configuration file is:
-
-```text
-src/main/resources/application.yml
-```
-
-Use local environment variables or an untracked local configuration file for credentials.
-
-### Start the backend
+启动后端：
 
 ```bash
 ./mvnw spring-boot:run
 ```
 
-The default server port is `8124` and the API prefix is `/api`.
+默认端口为 `8124`，接口前缀为 `/api`。
 
-### Start the frontend
+启动前端：
 
 ```bash
 cd ai-generate-code-frontend
@@ -201,39 +144,33 @@ npm install
 npm run dev
 ```
 
-## API examples
+## 主要接口
 
-| Method | Endpoint | Description |
+| 方法 | 接口 | 说明 |
 | --- | --- | --- |
-| GET | `/api/chat/gen/code` | Streaming code generation |
-| GET | `/api/chat/gen/workflow` | Workflow-based generation |
-| POST | `/api/app/add` | Create an application |
-| POST | `/api/app/deploy` | Deploy an application |
-| POST | `/api/app/undeploy` | Remove a deployment |
-| GET | `/api/static/{deployKey}/**` | Access deployed resources |
+| GET | `/api/chat/gen/code` | 流式代码生成 |
+| GET | `/api/chat/gen/workflow` | 工作流代码生成 |
+| POST | `/api/app/add` | 创建应用 |
+| POST | `/api/app/deploy` | 发布应用 |
+| POST | `/api/app/undeploy` | 撤回发布 |
+| GET | `/api/static/{deployKey}/**` | 访问发布制品 |
 
-## Engineering notes
+## 工程记录
 
-工程记录位于 [`docs/engineering-journal/`](docs/engineering-journal/README.md)，包含 iframe 编辑、Memory 一致性、工具流、RAG 和构建验证等案例。
+工程问题和设计取舍记录在 [`docs/engineering-journal/`](docs/engineering-journal/README.md)，包括：
 
-- [Engineering journal](docs/engineering-journal/README.md)
-- [Interview cards](docs/engineering-journal/interview-cards.md)
-- [Linux lab](docs/engineering-journal/linux-lab.md)
-- [Tool stream extension](docs/engineering-journal/cases/03-langchain4j-tool-stream-extension.md)
-- [Streaming state machine](docs/engineering-journal/cases/04-streaming-tool-state-machine.md)
+- [iframe 可视化编辑兜底](docs/engineering-journal/cases/01-iframe-visual-editor-fallback.md)
+- [个性化配置与 Memory 一致性](docs/engineering-journal/cases/02-personalization-memory-consistency.md)
+- [工具流状态机](docs/engineering-journal/cases/04-streaming-tool-state-machine.md)
+- [分层 Memory 生命周期](docs/engineering-journal/cases/05-layered-memory-lifecycle.md)
+- [代码制品 RAG](docs/engineering-journal/cases/06-rag-artifact-retrieval.md)
+- [Vue 构建验证](docs/engineering-journal/cases/07-vue-build-validation.md)
 
-## Current status
+## 当前进展
 
-主要生成、Memory、检索、构建验证和发布链路已经在仓库中实现。
+主要生成、Memory、检索、构建验证和发布链路已经实现。下一步会补充 SSE 和 Memory 自动化测试、线程池与连接池测试、Redis 故障测试、RAG 质量评测和可重复的并发压测脚本。
 
-下一步重点是补充：
-
-- SSE 和 Memory 场景的自动化测试；
-- 线程池、连接池和 Redis 故障测试；
-- RAG 检索质量评测；
-- 可重复的并发压测脚本。
-
-当前 README 不提供未经实测的吞吐量或生产可用性结论。
+README 不提供未经实测的吞吐量或生产可用性结论。
 
 ## License
 
