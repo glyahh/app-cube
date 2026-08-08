@@ -4,9 +4,8 @@ import cn.hutool.core.util.StrUtil;
 import com.dbts.glyahhaigeneratecode.ai.tool.BaseTool;
 import com.dbts.glyahhaigeneratecode.ai.tool.ToolManager;
 import com.dbts.glyahhaigeneratecode.config.OpenAiOutputGuardrailsConfig;
-import com.dbts.glyahhaigeneratecode.core.memory.ConversationMemoryInjectTexts;
-import com.dbts.glyahhaigeneratecode.core.memory.MemorySessionInjectSupport;
-import com.dbts.glyahhaigeneratecode.service.impl.CodeChunkRetrievalService;
+import com.dbts.glyahhaigeneratecode.core.memory.ChatMemoryMessageUpdater;
+import com.dbts.glyahhaigeneratecode.core.memory.MemoryRagInjectSupport;
 import com.dbts.glyahhaigeneratecode.exception.MyException;
 import com.dbts.glyahhaigeneratecode.guardrail.PromptSafetyInputGuardrail;
 import com.dbts.glyahhaigeneratecode.constant.ChatHistoryConstant;
@@ -28,7 +27,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Configuration;
 
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -36,13 +34,18 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.time.Duration;
 
 /**
- * ai服务创建工厂
+ * AI 代码生成服务工厂。
+ * <p>
+ * 负责选择首轮/后续轮工具集、恢复 ChatMemory、校验缓存绑定版本，并在模型调用前注入本轮 RAG 上下文。
+ * query 由调用方显式传入，工厂不保存待消费状态；同一 app 的调用并发边界由
+ * {@code AppGenerationCoordinator} 在上层门面统一保证。
+ * </p>
  */
 @Configuration
 @Slf4j
 public class aiCodeGeneratorServiceFactory {
 
-    // 这里的 AI 模型不是用于rounting的,所以注入openai的Bean
+    // 代码生成使用主对话模型，不复用 routing 模型。
     @Resource(name = "openAiChatModel")
     private ChatModel chatModel;
 
@@ -62,7 +65,10 @@ public class aiCodeGeneratorServiceFactory {
     private OpenAiOutputGuardrailsConfig outputGuardrailsConfig;
 
     @Resource
-    private CodeChunkRetrievalService codeChunkRetrievalService;
+    private MemoryRagInjectSupport memoryRagInjectSupport;
+
+    @Resource
+    private ChatMemoryMessageUpdater chatMemoryMessageUpdater;
 
     /**
      * AI 服务实例缓存
@@ -82,34 +88,52 @@ public class aiCodeGeneratorServiceFactory {
 
     /**
      * 已创建的 MessageWindowChatMemory 实例映射（appId → memory）。
-     * 用于会话级风格注入时能直接操作 MessageWindowChatMemory 的内部列表，
-     * 避免缓存的服务实例中内存列表与 ChatMemoryStore 不同步。
+     * 用于缓存命中时定位 service 当前绑定的 store-backed memory 视图，RAG 和风格更新均通过
+     * ChatMemoryStore 完整快照写回，禁止反射修改 LangChain4j 内部状态。
      */
     private final ConcurrentHashMap<Long, MessageWindowChatMemory> appMemoryMap = new ConcurrentHashMap<>();
 
     /** 每 app 最近一次注入的 style body；无变化时跳过清空重建 */
     private final ConcurrentHashMap<Long, String> appLastSessionStyle = new ConcurrentHashMap<>();
 
-    /** 每 app 待注入 RAG 检索的 user query；在 prepareChatMemory / cache hit 时 flush */
-    private final ConcurrentHashMap<Long, PendingRagQuery> appPendingRagQuery = new ConcurrentHashMap<>();
-
-    /** Cached service -> memory version observed when binding its MessageWindowChatMemory. */
+    /** service 缓存键到绑定时可见记忆版本；版本变化时必须重建，避免复用旧上下文。 */
     private final ConcurrentHashMap<String, String> serviceBoundMemoryVersion = new ConcurrentHashMap<>();
 
 
     /**
-     * 获取 ai 代码生成器服务（支持首轮工具白名单控制）
-     * <p>缓存命中时仅刷新 Redis TTL 并在窗口空时失效重建，不做在线压缩。</p>
+     * 获取 AI 代码生成服务的兼容入口。
+     * <p>旧调用方不提供 query，因此不会执行本轮 RAG 注入；新业务代码应使用四参数入口。</p>
      */
     public aiCodeGeneratorService getAiCodeGeneratorService(Long appId, CodeGenTypeEnum codeGenTypeEnum, boolean firstRound) {
-        //
+        return getAiCodeGeneratorService(appId, codeGenTypeEnum, firstRound, null);
+    }
+
+    /**
+     * 获取 AI 服务，并在模型调用前把本轮原始 query 注入 ChatMemory。
+     * <p>
+     * 缓存命中和 service 重建必须执行相同的 RAG 注入语义。Redis 窗口为空或记忆版本变化时，
+     * 当前缓存实例会失效并从 MySQL 真相源恢复，避免 silent stale。
+     * </p>
+     *
+     * @param appId          应用标识
+     * @param codeGenTypeEnum 生成类型及工具配置依据
+     * @param firstRound     是否使用首轮最小工具集
+     * @param ragQuery       本轮原始用户 query；为空时跳过 RAG 注入
+     * @return 绑定当前 ChatMemory 的 AI service
+     */
+    public aiCodeGeneratorService getAiCodeGeneratorService(Long appId,
+                                                             CodeGenTypeEnum codeGenTypeEnum,
+                                                             boolean firstRound,
+                                                             String ragQuery) {
+        // 1. 首轮 service 为一次性实例，防止最小工具集污染后续轮缓存。
         if (firstRound) {
-            aiCodeGeneratorService ephemeral = buildEphemeralBootstrapService(appId, codeGenTypeEnum);
+            aiCodeGeneratorService ephemeral = buildEphemeralBootstrapService(appId, codeGenTypeEnum, ragQuery);
             if (ephemeral != null) {
                 return ephemeral;
             }
         }
 
+        // 2. 缓存实例只有在 Redis 窗口和记忆版本均有效时才能复用。
         String cacheKey = buildServiceCacheKey(appId, codeGenTypeEnum);
         aiCodeGeneratorService service = serviceCache.getIfPresent(cacheKey);
 
@@ -137,14 +161,15 @@ public class aiCodeGeneratorServiceFactory {
                     // 这里先比对 version，命中才复用，避免 silent stale；不一致就落到下方 build 链路重建。
                 } else {
                     chatHistoryService.refreshAiChatMemoryTtl(appId);
-                    flushPendingRagInject(appId);
+                    injectRagForQuery(appId, ragQuery, codeGenTypeEnum);
                     log.info("从缓存中获取 AI 服务实例，appId: {}", appId);
                     return service;
                 }
             }
         }
 
-        service = buildCachedFullToolService(appId, codeGenTypeEnum);
+        // 3. 缓存不可用时恢复记忆、注入当前 query，再创建完整工具集 service。
+        service = buildCachedFullToolService(appId, codeGenTypeEnum, ragQuery);
         log.info("创建一个新的 AI 服务实例（full-tool），appId: {}, service: {}", appId, service);
         putCachedService(cacheKey, service);
         bindMemoryVersion(cacheKey, appId);
@@ -155,8 +180,9 @@ public class aiCodeGeneratorServiceFactory {
     /**
      * 首轮临时 service：writeFile-only（VUE）或无工具（HTML/MULTI），禁止写入 Caffeine。
      */
-    private aiCodeGeneratorService buildEphemeralBootstrapService(Long appId, CodeGenTypeEnum codeGenTypeEnum) {
-        MessageWindowChatMemory memory = prepareChatMemory(appId, codeGenTypeEnum);
+    private aiCodeGeneratorService buildEphemeralBootstrapService(
+            Long appId, CodeGenTypeEnum codeGenTypeEnum, String ragQuery) {
+        MessageWindowChatMemory memory = prepareChatMemory(appId, codeGenTypeEnum, ragQuery);
         return switch (codeGenTypeEnum) {
             case VUE -> {
                 log.info("首轮 VUE 对话，创建 writeFile-only AI 服务，appId={}", appId);
@@ -173,8 +199,9 @@ public class aiCodeGeneratorServiceFactory {
     /**
      * 后续轮次 service：VUE 全工具集 / HTML/MULTI 编辑工具集，可写入 Caffeine。
      */
-    private aiCodeGeneratorService buildCachedFullToolService(Long appId, CodeGenTypeEnum codeGenTypeEnum) {
-        MessageWindowChatMemory memory = prepareChatMemory(appId, codeGenTypeEnum);
+    private aiCodeGeneratorService buildCachedFullToolService(
+            Long appId, CodeGenTypeEnum codeGenTypeEnum, String ragQuery) {
+        MessageWindowChatMemory memory = prepareChatMemory(appId, codeGenTypeEnum, ragQuery);
         return switch (codeGenTypeEnum) {
             case VUE -> buildVueService(memory, toolManager.getAllTools());
             case HTML, MULTI_FILE -> buildHtmlMultiService(memory, toolManager.getHtmlMultiEditTools());
@@ -183,19 +210,24 @@ public class aiCodeGeneratorServiceFactory {
     }
 
     /**
-     * 预加载 ChatMemory 并注册到 appMemoryMap（Mysql → Redis）。
+     * 构建 store-backed ChatMemory，并按“持久化记忆、会话风格、本轮 RAG”的顺序恢复上下文。
+     * <p>任一恢复步骤失败都终止 service 创建，避免模型在不完整或不可判定的记忆状态下继续生成。</p>
      */
-    private MessageWindowChatMemory prepareChatMemory(Long appId, CodeGenTypeEnum codeGenTypeEnum) {
+    private MessageWindowChatMemory prepareChatMemory(
+            Long appId, CodeGenTypeEnum codeGenTypeEnum, String ragQuery) {
+        // 1. memory 本身不维护可反射替换的消息列表，所有消息通过 store 读取。
         MessageWindowChatMemory messageWindowChatMemory = MessageWindowChatMemory
                 .builder()
                 .id(appId)
                 .chatMemoryStore(chatMemoryStore)
                 .maxMessages(ChatHistoryConstant.CHAT_MEMORY_MAX_MESSAGES)
                 .build();
+        // 2. 注册当前视图，供缓存命中后的风格和 RAG 快照更新定位。
         if (appId != null && appId > 0) {
             appMemoryMap.put(appId, messageWindowChatMemory);
         }
 
+        // 3. 先恢复稳定会话记忆，再叠加本轮瞬时上下文。
         if (appId != null && appId > 0) {
             try {
                 int loadedCount = chatHistoryService.loadConversationMemoryStateAndInject(
@@ -204,7 +236,7 @@ public class aiCodeGeneratorServiceFactory {
                 if (styleBody != null) {
                     applySessionStyleToMemory(appId, messageWindowChatMemory, styleBody);
                 }
-                flushPendingRagInject(appId);
+                memoryRagInjectSupport.injectForQuery(appId, ragQuery, codeGenTypeEnum, messageWindowChatMemory);
                 log.info("为应用预加载历史对话到内存，appId={}, loadedCount={}", appId, loadedCount);
             } catch (Exception e) {
                 log.error("预加载历史对话到内存失败，appId={}", appId, e);
@@ -293,126 +325,12 @@ public class aiCodeGeneratorServiceFactory {
         }
     }
 
-    /**
-     * 缓存本轮 RAG 检索 query，待 {@link #flushPendingRagInject} 在 memory 就绪后注入。
-     */
-    public void stageRagQuery(Long appId, String userMessage, CodeGenTypeEnum codeGenType) {
-        if (appId == null || appId <= 0 || StrUtil.isBlank(userMessage) || codeGenType == null) {
-            return;
-        }
-        appPendingRagQuery.put(appId, new PendingRagQuery(userMessage, codeGenType));
-    }
-
-    /**
-     * 核心: 将 chunk 注入 memory 中
-     * 消费 pending query 并注入 {@code [memory_inject]}（memory 已就绪时调用）。
-     */
-    void flushPendingRagInject(Long appId) {
+    private void injectRagForQuery(Long appId, String ragQuery, CodeGenTypeEnum codeGenType) {
         if (appId == null || appId <= 0) {
             return;
         }
-        PendingRagQuery pending = appPendingRagQuery.remove(appId);
-        if (pending == null || StrUtil.isBlank(pending.userMessage())) {
-            return;
-        }
-        
-        // 确保有可以注入的容器 (memory) 
         MessageWindowChatMemory memory = appMemoryMap.get(appId);
-        if (memory == null) {
-            log.debug("memory 实例尚未创建，跳过 RAG code chunks 注入，appId={}", appId);
-            return;
-        }
-        // ES 检索合适的 chunk 并注入
-        applyRagInjectToMemory(appId, memory, pending);
-    }
-
-    private void applyRagInjectToMemory(
-            Long appId, MessageWindowChatMemory memory, PendingRagQuery pending) {
-        try {
-            // 核心 !!
-            // 1. 检索 Top-K, 拿到命中的chunk
-            List<CodeChunkRetrievalService.CodeChunkHit> codeChunkHits = codeChunkRetrievalService.searchTopK(
-                    appId, pending.userMessage(), pending.codeGenType());
-            if (codeChunkHits == null || codeChunkHits.isEmpty()) {
-                // 无命中时移除旧 [memory_inject]（如果有的话）
-                removeOldInjectIfPresent(appId, memory);
-                return;
-            }
-            // 2. 格式化
-            String injectText = codeChunkRetrievalService.formatAsInject(codeChunkHits);
-            if (injectText == null || StrUtil.isBlank(injectText)) {
-                // 格式化结果为空时移除旧 [memory_inject]
-                removeOldInjectIfPresent(appId, memory);
-                return;
-            }
-
-            // 3. 读写 ChatMemoryStore，替换或追加 [memory_inject]
-            List<ChatMessage> msgs;
-            try {
-                msgs = chatMemoryStore.getMessages(appId);
-            } catch (Exception e) {
-                log.warn("读取 ChatMemoryStore 失败，跳过 RAG 注入，appId={}", appId, e);
-                return;
-            }
-            if (msgs == null) msgs = new ArrayList<>();
-            else msgs = new ArrayList<>(msgs);
-
-            // 移除旧 [memory_inject]
-            msgs.removeIf(msg -> msg instanceof SystemMessage sm
-                    && sm.text() != null && sm.text().startsWith(ConversationMemoryInjectTexts.INJECT_TAG));
-
-            // 找插入位置：在 [memory_file_note] 之后、第一个非 SystemMessage 之前
-            int insertPos = findInjectInsertPosition(msgs);
-            msgs.add(insertPos, SystemMessage.from(injectText));
-
-            // 4. 同步写回 store 与 Java 实例
-            replaceMemoryMessages(memory, appId, msgs);
-            log.debug("RAG code chunks 注入完成，appId={}, hits={}", appId, codeChunkHits.size());
-        } catch (Exception e) {
-            log.warn("RAG code chunks 注入失败，已降级，appId={}", appId, e);
-        }
-    }
-
-    record PendingRagQuery(String userMessage, CodeGenTypeEnum codeGenType) {
-    }
-
-    /**
-     * 移除 ChatMemory 中已有的 [memory_inject]（无命中时清理用）。
-     */
-    private void removeOldInjectIfPresent(Long appId, MessageWindowChatMemory memory) {
-        try {
-            List<ChatMessage> msgs = chatMemoryStore.getMessages(appId);
-            if (msgs == null || msgs.isEmpty()) return;
-            msgs = new ArrayList<>(msgs);
-            // 如果有旧 [memory_inject]被移除, 说明这次是更新
-            boolean changed = msgs.removeIf(msg -> msg instanceof SystemMessage sm
-                    && sm.text() != null && sm.text().startsWith(ConversationMemoryInjectTexts.INJECT_TAG));
-            if (changed) {
-                replaceMemoryMessages(memory, appId, msgs);
-            }
-        } catch (Exception e) {
-            log.debug("清理旧 [memory_inject] 失败，appId={}", appId, e);
-        }
-    }
-
-    /**
-     * 替换 {@link MessageWindowChatMemory} 内部消息列表，避免 {@code memory.clear()}+{@code memory.add()} 循环产生的逐条 store 写竞态。
-     * <p>先持久化完整列表到 store，再通过反射替换内存列表，跳过 store 写入。反射失败时回退 clear+add 模式。</p>
-     */
-    private void replaceMemoryMessages(MessageWindowChatMemory memory, Long appId, List<ChatMessage> msgs) {
-        chatMemoryStore.updateMessages(appId, msgs);
-        try {
-            Field msgField = MessageWindowChatMemory.class.getDeclaredField("messages");
-            msgField.setAccessible(true);
-            // 把 memory 这个实例内部的 messages 字段，整表替换成 msgs 的副本
-            msgField.set(memory, new ArrayList<>(msgs));
-        } catch (Exception e) {
-            log.warn("内存消息列表直接替换失败，回退 clear+add 模式，appId={}", appId, e);
-            memory.clear();
-            for (ChatMessage msg : msgs) {
-                memory.add(msg);
-            }
-        }
+        memoryRagInjectSupport.injectForQuery(appId, ragQuery, codeGenType, memory);
     }
 
     /**
@@ -421,25 +339,7 @@ public class aiCodeGeneratorServiceFactory {
      * 若没有上述锚点则在其他 memory_* tag 之后。
      */
     static int findInjectInsertPosition(List<ChatMessage> msgs) {
-        int lastMemoryTag = -1;
-        for (int i = 0; i < msgs.size(); i++) {
-            if (msgs.get(i) instanceof SystemMessage sm) {
-                if (sm.text() != null) {
-                    String text = sm.text();
-                    if (text.startsWith("[memory_policy]") || text.startsWith("[memory_index]")
-                            || text.startsWith("[memory_file_note]")
-                            || text.startsWith(MemorySessionInjectSupport.SESSION_PREFIX)
-                            || text.startsWith(ConversationMemoryInjectTexts.INJECT_TAG)) {
-                        lastMemoryTag = i;
-                    }
-                }
-                // null-text SystemMessage 不能判断 memory tag，但继续往后扫
-            } else {
-                // 遇到第一个非 SystemMessage（即用户消息），返回之前的最后一个 memory tag 后面
-                break;
-            }
-        }
-        return lastMemoryTag + 1;
+        return MemoryRagInjectSupport.findInjectInsertPosition(msgs);
     }
 
     /**
@@ -501,7 +401,7 @@ public class aiCodeGeneratorServiceFactory {
             }
         }
 
-        replaceMemoryMessages(memory, appId, currentMsgs);
+        chatMemoryMessageUpdater.update(memory, appId, currentMsgs);
         log.debug("会话级风格已应用，appId={}, hasStyle={}", appId, styleBody != null);
     }
 

@@ -10,6 +10,8 @@ import com.dbts.glyahhaigeneratecode.constant.AppConstant;
 import com.dbts.glyahhaigeneratecode.core.Builder.vueProjectBuilder;
 import com.dbts.glyahhaigeneratecode.core.context.HtmlMultiFileEditContextBuilder;
 import com.dbts.glyahhaigeneratecode.core.context.VueEditContextBuilder;
+import com.dbts.glyahhaigeneratecode.core.memory.AppGenerationCoordinator;
+import com.dbts.glyahhaigeneratecode.core.memory.MemoryMessageXmlSupport;
 import com.dbts.glyahhaigeneratecode.core.parser.CodeParserExecutor;
 import com.dbts.glyahhaigeneratecode.core.saver.CodeFileSaverExecutor;
 import com.dbts.glyahhaigeneratecode.core.support.HtmlMultiFileTokenStreamAdapter;
@@ -28,7 +30,11 @@ import reactor.core.publisher.Flux;
 import java.io.File;
 
 /**
- * AI 代码生成门面，统一串起生成、流式适配、解析和保存。
+ * AI 代码生成门面，统一编排 service 获取、模型调用、流式适配、解析和制品落盘。
+ * <p>
+ * 同一 app 的同步与流式入口均通过 {@link AppGenerationCoordinator} 进入同一互斥域，确保共享
+ * ChatMemory、RAG 注入和工程目录不会被并发轮次交叉修改。
+ * </p>
  */
 @Service
 @Slf4j
@@ -52,11 +58,15 @@ public class AiCodeGeneratorFacade {
     @Resource
     private ChatHistoryService chatHistoryService;
 
+    @Resource
+    private AppGenerationCoordinator appGenerationCoordinator;
+
     private static final CodeFileSaverExecutor codeFileSaverExecutor = new CodeFileSaverExecutor();
     private static final CodeParserExecutor codeParserExecutor = new CodeParserExecutor();
 
     /**
      * 同步生成 HTML 或多文件代码并保存到磁盘（非流式入口）
+     * <p>应用锁覆盖 service 创建、同步模型调用和最终落盘，与流式入口互斥。</p>
      *
      * @param userMessage       用户提示词
      * @param codeGenTypeEnum   仅支持 HTML、MULTI_FILE
@@ -66,10 +76,11 @@ public class AiCodeGeneratorFacade {
     public File generateAndSaveCode(String userMessage, CodeGenTypeEnum codeGenTypeEnum, Long appId) {
         validateCodeGenType(codeGenTypeEnum);
 
-        return switch (codeGenTypeEnum) {
-            case HTML, MULTI_FILE -> generateAndSaveHtmlMultiFileCode(userMessage, appId, codeGenTypeEnum);
-            default -> throw new MyException(ErrorCode.SYSTEM_ERROR, "不支持的生成类型: " + codeGenTypeEnum.getValue());
-        };
+        return appGenerationCoordinator.serializeBlocking(appId, () -> switch (codeGenTypeEnum) {
+                case HTML, MULTI_FILE -> generateAndSaveHtmlMultiFileCode(userMessage, appId, codeGenTypeEnum);
+                default -> throw new MyException(
+                        ErrorCode.SYSTEM_ERROR, "不支持的生成类型: " + codeGenTypeEnum.getValue());
+            });
     }
 
     /**
@@ -85,7 +96,8 @@ public class AiCodeGeneratorFacade {
         boolean editIntent = isHtmlMultiEditIntent(codeGenType, userMessage, appId);
         boolean htmlMultiToollessBootstrap = firstRound && !editIntent;
         aiCodeGeneratorService svc = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(
-                appId, codeGenType, htmlMultiToollessBootstrap);
+                appId, codeGenType, htmlMultiToollessBootstrap,
+                MemoryMessageXmlSupport.extractUserOriginal(userMessage));
         if (editIntent) {
             TokenStream tokenStream = resolveHtmlMultiFileSyncTokenStream(svc, codeGenType, appId, userMessage);
             HtmlMultiFileTokenStreamAdapter.adapt(
@@ -114,7 +126,10 @@ public class AiCodeGeneratorFacade {
 
     /**
      * 流式生成入口，可指定是否首轮
-     * <p>缓存命中时仅刷新 Redis TTL 并在窗口空时失效重建，不做在线压缩。</p>
+     * <p>
+     * 锁在订阅时获取，并持续到下游完成、异常或取消。这样不仅保护 service 获取，也保护模型流和
+     * 工具写盘的完整生命周期。
+     * </p>
      *
      * @param userMessage     用户提示词
      * @param codeGenTypeEnum 生成类型
@@ -125,13 +140,17 @@ public class AiCodeGeneratorFacade {
     public Flux<String> generateAndSaveCodeStream(String userMessage, CodeGenTypeEnum codeGenTypeEnum, Long appId, boolean firstRound) {
         validateCodeGenType(codeGenTypeEnum);
 
-        clearModifyFileDedup();
-
-        return switch (codeGenTypeEnum) {
-            case HTML, MULTI_FILE -> generateHtmlMultiFileCodeStream(codeGenTypeEnum, userMessage, appId, firstRound);
-            case VUE -> generateAndSaveVueCodeStream(userMessage, appId, firstRound);
-            default -> throw new MyException(ErrorCode.SYSTEM_ERROR, "不支持的生成类型: " + codeGenTypeEnum.getValue());
-        };
+        return appGenerationCoordinator.serialize(appId, () -> {
+            // action 在应用锁内执行，以下操作不得提前到 serialize 外部。
+            clearModifyFileDedup();
+            return switch (codeGenTypeEnum) {
+                case HTML, MULTI_FILE ->
+                        generateHtmlMultiFileCodeStream(codeGenTypeEnum, userMessage, appId, firstRound);
+                case VUE -> generateAndSaveVueCodeStream(userMessage, appId, firstRound);
+                default -> Flux.error(new MyException(
+                        ErrorCode.SYSTEM_ERROR, "不支持的生成类型: " + codeGenTypeEnum.getValue()));
+            };
+        });
     }
 
     /**
@@ -209,7 +228,9 @@ public class AiCodeGeneratorFacade {
         boolean editIntent = isHtmlMultiEditIntent(codeGenType, userMessage, appId);
         boolean htmlMultiToollessBootstrap = firstRound && !editIntent;
         aiCodeGeneratorService aiCodeGeneratorService =
-                aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId, codeGenType, htmlMultiToollessBootstrap);
+                aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(
+                        appId, codeGenType, htmlMultiToollessBootstrap,
+                        MemoryMessageXmlSupport.extractUserOriginal(userMessage));
         TokenStream tokenStream = resolveHtmlMultiFileStreamTokenStream(
                 aiCodeGeneratorService, codeGenType, appId, userMessage, editIntent);
         boolean persistOnComplete = !editIntent;
@@ -267,7 +288,8 @@ public class AiCodeGeneratorFacade {
                 : userMessage;
         aiCodeGeneratorService aiCodeGeneratorService =
                 aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(
-                        appId, CodeGenTypeEnum.VUE, firstRound && !editIntent);
+                        appId, CodeGenTypeEnum.VUE, firstRound && !editIntent,
+                        MemoryMessageXmlSupport.extractUserOriginal(userMessage));
         TokenStream tokenStream = editIntent
                 ? aiCodeGeneratorService.modifyCodeVueFileStream(appId, enhancedMessage)
                 : aiCodeGeneratorService.generateCodeVueFileStream(appId, enhancedMessage);

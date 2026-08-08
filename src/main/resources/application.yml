@@ -68,7 +68,7 @@ conversation:
 rag:
   elasticsearch:
     # ES 地址，逗号分隔
-    uris: ${RAG_ELASTICSEARCH_URIS:http://localhost:9201}
+    uris: ${RAG_ELASTICSEARCH_URIS:http://localhost:9200}
     # 检索索引名
     index-name: code_chunks_v4
     # 连接超时毫秒

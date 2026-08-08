@@ -4,6 +4,11 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
+import com.dbts.glyahhaigeneratecode.core.rag.embedding.EmbeddingClient;
+import com.dbts.glyahhaigeneratecode.core.rag.embedding.OpenAiCompatibleEmbeddingClient;
+import com.dbts.glyahhaigeneratecode.core.rag.file.CodeChunkDocumentAssembler;
+import com.dbts.glyahhaigeneratecode.core.rag.file.CodeLanguageDetector;
+import com.dbts.glyahhaigeneratecode.core.rag.file.RagSourceFileReader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -79,19 +84,27 @@ public class RagConfiguration {
         return new ElasticsearchClient(transport);
     }
 
-    /** Embedding 服务 */
+    /** OpenAI 兼容 Embedding 客户端。 */
     @Bean
-    public EmbeddingService embeddingService(RestTemplate ragRestTemplate, ObjectMapper objectMapper) {
-        return new EmbeddingService(
+    public EmbeddingClient embeddingClient(RestTemplate ragRestTemplate, ObjectMapper objectMapper) {
+        return new OpenAiCompatibleEmbeddingClient(
                 properties.getEmbedding().getBaseUrl(),
                 properties.getEmbedding().getApiKey(),
                 properties.getEmbedding().getModelName(),
                 properties.getEmbedding().getDimension(),
+                ragRestTemplate,
+                objectMapper
+        );
+    }
+
+    /** Embedding 应用服务。 */
+    @Bean
+    public EmbeddingService embeddingService(EmbeddingClient embeddingClient) {
+        return new EmbeddingService(
                 properties.getEmbedding().getBatchSize(),
                 properties.getEmbedding().getBatchMaxRetries(),
                 properties.getEmbedding().getRetryBaseDelayMs(),
-                ragRestTemplate,
-                objectMapper
+                embeddingClient
         );
     }
 
@@ -103,6 +116,26 @@ public class RagConfiguration {
                 properties.getChunk().getOverlapLines(),
                 properties.getChunk().getMaxFileLines()
         );
+    }
+
+    /** RAG 源文件读取器。 */
+    @Bean
+    public RagSourceFileReader ragSourceFileReader() {
+        return new RagSourceFileReader();
+    }
+
+    /** 代码语言检测器。 */
+    @Bean
+    public CodeLanguageDetector codeLanguageDetector() {
+        return new CodeLanguageDetector();
+    }
+
+    /** 代码块文档装配器。 */
+    @Bean
+    public CodeChunkDocumentAssembler codeChunkDocumentAssembler(
+            CodeChunker codeChunker,
+            CodeLanguageDetector codeLanguageDetector) {
+        return new CodeChunkDocumentAssembler(codeChunker, codeLanguageDetector);
     }
 
 }

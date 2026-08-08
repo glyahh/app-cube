@@ -4,6 +4,8 @@ import cn.hutool.json.JSONObject;
 import com.dbts.glyahhaigeneratecode.ai.tool.BaseTool;
 import com.dbts.glyahhaigeneratecode.ai.tool.ToolManager;
 import com.dbts.glyahhaigeneratecode.config.OpenAiOutputGuardrailsConfig;
+import com.dbts.glyahhaigeneratecode.core.memory.ChatMemoryMessageUpdater;
+import com.dbts.glyahhaigeneratecode.core.memory.MemoryRagInjectSupport;
 import com.dbts.glyahhaigeneratecode.model.enums.CodeGenTypeEnum;
 import com.dbts.glyahhaigeneratecode.service.ChatHistoryService;
 import dev.langchain4j.agent.tool.P;
@@ -57,6 +59,10 @@ class AiCodeGeneratorServiceFactoryCacheTest {
     private OpenAiOutputGuardrailsConfig outputGuardrailsConfig;
     @Mock
     private StreamingChatModel streamingChatModel;
+    @Mock
+    private MemoryRagInjectSupport memoryRagInjectSupport;
+    @Mock
+    private ChatMemoryMessageUpdater chatMemoryMessageUpdater;
 
     private aiCodeGeneratorServiceFactory factory;
 
@@ -69,6 +75,8 @@ class AiCodeGeneratorServiceFactoryCacheTest {
         ReflectionTestUtils.setField(factory, "toolManager", toolManager);
         ReflectionTestUtils.setField(factory, "applicationContext", applicationContext);
         ReflectionTestUtils.setField(factory, "outputGuardrailsConfig", outputGuardrailsConfig);
+        ReflectionTestUtils.setField(factory, "memoryRagInjectSupport", memoryRagInjectSupport);
+        ReflectionTestUtils.setField(factory, "chatMemoryMessageUpdater", chatMemoryMessageUpdater);
 
         lenient().when(chatMemoryStore.getMessages(anyLong()))
                 .thenReturn(List.of(UserMessage.from("cached")));

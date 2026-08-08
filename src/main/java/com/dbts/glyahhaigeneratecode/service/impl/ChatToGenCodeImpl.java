@@ -5,7 +5,6 @@ import com.dbts.glyahhaigeneratecode.core.AiCodeGeneratorFacade;
 import com.dbts.glyahhaigeneratecode.core.WorkflowCodeGeneratorFacade;
 import com.dbts.glyahhaigeneratecode.core.handler.StreamHandlerExecutor;
 import com.dbts.glyahhaigeneratecode.core.memory.MemoryMessageXmlSupport;
-import com.dbts.glyahhaigeneratecode.core.memory.MemoryRagInjectSupport;
 import com.dbts.glyahhaigeneratecode.core.memory.MemorySessionInjectSupport;
 import com.dbts.glyahhaigeneratecode.exception.ErrorCode;
 import com.dbts.glyahhaigeneratecode.monitor.MonitorContext;
@@ -62,7 +61,6 @@ public class ChatToGenCodeImpl implements ChatToGenCode {
     private final LoopInjectService loopInjectService;
 
     private final MemorySessionInjectSupport memorySessionInjectSupport;
-    private final MemoryRagInjectSupport memoryRagInjectSupport;
     /**
      * 统一入口：基于应用配置和用户输入触发代码生成（流式）
      *
@@ -119,11 +117,8 @@ public class ChatToGenCodeImpl implements ChatToGenCode {
             lock.unlock();
         }
 
-        // 5.1 每次读取最新的两种style并注入
+        // 5.1 每轮读取最新风格；RAG query 由生成门面从 user_original 中按调用显式传递。
         memorySessionInjectSupport.injectOrUpdateSessionStyle(appId, user.getId());
-        // 5.2 RAG 工程记忆检索：缓存本轮 query，待 memory 就绪后注入 [memory_inject]
-        memoryRagInjectSupport.stageRagQuery(appId, message, codeGenTypeEnum);
-
         // 6. 包裹用户原话 + 注入 Loop skill
         String enhancedMessage = MemoryMessageXmlSupport.wrapUserOriginal(message);
         String beforeLoop = enhancedMessage;
@@ -210,10 +205,8 @@ public class ChatToGenCodeImpl implements ChatToGenCode {
             lock.unlock();
         }
 
-        // 风格 SystemMessage 注入
+        // 风格是稳定会话配置；RAG 不在入口暂存，workflow 到达生成节点后按本轮 query 即时注入。
         memorySessionInjectSupport.injectOrUpdateSessionStyle(appId, user.getId());
-        // RAG 工程记忆检索
-        memoryRagInjectSupport.stageRagQuery(appId, message, codeGenTypeEnum);
         // 用户原话包裹（workflow 无 loopId）
         String enhancedMessage = MemoryMessageXmlSupport.wrapUserOriginal(message);
         MonitorContext monitorContext = MonitorContext.builder()
