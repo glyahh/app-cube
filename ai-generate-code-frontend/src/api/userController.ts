@@ -290,7 +290,7 @@ interface UserPersonalizationUpdateRequest {
 
 /** 获取当前登录用户的个性化配置 GET /user/personalization */
 export function userPersonalizationGetUsingGet(options?: Record<string, any>) {
-  return request<UserPersonalizationVO>('/user/personalization', {
+  return request<API.BaseResponseUserPersonalizationVO>('/user/personalization', {
     method: 'GET',
     ...(options || {}),
   });
@@ -304,7 +304,7 @@ export function userPersonalizationPutUsingPut({
   body: UserPersonalizationUpdateRequest;
   options?: { [key: string]: unknown };
 }) {
-  return request<boolean>('/user/personalization', {
+  return request<API.BaseResponseBoolean>('/user/personalization', {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',

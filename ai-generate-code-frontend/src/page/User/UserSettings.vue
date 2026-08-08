@@ -130,10 +130,15 @@ const personalizationLoading = ref(false)
 async function loadPersonalization() {
   try {
     const res = await userPersonalizationGetUsingGet()
-    if (res?.data) {
-      personalizationForm.value = { appStyle: res.data.appStyle ?? '', answerStyle: res.data.answerStyle ?? '' }
+    if (res?.data?.data) {
+      personalizationForm.value = {
+        appStyle: res.data.data.appStyle ?? '',
+        answerStyle: res.data.data.answerStyle ?? '',
+      }
     }
-  } catch (e: any) { message.error('loading') }
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || e?.message || '加载个性化配置失败')
+  }
 }
 
 function customCount(val: string) {
@@ -145,9 +150,11 @@ async function handlePersonalizationSubmit() {
   personalizationLoading.value = true
   try {
     const res = await userPersonalizationPutUsingPut({ body: { appStyle: personalizationForm.value.appStyle, answerStyle: personalizationForm.value.answerStyle } })
-    if (res?.data === true) message.success('保存成功')
-    else message.error('内容不为空')
-  } catch (e: any) { message.error('内容不为空') }
+    if (res?.data?.data === true) message.success('保存成功')
+    else message.error(res?.data?.message || '保存失败')
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || e?.message || '保存失败')
+  }
   finally { personalizationLoading.value = false }
 }
 
@@ -251,6 +258,9 @@ async function loadMyHistory(force = false) {
 watch(
   () => activeMenu.value,
   (val) => {
+    if (val === 'personalization') {
+      void loadPersonalization()
+    }
     if (val === 'history') {
       void loadMyHistory(true)
     }
