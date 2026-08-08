@@ -20,6 +20,12 @@ router.beforeEach(async (to, from, next) => {
     firstFetchLoginUser = false
   }
 
+  // 登录页只作为认证入口，已有会话或登录成功后统一进入主入口页。
+  if (to.path === '/user/login' && loginUser?.id) {
+    next('/main_index')
+    return
+  }
+
   // 获取目标url路径
   const toUrl = to.fullPath
 

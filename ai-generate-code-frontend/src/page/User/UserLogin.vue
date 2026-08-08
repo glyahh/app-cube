@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { userLoginUsingPost, userRegisterUsingPost } from '@/api/userController'
 import { UserLoginStore } from '@/stores/UserLogin'
@@ -28,8 +28,8 @@ const registerForm = ref({
 })
 
 const router = useRouter()
-const route = useRoute()
 const userLoginStore = UserLoginStore()
+const POST_LOGIN_PATH = '/main_index'
 
 
 function toggle(mode: 'signin' | 'signup') {
@@ -66,11 +66,10 @@ async function handleLogin() {
       if (loginSuccessTimer) {
         window.clearTimeout(loginSuccessTimer)
       }
-      const redirect = (route.query.redirect as string) || '/'
       loginSuccessTimer = window.setTimeout(() => {
         showLoginSuccessModal.value = false
         loginSuccessTimer = undefined
-        router.push(redirect)
+        router.replace(POST_LOGIN_PATH)
       }, 2000)
     } else {
       // 后端返回了非 20000 状态：统一提示
@@ -133,26 +132,7 @@ async function handleRegister() {
 onMounted(() => {
   // userLogin存在并且id为真值
   if (!userLoginStore.userLogin?.id) return
-
-  const redirect = route.query.redirect as string
-  if (redirect) {
-    try {
-      const url = new URL(redirect, window.location.origin)
-      if (url.origin === window.location.origin) {
-        router.replace(url.pathname + url.search + url.hash)
-        return
-      }
-    } catch {
-      router.replace(redirect.startsWith('/') ? redirect : '/')
-      return
-    }
-  }
-
-  if (window.history.length > 1) {
-    router.back()
-  } else {
-    router.replace('/')
-  }
+  router.replace(POST_LOGIN_PATH)
 })
 </script>
 

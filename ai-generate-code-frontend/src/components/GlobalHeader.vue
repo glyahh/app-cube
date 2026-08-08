@@ -61,8 +61,7 @@ const isLoginPage = computed(() => route.path.startsWith('/user/login'))
 
 function handleAuthClick() {
   if (isLoginPage.value) {
-    const redirect = (route.query.redirect as string) || document.referrer || '/'
-    router.push(redirect)
+    router.push('/main_index')
   } else {
     router.push({
       path: '/user/login',
