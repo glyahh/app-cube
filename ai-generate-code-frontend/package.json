@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "run-p type-check \"build-only {@}\" --",
     "openapi2ts": "openapi",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:perf": "playwright test --config=playwright.config.ts",
     "preview": "vite preview",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
@@ -47,6 +50,10 @@
     "typescript": "~5.9.3",
     "vite": "^7.3.1",
     "vite-plugin-vue-devtools": "^8.0.5",
+    "@playwright/test": "^1.52.0",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^26.1.0",
+    "vitest": "^3.2.4",
     "vue-tsc": "^3.2.4"
   },
   "engines": {

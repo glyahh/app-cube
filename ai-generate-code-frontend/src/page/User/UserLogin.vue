@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { userLoginUsingPost, userRegisterUsingPost } from '@/api/userController'
 import { UserLoginStore } from '@/stores/UserLogin'
@@ -28,9 +28,22 @@ const registerForm = ref({
 })
 
 const router = useRouter()
+const route = useRoute()
 const userLoginStore = UserLoginStore()
 const POST_LOGIN_PATH = '/main_index'
 
+function resolvePostLoginPath(value: unknown): string {
+  const redirect = Array.isArray(value) ? value[0] : value
+  if (typeof redirect !== 'string' || !redirect.trim()) return POST_LOGIN_PATH
+
+  try {
+    const target = new URL(redirect, window.location.origin)
+    if (target.origin !== window.location.origin) return POST_LOGIN_PATH
+    return `${target.pathname}${target.search}${target.hash}`
+  } catch {
+    return POST_LOGIN_PATH
+  }
+}
 
 function toggle(mode: 'signin' | 'signup') {
   isSignIn.value = mode === 'signin'
@@ -60,6 +73,7 @@ async function handleLogin() {
 
     if (res.data.code === 20000 && res.data.data) {
       userLoginStore.setLoginUser(res.data.data)
+      const postLoginPath = resolvePostLoginPath(route.query.redirect)
 
       // 展示登录成功弹窗（毛玻璃、半透明、2s 后自动关闭并跳转）
       showLoginSuccessModal.value = true
@@ -69,7 +83,7 @@ async function handleLogin() {
       loginSuccessTimer = window.setTimeout(() => {
         showLoginSuccessModal.value = false
         loginSuccessTimer = undefined
-        router.replace(POST_LOGIN_PATH)
+        router.replace(postLoginPath)
       }, 2000)
     } else {
       // 后端返回了非 20000 状态：统一提示
@@ -132,7 +146,7 @@ async function handleRegister() {
 onMounted(() => {
   // userLogin存在并且id为真值
   if (!userLoginStore.userLogin?.id) return
-  router.replace(POST_LOGIN_PATH)
+  router.replace(resolvePostLoginPath(route.query.redirect))
 })
 </script>
 

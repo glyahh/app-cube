@@ -15,9 +15,14 @@ router.beforeEach(async (to, from, next) => {
 
   // 确保页面刷新，首次加载时，能够等后端返回用户信息后再校验权限
   if (firstFetchLoginUser) {
-    await loginUserStore.fetchLoginUser()
-    loginUser = loginUserStore.userLogin
-    firstFetchLoginUser = false
+    try {
+      await loginUserStore.fetchLoginUser()
+    } catch (error) {
+      console.warn('[access] failed to fetch login user', error)
+    } finally {
+      loginUser = loginUserStore.userLogin
+      firstFetchLoginUser = false
+    }
   }
 
   // 登录页只作为认证入口，已有会话或登录成功后统一进入主入口页。

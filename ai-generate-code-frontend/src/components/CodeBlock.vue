@@ -1,199 +1,141 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch, type ComponentPublicInstance } from 'vue'
+import {
+  codeByteLength,
+  getCachedHighlight,
+  HIGHLIGHT_BYTE_THRESHOLD,
+  highlightCodeLines,
+  setCachedHighlight,
+  VIRTUAL_LINE_THRESHOLD,
+  type HighlightedCode,
+} from '@/utils/codeHighlighter'
 
 interface Props {
   code: string
   language?: string
-  isStreaming?: boolean // 是否正在流式输出中
-  /** 多文件工作流：对应后端 `### 文件名` 的展示名 */
+  isStreaming?: boolean
   fileLabel?: string
 }
 
-const props = withDefaults(defineProps<Props>(), {
-  language: 'text',
-  isStreaming: false,
-})
-
+const props = withDefaults(defineProps<Props>(), { language: 'text', isStreaming: false })
 const codeRef = ref<HTMLElement | null>(null)
+const highlighted = ref<HighlightedCode | null>(null)
+const workerBusy = ref(false)
+const viewportTop = ref(0)
+const viewportHeight = ref(0)
+const hadStreaming = ref(props.isStreaming)
+let worker: Worker | null = null
+let requestId = 0
+let resizeObserver: ResizeObserver | null = null
 
-function decodeHtmlEntitiesOnce(text: string): string {
-  // decode &amp; first so &amp;lt; becomes &lt;, then decode angle quotes, etc.
-  return text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-}
-
-function maybeDecodePreEscapedHtml(raw: string, language: string): string {
-  const lang = (language ?? 'text').toLowerCase()
-  if (!(lang === 'html' || lang === 'xml' || lang === 'vue')) return raw
-
-  // Heuristic: if it contains HTML entities but lacks real angle brackets,
-  // it's likely pre-escaped upstream; decode defensively.
-  const hasEntities = /&(lt|gt|amp|quot|#39);/.test(raw)
-  const hasAngle = /[<>]/.test(raw)
-  if (!hasEntities || hasAngle) return raw
-
-  let out = raw
-  for (let i = 0; i < 2; i++) {
-    const decoded = decodeHtmlEntitiesOnce(out)
-    if (decoded === out) break
-    out = decoded
-  }
-  return out
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
-
-function withStashedTokens(
-  source: string,
-  builders: Array<{ re: RegExp; className: string }>,
-): { text: string; restore: (s: string) => string } {
-  const stash: string[] = []
-  let result = source
-  builders.forEach(({ re, className }) => {
-    result = result.replace(re, (m) => {
-      const id = stash.length
-      stash.push(`<span class="${className}">${m}</span>`)
-      return `__TOK_${id}__`
-    })
-  })
-  return {
-    text: result,
-    restore: (s: string) => s.replace(/__TOK_(\d+)__/g, (_, i) => stash[Number(i)] ?? ''),
-  }
-}
-
-function withStashedHighlightedSpans(
-  source: string,
-): { text: string; restore: (s: string) => string } {
-  const stash: string[] = []
-  const text = source.replace(/<span class="code-[^"]+">[\s\S]*?<\/span>/g, (m) => {
-    const id = stash.length
-    stash.push(m)
-    return `__SPAN_${id}__`
-  })
-  return {
-    text,
-    restore: (s: string) => s.replace(/__SPAN_(\d+)__/g, (_, i) => stash[Number(i)] ?? ''),
-  }
-}
-
-function highlightJsLike(raw: string): string {
-  const escaped = escapeHtml(raw)
-  const { text, restore } = withStashedTokens(escaped, [
-    { re: /\/\*[\s\S]*?\*\//g, className: 'code-comment' },
-    { re: /\/\/[^\r\n]*/g, className: 'code-comment' },
-    { re: /(["'`])(?:\\.|(?!\1)[\s\S])*?\1/g, className: 'code-string' },
-  ])
-
-  const highlightedPrimary = text
-    .replace(
-      /\b(const|let|var|function|return|if|else|switch|case|break|default|for|while|do|continue|import|from|export|class|extends|new|this|async|await|try|catch|finally|throw|typeof|instanceof|in|of|static|get|set|super|null|undefined|true|false)\b/g,
-      '<span class="code-keyword">$1</span>',
-    )
-    .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="code-number">$1</span>')
-
-  // 先保护已插入的高亮 span，再做后续替换，避免把 <span ...> 标签本身二次改写。
-  const { text: safeText, restore: restoreSpans } = withStashedHighlightedSpans(highlightedPrimary)
-
-  const highlightedFinal = safeText
-    .replace(/([=+\-*/%<>!&|^~?:]+)/g, '<span class="code-operator">$1</span>')
-    .replace(/\b([A-Za-z_$][\w$]*)(?=\s*\()/g, '<span class="code-function">$1</span>')
-
-  return restore(restoreSpans(highlightedFinal))
-}
-
-function highlightCss(raw: string): string {
-  const escaped = escapeHtml(raw)
-  const { text, restore } = withStashedTokens(escaped, [
-    { re: /\/\*[\s\S]*?\*\//g, className: 'code-comment' },
-    { re: /(["'])(?:\\.|(?!\1)[\s\S])*?\1/g, className: 'code-string' },
-  ])
-
-  const highlighted = text
-    .replace(/([.#][\w-]+)/g, '<span class="code-selector">$1</span>')
-    .replace(/(@[\w-]+)/g, '<span class="code-keyword">$1</span>')
-    .replace(/([\w-]+)(\s*:)/g, '<span class="code-property">$1</span>$2')
-    .replace(/(:\s*)([^;}{\n]+)(;?)/g, '$1<span class="code-value">$2</span>$3')
-    .replace(/\b(\d+(?:\.\d+)?(?:px|em|rem|vh|vw|%|s|ms|deg)?)\b/g, '<span class="code-number">$1</span>')
-
-  return restore(highlighted)
-}
-
-function highlightHtml(raw: string): string {
-  const escaped = escapeHtml(raw)
-  return escaped
-    .replace(/&lt;!--[\s\S]*?--&gt;/g, '<span class="code-comment">$&</span>')
-    .replace(/(&lt;\/?)([\w-]+)([\s\S]*?)(&gt;)/g, (_, p1, p2, p3, p4) => {
-      const attrs = String(p3).replace(
-        /([:@\w-]+)(\s*=\s*)(["'])([\s\S]*?)(\3)/g,
-        '<span class="code-attr">$1</span>$2$3<span class="code-string">$4</span>$5',
-      )
-      return `${p1}<span class="code-tag">${p2}</span>${attrs}${p4}`
-    })
-}
-
-function highlightVue(raw: string): string {
-  const blockRe = /(<script\b[^>]*>)([\s\S]*?)(<\/script>)|(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi
-  let cursor = 0
-  let out = ''
-  let m: RegExpExecArray | null
-
-  while ((m = blockRe.exec(raw)) !== null) {
-    const idx = m.index
-    if (idx > cursor) out += highlightHtml(raw.slice(cursor, idx))
-    if (m[1] != null) {
-      out += highlightHtml(m[1])
-      out += highlightJsLike(m[2] ?? '')
-      out += highlightHtml(m[3] ?? '')
-    } else if (m[4] != null) {
-      out += highlightHtml(m[4])
-      out += highlightCss(m[5] ?? '')
-      out += highlightHtml(m[6] ?? '')
+const rawCode = computed(() => props.code ?? '')
+const byteLength = computed(() => codeByteLength(rawCode.value))
+const plainLines = ref<string[]>([])
+let plainSource = ''
+function updatePlainLines(code: string) {
+  if (code.startsWith(plainSource) && plainLines.value.length > 0) {
+    const suffix = code.slice(plainSource.length)
+    if (suffix) {
+      const additions = suffix.split(/\r?\n/)
+      const tail = plainLines.value[plainLines.value.length - 1] ?? ''
+      plainLines.value[plainLines.value.length - 1] = tail + (additions.shift() ?? '')
+      plainLines.value.push(...additions)
     }
-    cursor = idx + m[0].length
+  } else {
+    plainLines.value = code.split(/\r?\n/)
   }
-  if (cursor < raw.length) out += highlightHtml(raw.slice(cursor))
-  return out
+  plainSource = code
+}
+const lines = computed(() => (highlighted.value?.lines ?? plainLines.value))
+const virtualized = computed(() => byteLength.value > HIGHLIGHT_BYTE_THRESHOLD || lines.value.length > VIRTUAL_LINE_THRESHOLD)
+const lineHeight = 20.8
+const overscan = 30
+const firstLine = computed(() => Math.max(0, Math.floor(viewportTop.value / lineHeight) - overscan))
+const visibleCount = computed(() => Math.ceil((viewportHeight.value || 400) / lineHeight) + overscan * 2)
+const lastLine = computed(() => Math.min(lines.value.length, firstLine.value + visibleCount.value))
+const visibleLines = computed(() => lines.value.slice(firstLine.value, lastLine.value))
+const topSpacer = computed(() => `${firstLine.value * lineHeight}px`)
+const bottomSpacer = computed(() => `${Math.max(0, lines.value.length - lastLine.value) * lineHeight}px`)
+
+function ensureWorker() {
+  if (worker || typeof Worker === 'undefined') return worker
+  worker = new Worker(new URL('../workers/codeHighlight.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = (event: MessageEvent<HighlightedCode & { type: string; requestId: number }>) => {
+    if (event.data.requestId !== requestId) return
+    workerBusy.value = false
+    if (event.data.type === 'result') {
+      highlighted.value = { html: event.data.lines.join('\n'), lines: event.data.lines }
+      setCachedHighlight(rawCode.value, props.language, highlighted.value)
+      updateViewport()
+    }
+  }
+  worker.onerror = () => {
+    workerBusy.value = false
+    highlighted.value = null
+  }
+  return worker
 }
 
-const highlightedCode = computed(() => {
-  const raw = maybeDecodePreEscapedHtml(props.code ?? '', props.language ?? 'text')
-  const lang = (props.language ?? 'text').toLowerCase()
-  if (lang === 'vue') return highlightVue(raw)
-  if (lang === 'javascript' || lang === 'js' || lang === 'typescript' || lang === 'ts') return highlightJsLike(raw)
-  if (lang === 'css' || lang === 'scss' || lang === 'less') return highlightCss(raw)
-  if (lang === 'html' || lang === 'xml') return highlightHtml(raw)
-  return highlightJsLike(raw)
+function updateViewport() {
+  if (!codeRef.value) return
+  viewportTop.value = codeRef.value.scrollTop
+  viewportHeight.value = codeRef.value.clientHeight
+}
+
+function refreshHighlight() {
+  const code = rawCode.value
+  if (props.isStreaming) hadStreaming.value = true
+  updatePlainLines(code)
+  highlighted.value = null
+  if (props.isStreaming || !code) {
+    if (workerBusy.value && worker) worker.postMessage({ type: 'cancel', requestId })
+    requestId += 1
+    workerBusy.value = false
+    updateViewport()
+    return
+  }
+  const cached = getCachedHighlight(code, props.language)
+  if (cached) {
+    highlighted.value = cached
+    updateViewport()
+    return
+  }
+  if (codeByteLength(code) > HIGHLIGHT_BYTE_THRESHOLD) {
+    const current = ensureWorker()
+    if (!current) return
+    const id = ++requestId
+    workerBusy.value = true
+    current.postMessage({ type: 'highlight', requestId: id, code, language: props.language })
+    return
+  }
+  highlighted.value = highlightCodeLines(code, props.language)
+  setCachedHighlight(code, props.language, highlighted.value)
+  updateViewport()
+}
+
+watch(() => [props.code, props.language, props.isStreaming], refreshHighlight, { immediate: true })
+
+function copyCode() {
+  void navigator.clipboard?.writeText(rawCode.value)
+}
+
+function scrollToTop() { codeRef.value?.scrollTo({ top: 0, behavior: 'smooth' }) }
+function scrollToBottom() {
+  if (codeRef.value) codeRef.value.scrollTo({ top: codeRef.value.scrollHeight, behavior: 'smooth' })
+}
+
+onBeforeUnmount(() => {
+  if (worker) worker.terminate()
+  resizeObserver?.disconnect()
 })
 
-/**
- * 复制代码到剪贴板
- */
-async function copyCode() {
-  try {
-    await navigator.clipboard.writeText(props.code)
-  } catch {
-    // 剪贴板权限等由调用方处理
-  }
-}
-
-function scrollToTop() {
-  if (!codeRef.value) return
-  codeRef.value.scrollTo({ top: 0, behavior: 'smooth' })
-}
-
-function scrollToBottom() {
-  if (!codeRef.value) return
-  codeRef.value.scrollTo({ top: codeRef.value.scrollHeight, behavior: 'smooth' })
+function attachCodeRef(el: Element | ComponentPublicInstance | null) {
+  if (!(el instanceof HTMLElement)) return
+  codeRef.value = el
+  resizeObserver?.disconnect()
+  resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateViewport)
+  resizeObserver?.observe(el)
+  nextTick(updateViewport)
 }
 </script>
 
@@ -204,212 +146,38 @@ function scrollToBottom() {
         <span v-if="fileLabel" class="code-file-label">{{ fileLabel }}</span>
         <span class="code-language">{{ language || 'text' }}</span>
       </div>
-      <button class="copy-button" @click="copyCode" title="复制代码">
-        📋
-      </button>
+      <button class="copy-button" @click="copyCode" title="复制代码">📋</button>
     </div>
-    <pre ref="codeRef" class="code-block"><code v-html="highlightedCode"></code></pre>
-    <button class="scroll-button scroll-button-top" @click="scrollToTop" title="回到顶部">
-      ↑
-    </button>
-    <button class="scroll-button scroll-button-bottom" @click="scrollToBottom" title="跳到底部">
-      ↓
-    </button>
+    <pre
+      :ref="attachCodeRef"
+      class="code-block"
+      :class="{ 'code-block--stable-viewport': hadStreaming || virtualized }"
+      @scroll="updateViewport"
+    ><code v-if="virtualized" class="code-virtual"><span class="code-spacer" :style="{ height: topSpacer }" aria-hidden="true" /><span v-for="(line, index) in visibleLines" :key="firstLine + index" class="code-line"><span v-if="highlighted" v-html="line" /><template v-else>{{ line }}</template></span><span class="code-spacer" :style="{ height: bottomSpacer }" aria-hidden="true" /></code><code v-else-if="highlighted" v-html="highlighted.html" /><code v-else class="code-plain">{{ code }}</code></pre>
+    <button class="scroll-button scroll-button-top" @click="scrollToTop" title="回到顶部">↑</button>
+    <button class="scroll-button scroll-button-bottom" @click="scrollToBottom" title="跳到底部">↓</button>
+    <span v-if="workerBusy" class="highlight-status" aria-live="polite">Highlighting…</span>
   </div>
 </template>
 
 <style scoped>
-.code-block-container {
-  margin: 12px 0;
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--code-bg, #1e1e1e);
-  border: 1px solid var(--code-border, #3e3e3e);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  width: 100%;
-  max-width: 100%;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  position: relative;
-}
-
-.code-block-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: var(--code-header-bg, #2d2d2d);
-  border-bottom: 1px solid var(--code-border, #3e3e3e);
-}
-
-.code-block-header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.code-file-label {
-  font-size: 12px;
-  color: #c8c8c8;
-  font-weight: 600;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 42vw;
-}
-
-.code-language {
-  font-size: 12px;
-  color: #858585;
-  font-weight: 500;
-  text-transform: uppercase;
-}
-
-.copy-button {
-  background: transparent;
-  border: none;
-  color: #858585;
-  cursor: pointer;
-  font-size: 14px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.copy-button:hover {
-  background: #3e3e3e;
-  color: #fff;
-}
-
-.code-block {
-  margin: 0;
-  padding: 16px;
-  background: var(--code-bg, #1e1e1e);
-  color: var(--code-text, #d4d4d4);
-  font-family: var(--code-font-family, Consolas, Monaco, "Courier New", monospace);
-  font-size: var(--code-font-size, 13px);
-  line-height: 1.6;
-  white-space: pre;
-  word-wrap: normal;
-  overflow: auto;
-  max-height: 60vh;
-  /* 内嵌式、尽量淡的滚动条 */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
-}
-
-.code-block::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.code-block::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.code-block::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
-}
-
-.code-block::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
-}
-
-.code-block::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-.code-block code {
-  display: block;
-  width: 100%;
-  min-width: min-content;
-}
-
-.scroll-button {
-  position: absolute;
-  right: 6px;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  border: none;
-  background: rgba(15, 23, 42, 0.65);
-  color: #f9fafb;
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-  opacity: 0.0;
-  transform: translateY(0);
-  transition: opacity 0.18s ease, transform 0.18s ease, background 0.18s ease;
-}
-
-.scroll-button-top {
-  top: 10px;
-}
-
-.scroll-button-bottom {
-  bottom: 10px;
-}
-
-.code-block-container:hover .scroll-button {
-  opacity: 1;
-}
-
-.scroll-button:hover {
-  background: rgba(37, 99, 235, 0.9);
-}
-
-/* 语法高亮颜色 — 使用 CSS 变量支持主题切换 */
-:deep(.code-keyword) {
-  color: var(--code-keyword, #569cd6);
-  font-weight: 500;
-}
-
-:deep(.code-string) {
-  color: var(--code-string, #e6b450);
-}
-
-:deep(.code-comment) {
-  color: var(--code-comment, #7f8ea3);
-  font-style: italic;
-}
-
-:deep(.code-property) {
-  color: var(--code-property, #7dcfff);
-}
-
-:deep(.code-value) {
-  color: var(--code-value, #f9a8d4);
-}
-
-:deep(.code-selector) {
-  color: var(--code-selector, #8be9fd);
-}
-
-:deep(.code-tag) {
-  color: var(--code-tag, #ff7aa2);
-}
-
-:deep(.code-attr) {
-  color: var(--code-attr, #9ccfd8);
-}
-
-:deep(.code-number) {
-  color: var(--code-number, #c4b5fd);
-}
-
-:deep(.code-operator) {
-  color: var(--code-operator, #f38ba8);
-}
-
-:deep(.code-function) {
-  color: var(--code-function, #7ee787);
-}
-
+.code-block-container { margin: 12px 0; border-radius: 8px; overflow: hidden; background: var(--code-bg,#1e1e1e); border: 1px solid var(--code-border,#3e3e3e); width: 100%; max-width: 100%; display: flex; flex-direction: column; min-height: 0; position: relative; }
+.code-block-header { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:var(--code-header-bg,#2d2d2d); border-bottom:1px solid var(--code-border,#3e3e3e); }
+.code-block-header-left { display:flex; align-items:center; gap:10px; min-width:0; }
+.code-file-label { font-size:12px; color:#c8c8c8; font-weight:600; font-family:Consolas,Monaco,'Courier New',monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:42vw; }
+.code-language { font-size:12px; color:#858585; font-weight:500; text-transform:uppercase; }
+.copy-button { background:transparent; border:none; color:#858585; cursor:pointer; font-size:14px; padding:4px 8px; border-radius:4px; }
+.copy-button:hover { background:#3e3e3e; color:#fff; }
+.code-block { margin:0; padding:16px; background:var(--code-bg,#1e1e1e); color:var(--code-text,#d4d4d4); font-family:var(--code-font-family,Consolas,Monaco,'Courier New',monospace); font-size:var(--code-font-size,13px); line-height:1.6; white-space:pre; word-wrap:normal; overflow:auto; max-height:60vh; scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.2) transparent; scrollbar-gutter:stable both-edges; }
+.code-block--stable-viewport { block-size:clamp(220px,44dvh,480px); min-block-size:clamp(220px,44dvh,480px); max-block-size:clamp(220px,44dvh,480px); }
+.code-block code { display:block; width:100%; min-width:min-content; }
+.code-plain { contain: content; }
+.code-virtual { position:relative; min-height:100%; }
+.code-line, .code-spacer { display:block; height:20.8px; line-height:20.8px; }
+.code-spacer { pointer-events:none; }
+.scroll-button { position:absolute; right:6px; width:22px; height:22px; border-radius:999px; border:none; background:rgba(15,23,42,.65); color:#f9fafb; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .18s ease; }
+.scroll-button-top { top:48px; } .scroll-button-bottom { bottom:10px; }
+.code-block-container:hover .scroll-button { opacity:1; }
+.highlight-status { position:absolute; right:10px; bottom:8px; color:#858585; font-size:11px; }
+:deep(.code-keyword) { color:var(--code-keyword,#569cd6); font-weight:500; } :deep(.code-string) { color:var(--code-string,#e6b450); } :deep(.code-comment) { color:var(--code-comment,#7f8ea3); font-style:italic; } :deep(.code-property) { color:var(--code-property,#7dcfff); } :deep(.code-value) { color:var(--code-value,#f9a8d4); } :deep(.code-selector) { color:var(--code-selector,#8be9fd); } :deep(.code-tag) { color:var(--code-tag,#ff7aa2); } :deep(.code-attr) { color:var(--code-attr,#9ccfd8); } :deep(.code-number) { color:var(--code-number,#c4b5fd); } :deep(.code-operator) { color:var(--code-operator,#f38ba8); } :deep(.code-function) { color:var(--code-function,#7ee787); }
 </style>

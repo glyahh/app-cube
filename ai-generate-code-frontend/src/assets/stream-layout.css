@@ -1,0 +1,40 @@
+.stream-file-slot {
+  flex: 0 0 46px;
+  block-size: 46px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  contain: layout paint;
+}
+
+.stream-file-slot--empty {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.stream-file-slot > .generated-files-bar {
+  block-size: 46px;
+  min-block-size: 46px;
+  margin-bottom: 0;
+}
+
+.stream-workflow-viewport {
+  block-size: clamp(156px, 22dvh, 196px);
+  min-block-size: clamp(156px, 22dvh, 196px);
+  max-block-size: clamp(156px, 22dvh, 196px);
+  overflow: hidden;
+  contain: layout paint;
+}
+
+.stream-workflow-viewport > .workflow-steps-card {
+  block-size: 100%;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.stream-workflow-viewport .workflow-steps-list {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}

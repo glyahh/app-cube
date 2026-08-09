@@ -11,7 +11,7 @@
           <div v-for="loop in loopList" :key="loop.id" class="picker-item">
             <a-button
               size="small"
-              :type="selectedSingleId === loop.id ? 'primary' : 'default'"
+              :type="selectedSingleId === String(loop.id) ? 'primary' : 'default'"
               class="picker-radio-btn"
               @click="onSingleSelect(loop)"
             >
@@ -76,6 +76,7 @@ const loopList = ref<any[]>([])
 const selectedIds = ref<string[]>([])
 const selectedSingleId = ref<string>('')
 const selectedSingleLoop = ref<SelectedLoopInfo | null>(null)
+let selectionRequestId = 0
 
 const emit = defineEmits<{
   (e: 'change', ids: string[]): void
@@ -83,39 +84,46 @@ const emit = defineEmits<{
 }>()
 
 watch(selectedIds, (val) => emit('change', val), { deep: true })
-watch(selectedSingleLoop, (val) => emit('singleChange', val), { deep: true })
 
 async function onSingleSelect(loop: any) {
+  const loopId = String(loop.id)
+
   // 再次点击已选中的 Loop → 取消选择
-  if (selectedSingleId.value === loop.id) {
+  if (selectedSingleId.value === loopId) {
+    selectionRequestId += 1
     selectedSingleId.value = ''
     selectedSingleLoop.value = null
+    emit('singleChange', null)
     return
   }
-  selectedSingleId.value = loop.id
+
+  const requestId = ++selectionRequestId
+  const initialSelection: SelectedLoopInfo = {
+    id: loopId,
+    loopName: loop.loopName,
+    compiledPrompt: '',
+  }
+  selectedSingleId.value = loopId
+  selectedSingleLoop.value = initialSelection
+  emit('singleChange', initialSelection)
+
   // 获取完整 LoopVO 以拿到 compiledPrompt
   try {
     const res = await loopGetVoUsingGet({ params: { id: loop.id } })
-    if ((res.data.code === 0 || res.data.code === 20000) && res.data.data) {
-      selectedSingleLoop.value = {
-        id: String(loop.id),
-        loopName: loop.loopName,
-        compiledPrompt: res.data.data.compiledPrompt || '',
-      }
-    } else {
-      selectedSingleLoop.value = {
-        id: String(loop.id),
-        loopName: loop.loopName,
-        compiledPrompt: '',
-      }
+    if (requestId !== selectionRequestId || selectedSingleId.value !== loopId) return
+
+    const detailedSelection: SelectedLoopInfo = {
+      ...initialSelection,
+      compiledPrompt:
+        (res.data.code === 0 || res.data.code === 20000) && res.data.data
+          ? res.data.data.compiledPrompt || ''
+          : '',
     }
+    selectedSingleLoop.value = detailedSelection
+    emit('singleChange', detailedSelection)
   } catch (e) {
+    if (requestId !== selectionRequestId || selectedSingleId.value !== loopId) return
     console.error('获取 Loop 详情失败', e)
-    selectedSingleLoop.value = {
-      id: String(loop.id),
-      loopName: loop.loopName,
-      compiledPrompt: '',
-    }
   }
 }
 

@@ -69,6 +69,8 @@ function handlePromptKeydown(event: KeyboardEvent) {
 }
 
 async function handleCreate() {
+  if (creating.value) return
+
   const content = prompt.value.trim()
   if (!content) {
     message.warning('先描述你想生成的应用')
@@ -80,15 +82,22 @@ async function handleCreate() {
     return
   }
 
+  const selection = {
+    workflowEnabled: workflowEnabled.value,
+    loopId: selectedLoopId.value,
+    autoCodeType: autoCodeType.value,
+    codeType: selectedCodeType.value,
+  }
+
   creating.value = true
   try {
     const res = await appAddUsingPost({
       body: {
         appName: buildAppNameFromPrompt(content),
         initPrompt: content,
-        codeGenType: autoCodeType.value ? undefined : selectedCodeType.value,
-        isBeta: workflowEnabled.value ? 1 : 0,
-        loopIds: selectedLoopId.value ? [selectedLoopId.value] : undefined,
+        codeGenType: selection.autoCodeType ? undefined : selection.codeType,
+        isBeta: selection.workflowEnabled ? 1 : 0,
+        loopIds: selection.loopId ? [selection.loopId] : undefined,
       } as any,
     })
     if ((res.data.code === 0 || res.data.code === 20000) && res.data.data) {
@@ -98,9 +107,9 @@ async function handleCreate() {
         params: { id: res.data.data },
         query: {
           autoSend: 'true',
-          genMode: workflowEnabled.value ? 'workflow' : 'legacy',
-          codeTypeChoice: autoCodeType.value ? 'Auto' : selectedCodeType.value,
-          ...(selectedLoopId.value ? { loopId: selectedLoopId.value } : {}),
+          genMode: selection.workflowEnabled ? 'workflow' : 'legacy',
+          codeTypeChoice: selection.autoCodeType ? 'Auto' : selection.codeType,
+          ...(selection.loopId ? { loopId: selection.loopId } : {}),
         },
       })
     } else {

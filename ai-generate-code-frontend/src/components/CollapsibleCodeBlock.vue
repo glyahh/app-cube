@@ -152,8 +152,9 @@ onUnmounted(() => {
 
     <!-- 可折叠内容区：max-height 动画控制展开/收起 -->
     <div
+      v-if="!collapsed"
       class="collapse-body"
-      :class="{ 'collapse-body--expanded': !collapsed }"
+      :class="{ 'collapse-body--expanded': true }"
     >
       <!-- 写入文件模式 -->
       <template v-if="isWriteMode">

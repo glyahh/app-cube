@@ -75,6 +75,10 @@ import {
   splitUserMessageForDisplay,
   type ParsedVisualEditSelection,
 } from '@/utils/visualEditMessageParser'
+import { createStreamRenderScheduler } from '@/utils/streamRenderScheduler'
+import { IncrementalMarkdownParser } from '@/utils/incrementalMarkdownParser'
+import '@/assets/stream-layout.css'
+import { scrollElementToEnd } from '@/utils/scrollElement'
 
 // 与全局请求保持一致：默认走当前页面 origin 下的 `/api`
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
@@ -303,6 +307,11 @@ function onLoopSelect(loopId: string | number) {
 const eventSourceMap = new Map<string, EventSource>()
 const activeStreamOrder = ref<string[]>([])
 const activeStreamMeta = ref<Record<string, ActiveStreamMeta>>({})
+const streamRenderScheduler = createStreamRenderScheduler({
+  onChunk: (streamId, chunk) => commitAssistantChunkToStream(streamId, chunk),
+})
+let scrollFrameHandle: number | null = null
+let chatBottomObserver: IntersectionObserver | null = null
 const WORKFLOW_SLOW_HINT_DELAY_MS = 120_000
 const TOOL_REQUEST_STATUS_DELAY_MS = 5_000
 const workflowNowTs = ref(Date.now())
@@ -324,8 +333,19 @@ type MessageRenderCache = {
   uiSegments?: UiSegment[]
   renderableVersion?: string
   renderable?: boolean
+  incrementalMarkdownParsers?: Map<string, IncrementalMarkdownParser>
 }
 const messageRenderCache = new WeakMap<ChatMessage, MessageRenderCache>()
+
+function getCachedMarkdownSegments(m: ChatMessage, content: string, parserKey = 'default') {
+  const cache = messageRenderCache.get(m) ?? {}
+  const parser = cache.incrementalMarkdownParsers?.get(parserKey) ?? new IncrementalMarkdownParser()
+  const parsed = parser.update(content)
+  const parsers = cache.incrementalMarkdownParsers ?? new Map<string, IncrementalMarkdownParser>()
+  parsers.set(parserKey, parser)
+  messageRenderCache.set(m, { ...cache, incrementalMarkdownParsers: parsers })
+  return parsed
+}
 
 type GeneratedFileItem = {
   path: string
@@ -494,6 +514,7 @@ const shouldShowWebsite = computed(() => {
 })
 const iframeKey = ref(0)
 const chatMessagesRef = ref<HTMLElement | null>(null)
+const chatBottomRef = ref<HTMLElement | null>(null)
 const shouldAutoScroll = ref(appearanceStore.smoothScroll)
 const showScrollToBottom = computed(() => !shouldAutoScroll.value && displayMessages.value.length > 0)
 
@@ -1943,6 +1964,16 @@ function computeWorkflowStepsForMessage(m: ChatMessage): WorkflowStepRow[] {
   return normalized
 }
 
+function mergeWorkflowStepsIntoMessage(m: ChatMessage, steps: WorkflowStepRow[]) {
+  m.workflowSteps = mergeWorkflowSteps(m.workflowSteps, steps)
+  nextTick(() => {
+    const list = chatMessagesRef.value?.querySelector<HTMLElement>(
+      `[data-workflow-message-id="${m.id}"]`,
+    )
+    scrollElementToEnd(list)
+  })
+}
+
 function getWorkflowStepsForMessage(m: ChatMessage): WorkflowStepRow[] {
   if (!shouldShowWorkflowCard(m)) return []
   return computeWorkflowStepsForMessage(m)
@@ -2331,11 +2362,12 @@ function stopStream(streamId?: string) {
     // 保证 [DONE]/business-error/用户停止 三种结束路径都落盘一致。
     const meta = activeStreamMeta.value[streamId]
     if (meta) {
+      streamRenderScheduler.flush(streamId)
       const msg = sessionMessages.value.find((x) => x.id === meta.assistantMessageId)
       if (msg?.uiState && meta.sseCarry) {
         const { uiText, newSteps, mermaidErrorNotice } = flushAssistantSseCarry(meta.sseCarry)
         if (newSteps.length && isFirstAppAssistantMessage(msg)) {
-          msg.workflowSteps = mergeWorkflowSteps(msg.workflowSteps, newSteps)
+          mergeWorkflowStepsIntoMessage(msg, newSteps)
         }
         if (mermaidErrorNotice) {
           msg.mermaidErrorNotice = true
@@ -2373,11 +2405,12 @@ function stopStream(streamId?: string) {
     for (const sid of Object.keys(activeStreamMeta.value)) {
       const meta = activeStreamMeta.value[sid]
       if (meta) {
+        streamRenderScheduler.flush(sid)
         const msg = sessionMessages.value.find((x) => x.id === meta.assistantMessageId)
         if (msg?.uiState && meta.sseCarry) {
           const { uiText, newSteps, mermaidErrorNotice } = flushAssistantSseCarry(meta.sseCarry)
           if (newSteps.length && isFirstAppAssistantMessage(msg)) {
-            msg.workflowSteps = mergeWorkflowSteps(msg.workflowSteps, newSteps)
+            mergeWorkflowStepsIntoMessage(msg, newSteps)
           }
           if (mermaidErrorNotice) {
             msg.mermaidErrorNotice = true
@@ -2494,10 +2527,19 @@ function getToolRequestShimmerText(m: ChatMessage, idx: number): string {
 }
 
 function appendAssistantChunkToStream(streamId: string, chunk: string) {
+  streamRenderScheduler.enqueue(streamId, chunk)
+}
+
+function commitAssistantChunkToStream(streamId: string, chunk: string) {
   const meta = activeStreamMeta.value[streamId]
   if (!meta) return
   const msg = sessionMessages.value.find((x) => x.id === meta.assistantMessageId)
   if (!msg || msg.role !== 'assistant') return
+
+  const parsedFile = parseToolWriteFileBlock(chunk)
+  if (parsedFile) {
+    recordGeneratedFile(parsedFile.filePath, parsedFile.lang, parsedFile.content)
+  }
 
   let uiText = chunk
   if (meta.mode === 'workflow') {
@@ -2507,7 +2549,7 @@ function appendAssistantChunkToStream(streamId: string, chunk: string) {
     const filtered = filterAssistantSseChunkForUi(meta.sseCarry, chunk)
     uiText = filtered.uiText
     if (filtered.newSteps.length && isFirstAppAssistantMessage(msg)) {
-      msg.workflowSteps = mergeWorkflowSteps(msg.workflowSteps, filtered.newSteps)
+      mergeWorkflowStepsIntoMessage(msg, filtered.newSteps)
     }
     if (filtered.mermaidErrorNotice) {
       msg.mermaidErrorNotice = true
@@ -2520,9 +2562,23 @@ function appendAssistantChunkToStream(streamId: string, chunk: string) {
     processAssistantChunkIntoUiState(msg.uiState, uiText)
   }
   markFirstVisibleAt(msg)
-  nextTick(() => {
-    if (shouldAutoScroll.value) scrollToBottom()
-  })
+  scheduleChatAutoScroll()
+}
+
+function scheduleChatAutoScroll() {
+  if (!shouldAutoScroll.value || scrollFrameHandle != null) return
+  const callback = () => {
+    scrollFrameHandle = null
+    nextTick(() => {
+      observeChatBottom()
+      if (shouldAutoScroll.value) scrollToBottom()
+    })
+  }
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    scrollFrameHandle = window.requestAnimationFrame(callback)
+  } else {
+    scrollFrameHandle = window.setTimeout(callback, 16)
+  }
 }
 
 async function sendMessage(text?: string) {
@@ -2644,7 +2700,7 @@ async function sendMessage(text?: string) {
         const label = String(payload?.label ?? '').trim()
         if (!Number.isFinite(step) || !label) return
         if (!isFirstAppAssistantMessage(msg)) return
-        msg.workflowSteps = mergeWorkflowSteps(msg.workflowSteps, [{ step, label }])
+        mergeWorkflowStepsIntoMessage(msg, [{ step, label }])
       } catch {
         // ignore malformed workflow-step payload
       }
@@ -2668,10 +2724,6 @@ async function sendMessage(text?: string) {
 
       maybeInjectToolSelectHint(data)
 
-      const parsed = parseToolWriteFileBlock(data)
-      if (parsed) {
-        recordGeneratedFile(parsed.filePath, parsed.lang, parsed.content)
-      }
       appendAssistantChunkToStream(streamId, data)
     }
 
@@ -2749,16 +2801,11 @@ function handleStop() {
 }
 
 function scrollToBottom(options: { smooth?: boolean } = {}) {
-  const el = chatMessagesRef.value
-  if (!el) return
-  if (options.smooth && 'scrollTo' in el) {
-    el.scrollTo({
-      top: el.scrollHeight,
-      behavior: 'smooth',
-    } as ScrollToOptions)
-  } else {
-    el.scrollTop = el.scrollHeight
-  }
+  chatBottomRef.value?.scrollIntoView({
+    block: 'end',
+    inline: 'nearest',
+    behavior: options.smooth ? 'smooth' : 'auto',
+  })
 }
 
 function handleScrollToBottomClick() {
@@ -2766,12 +2813,18 @@ function handleScrollToBottomClick() {
   scrollToBottom({ smooth: true })
 }
 
-function handleChatScroll() {
-  const el = chatMessagesRef.value
-  if (!el) return
-  const threshold = 40
-  const distanceToBottom = el.scrollHeight - (el.scrollTop + el.clientHeight)
-  shouldAutoScroll.value = distanceToBottom <= threshold
+function observeChatBottom() {
+  const root = chatMessagesRef.value
+  const target = chatBottomRef.value
+  if (!root || !target || typeof IntersectionObserver === 'undefined') return
+  if (chatBottomObserver) return
+  chatBottomObserver = new IntersectionObserver(
+    ([entry]) => {
+      shouldAutoScroll.value = entry?.isIntersecting === true
+    },
+    { root, rootMargin: '0px 0px 40px 0px', threshold: 0 },
+  )
+  chatBottomObserver.observe(target)
 }
 
 /** 加载对话历史（游标分页） */
@@ -2935,9 +2988,7 @@ onMounted(() => {
   startWorkflowSlowHintTicker()
   // 首次进入页面先做一次清理，避免历史会话遗留覆盖层影响当前预览滚动。
   cleanupVisualEditorArtifacts()
-  if (chatMessagesRef.value) {
-    chatMessagesRef.value.addEventListener('scroll', handleChatScroll)
-  }
+  observeChatBottom()
 })
 
 onBeforeUnmount(() => {
@@ -2946,9 +2997,17 @@ onBeforeUnmount(() => {
   exitVisualEditMode()
   // 页面卸载时关闭所有 SSE，避免后台连接泄露
   stopStream()
-  if (chatMessagesRef.value) {
-    chatMessagesRef.value.removeEventListener('scroll', handleChatScroll)
+  streamRenderScheduler.dispose()
+  if (scrollFrameHandle != null) {
+    if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+      window.cancelAnimationFrame(scrollFrameHandle)
+    } else {
+      window.clearTimeout(scrollFrameHandle)
+    }
+    scrollFrameHandle = null
   }
+  chatBottomObserver?.disconnect()
+  chatBottomObserver = null
 })
 </script>
 
@@ -3066,12 +3125,18 @@ onBeforeUnmount(() => {
 
     <section class="main-content" :class="{ 'main-content--single': !appearanceStore.previewExpanded }">
       <div class="chat-panel">
-        <div v-if="generatedFiles.length > 0" class="generated-files-bar">
-          <div class="generated-files-left">
-            <span class="generated-files-dot" aria-hidden="true" />
-            <span class="generated-files-text">已回显 {{ generatedFiles.length }} 个文件（{{ getCodeGenTypeLabel() }}）</span>
+        <div
+          class="stream-file-slot"
+          :class="{ 'stream-file-slot--empty': generatedFiles.length === 0 }"
+          :aria-hidden="generatedFiles.length === 0"
+        >
+          <div v-if="generatedFiles.length > 0" class="generated-files-bar">
+            <div class="generated-files-left">
+              <span class="generated-files-dot" aria-hidden="true" />
+              <span class="generated-files-text">已回显 {{ generatedFiles.length }} 个文件（{{ getCodeGenTypeLabel() }}）</span>
+            </div>
+            <a-button size="small" class="ghost-btn" @click="showGeneratedFilesModal">查看回显</a-button>
           </div>
-          <a-button size="small" class="ghost-btn" @click="showGeneratedFilesModal">查看回显</a-button>
         </div>
         <div ref="chatMessagesRef" class="chat-messages">
           <ASpin v-if="loadingApp" />
@@ -3098,7 +3163,7 @@ onBeforeUnmount(() => {
                     >
                       <template v-for="(segment, idx) in getUserMarkdownSegments(m)" :key="`u-md-${idx}`">
                         <template
-                          v-for="(mdSeg, mdIdx) in parseMarkdownWithCode(segment.content)"
+                          v-for="(mdSeg, mdIdx) in getCachedMarkdownSegments(m, segment.content, `user-${idx}`)"
                           :key="`u-md-${idx}-${mdIdx}`"
                         >
                           <CodeBlock
@@ -3213,7 +3278,10 @@ onBeforeUnmount(() => {
                       <div
                         v-if="shouldShowWorkflowCard(m)"
                         class="workflow-steps-shell"
-                        :class="{ 'workflow-steps-shell--collapsed': isWorkflowCollapsed(m) }"
+                        :class="{
+                          'workflow-steps-shell--collapsed': isWorkflowCollapsed(m),
+                          'stream-workflow-viewport': !isHistoryMessage(m),
+                        }"
                       >
                         <button
                           v-if="isHistoryMessage(m)"
@@ -3231,7 +3299,7 @@ onBeforeUnmount(() => {
                               存在 Mermaid 构造失败（不影响生成）
                             </div>
                           </div>
-                          <div class="workflow-steps-list">
+                          <div class="workflow-steps-list" :data-workflow-message-id="m.id">
                           <div
                             v-for="row in getWorkflowStepsForMessage(m)"
                             :key="row.step"
@@ -3330,7 +3398,7 @@ onBeforeUnmount(() => {
 
                       <!-- 普通 markdown：仍保持流式解析与代码块渲染（仅助手消息） -->
                       <template v-else-if="segment.kind === 'markdown'">
-                        <template v-for="(mdSeg, mdIdx) in parseMarkdownWithCode(segment.content)" :key="`md-${idx}-${mdIdx}`">
+                        <template v-for="(mdSeg, mdIdx) in getCachedMarkdownSegments(m, segment.content, `assistant-${idx}`)" :key="`md-${idx}-${mdIdx}`">
                           <CodeBlock
                             v-if="mdSeg.type === 'code'"
                             :code="mdSeg.content"
@@ -3352,6 +3420,7 @@ onBeforeUnmount(() => {
               </div>
             </template>
           </template>
+          <div ref="chatBottomRef" class="chat-bottom-sentinel" aria-hidden="true" />
         </div>
 
         <AppLoopInjectBar v-if="appId" :appId="appId" @select="onLoopSelect" />
@@ -3813,6 +3882,12 @@ onBeforeUnmount(() => {
   min-height: 0;
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
+.chat-bottom-sentinel {
+  block-size: 1px;
+  inline-size: 100%;
+  overflow-anchor: auto;
 }
 
 .chat-messages::-webkit-scrollbar {
