@@ -36,6 +36,9 @@ export default defineConfig(({ mode }) => {
           target: 'http://localhost:8124',
           changeOrigin: true,
           secure: false,
+          // Agent 默认走 WebSocket（/api/ws/agent），代理必须开启升级转发，
+          // 否则握手会被 Vite 当成普通 HTTP 请求丢掉。SSE 降级路径不受影响。
+          ws: true,
           // 避免后端返回绝对重定向（Location 指向 8124）导致 iframe 真正跳到跨域源
           configure: (proxy) => {
             proxy.on('proxyRes', (proxyRes) => {

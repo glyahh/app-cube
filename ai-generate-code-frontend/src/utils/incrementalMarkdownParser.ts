@@ -7,7 +7,6 @@ export interface MarkdownRenderBlock extends TextSegment {
 
 function isClosed(source: string, block: TextSegment): boolean {
   if (block.type !== 'code') return source.endsWith('\n') || source.length === 0
-  const language = block.language ?? 'text'
   const marker = source.lastIndexOf('```')
   if (marker < 0) return false
   return source.slice(marker).trim().startsWith('```') && source.trimEnd().endsWith('```')

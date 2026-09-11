@@ -26,6 +26,19 @@ import java.util.Map;
 @Slf4j
 public class GlobalExceptionHandler {
 
+    /**
+     * 会以 SSE 形式响应的路径。
+     *
+     * <p>同步阶段（鉴权、参数、限流）抛出的异常要走这里转成 SSE 事件，
+     * 否则前端拿到的是 JSON，只会触发 EventSource 的 onerror，看不到原因。
+     * **新增流式端点时必须登记到这里。**
+     */
+    private static final String[] SSE_PATHS = {
+            "/chat/gen/code",
+            "/chat/gen/workflow",
+            "/chat/generate/stream",
+    };
+
     @ExceptionHandler(MyException.class)
     public BaseResponse<?> businessExceptionHandler(MyException e) {
         log.error("BusinessException", e);
@@ -48,6 +61,26 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 判断这个请求要不要按 SSE 格式回错误。
+     *
+     * <p>两条依据：Accept 头（浏览器 EventSource 会带），或命中登记的流式路径。
+     */
+    private boolean isSseRequest(String accept, String uri) {
+        if (accept != null && accept.contains("text/event-stream")) {
+            return true;
+        }
+        if (uri == null) {
+            return false;
+        }
+        for (String path : SSE_PATHS) {
+            if (uri.contains(path)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 处理SSE请求的错误响应
      *
      * @param errorCode 错误码
@@ -64,9 +97,7 @@ public class GlobalExceptionHandler {
         // 判断是否是SSE请求（通过Accept头或URL路径）
         String accept = request.getHeader("Accept");
         String uri = request.getRequestURI();
-        if ((accept != null && accept.contains("text/event-stream")) ||
-                uri.contains("/chat/gen/code") ||
-                uri.contains("/chat/gen/workflow")) {
+        if (isSseRequest(accept, uri)) {
             if (response == null) {
                 return false;
             }

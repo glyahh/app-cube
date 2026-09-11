@@ -1,0 +1,31 @@
+[project]
+name = "glyahh-agent"
+version = "0.1.0"
+description = "Harness 架构的 Coding Agent 运行时（stdio 协议，由 Spring Boot 侧以子进程方式驱动）"
+requires-python = ">=3.12,<3.15"
+
+dependencies = [
+    # Agent 编排
+    "deepagents==0.7.13",
+    "langgraph==1.2.11",
+    "langchain==1.4.0",
+    # 模型接入（OpenAI 兼容协议，DeepSeek / DashScope 都走这个）
+    "langchain-openai>=1.0.0",
+    # 持久化：LangGraph checkpointer / store 走 PostgreSQL
+    "psycopg[binary,pool]>=3.2",
+    "langgraph-checkpoint-postgres>=2.0",
+    # 探测 /models 用（动态窗口解析的第 2 优先级）
+    "httpx>=0.27",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.uv]
+package = false

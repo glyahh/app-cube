@@ -38,6 +38,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+        <!-- Agent 流式传输的默认通道。
+             用原生 WebSocketHandler，不引 STOMP —— 消息模型是「一个 run 一条流」，用不上订阅/代理那一套。
+             SSE 降级路径不需要额外依赖（走 spring-boot-starter-web + reactor-core）。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
 
         <!-- 开发阶段的热重启工具（会引入双类加载器，导致自定义 dev.langchain4j 与 Maven 依赖冲突）
              为了让本地改过的 dev.langchain4j 类真正覆盖依赖包中的同名类，这里先移除 devtools 依赖。
@@ -53,6 +60,25 @@
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
             <scope>runtime</scope>
+        </dependency>
+        <!-- PostgreSQL 迁移目标。与 MySQL 驱动并存：切换靠 profile，
+             默认仍是 MySQL，避免「加了依赖就跑不起来」。 -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- 迁移脚本在 src/main/resources/db/migration/ 下。
+             **默认关闭**（见 application.yml 的 spring.flyway.enabled=false）：
+             当前应用跑在 MySQL 上，Flyway 一旦默认启用就会拿 PG 方言的脚本去 MySQL 上跑。
+             切到 PG 时把 enabled 打开并配好 datasource。 -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>

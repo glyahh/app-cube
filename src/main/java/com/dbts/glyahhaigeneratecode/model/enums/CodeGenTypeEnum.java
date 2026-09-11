@@ -19,6 +19,21 @@ public enum CodeGenTypeEnum {
     }
 
     /**
+     * 产物目录名前缀。
+     *
+     * <p>VUE 的目录是 {@code vue_project_{appId}} 而不是 {@code vue_{appId}}，
+     * 与枚举 value 不一致。这是历史遗留（前端还会传 {@code vue_project}，
+     * 见 {@link #getEnumByValue} 的归一化），**不要改**，改了会找不到已有产物。
+     *
+     * <p>收敛前这个映射散在 BaseTool / AppServiceImpl / VueEditContextBuilder /
+     * ConversationMemoryManifestSupport / CodeGeneratorNode / VueTokenStreamAdapter
+     * 六处硬编码，收敛后统一从这里取。
+     */
+    public String getDirPrefix() {
+        return this == VUE ? "vue_project" : value;
+    }
+
+    /**
      * 根据 value 获取枚举
      *
      * @param value 枚举值的value

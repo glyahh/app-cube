@@ -2,6 +2,7 @@ package com.dbts.glyahhaigeneratecode.core.saver;
 
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
+import com.dbts.glyahhaigeneratecode.constant.AppConstant;
 import com.dbts.glyahhaigeneratecode.exception.ErrorCode;
 import com.dbts.glyahhaigeneratecode.exception.MyException;
 
@@ -14,8 +15,6 @@ import java.io.File;
  * 大致思路: 校验入参 → 建唯一目录 → 子类写文件 → 返回目录 File
  */
 public abstract class CodeFileSaverTemplate<T> {
-
-    private static final String Base_ROOT_PATH = "D:\\mainJava\\all Code\\program\\glyahh-ai-generate-code\\temp\\code_output";
 
     /**
      * 统一入口：校验 → 建目录 → 子类写文件 → 返回目录 File
@@ -72,7 +71,8 @@ public abstract class CodeFileSaverTemplate<T> {
         // 1. 取子类业务类型（html / multi_file 等）
         String bizType = getBizType();
         // 2. 根路径 + 分隔符 + 类型_appId
-        return Base_ROOT_PATH + File.separator + bizType + "_" + appId;
+        // 根路径统一从 AppConstant 取 —— 原先这里硬编码了 Windows 绝对路径，换机器即失效。
+        return AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + bizType + "_" + appId;
     }
 
     /**

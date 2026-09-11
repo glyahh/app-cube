@@ -8,6 +8,23 @@ spring:
     username: ${spring.datasource.username}
     password: ${spring.datasource.password}
 
+  # 迁移脚本见 src/main/resources/db/migration/
+  #
+  # **默认关闭**：脚本是 PostgreSQL 方言，而当前 datasource 是 MySQL ——
+  # 一旦默认启用，启动时就会拿 PG 脚本去 MySQL 上跑。
+  #
+  # 切到 PostgreSQL 时（见 docs/PLANS/agent-next-migration.md）：
+  #   1. 换 driver-class-name / url（url 加 ?currentSchema=biz）
+  #   2. 把 enabled 改成 true
+  #   3. 确认 schemas / default-schema 都是 biz
+  flyway:
+    enabled: false
+    schemas: biz
+    default-schema: biz
+    create-schemas: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
   #Redis
   data:
     redis:

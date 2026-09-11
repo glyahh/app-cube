@@ -4,6 +4,7 @@ import com.dbts.glyahhaigeneratecode.exception.ErrorCode;
 import com.dbts.glyahhaigeneratecode.exception.MyException;
 import com.dbts.glyahhaigeneratecode.model.Entity.User;
 import com.dbts.glyahhaigeneratecode.rateLimiter.annotation.RateLimit;
+import com.dbts.glyahhaigeneratecode.rateLimiter.service.RateLimiterService;
 import com.dbts.glyahhaigeneratecode.service.UserService;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,13 +13,11 @@ import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Before;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.redisson.api.*;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.lang.reflect.Method;
-import java.time.Duration;
 
 @Aspect
 @Component
@@ -26,7 +25,7 @@ import java.time.Duration;
 public class rateLimiterAspect {
 
     @Resource
-    private RedissonClient redissonClient;
+    private RateLimiterService rateLimiterService;
 
     @Resource
     private UserService userService;
@@ -34,28 +33,13 @@ public class rateLimiterAspect {
     @Before("@annotation(rateLimit)")
     // point拿到方法的信息，rateLimit拿到注解的信息
     public void doBefore(JoinPoint point, RateLimit rateLimit) {
-        // 根据方法和注解生成对应的限流key
-        String key = generateRateLimitKey(point, rateLimit);
-        // 使用Redisson的分布式限流器
-        RRateLimiter rateLimiter = redissonClient.getRateLimiter(key);
-        rateLimiter.expire(Duration.ofHours(1)); // 1 小时后过期
-        // 设置限流器参数：每个时间窗口允许的请求数和时间窗口
-        // 注意：Redisson 的 trySetRate 只会在“首次初始化”时成功，后续调用通常返回 false（保持已有配置不变）。
-        // 因此这里记录其返回值，避免出现“注解参数改了但实际未覆盖旧桶配置”的误判。
-        boolean rateInitialized = rateLimiter.trySetRate(
-                RateType.OVERALL,
-                rateLimit.rate(), // 蛋糕数量
-                rateLimit.rateInterval(), // 时间间隔
-                RateIntervalUnit.SECONDS // 时间单位
-        );
-        if (!rateInitialized) {
-            log.debug("RateLimiter 已存在配置，将复用旧配置: key={}, limitType={}, rate={}, intervalSeconds={}",
-                    key, rateLimit.limitType(), rateLimit.rate(), rateLimit.rateInterval());
-        }
-        // 尝试获取令牌，如果获取失败则限流, 每次拿一个单位数量的蛋糕
-        if (!rateLimiter.tryAcquire(1)) {
-            throw new MyException(ErrorCode.TOO_MANY_REQUEST, rateLimit.message());
-        }
+        // 限流核心抽在 RateLimiterService 里 —— WebSocket 路径不走切面，
+        // 但必须共用同一套实现和 key 命名，否则两条路的配额会各算各的。
+        rateLimiterService.tryAcquire(
+                generateRateLimitKey(point, rateLimit),
+                rateLimit.rate(),
+                rateLimit.rateInterval(),
+                rateLimit.message());
     }
 
     private String generateRateLimitKey(JoinPoint point, RateLimit rateLimit) {

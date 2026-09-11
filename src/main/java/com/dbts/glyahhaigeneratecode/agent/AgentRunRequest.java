@@ -1,0 +1,100 @@
+package com.dbts.glyahhaigeneratecode.agent;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.Builder;
+import lombok.Singular;
+import lombok.Value;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 发给 Python 的一次 run 请求。
+ *
+ * <p>字段名与 docs/AGENT_CONTRACT.md 里的 schema 一一对应，构造出来的 JSON 直接
+ * 写成一行喂给子进程的 stdin。
+ *
+ * <p>**所有 ID 都是字符串。** 雪花 ID 约 19 位，超过 {@code 2^53}，
+ * 经过 JS 的 Number 或任何 float64 都会丢精度 —— 这条在跨语言边界上尤其重要。
+ *
+ * <p>工作区路径由这里下发，Python 侧不做任何自己的路径拼接。
+ */
+@Value
+@Builder
+public class AgentRunRequest {
+
+    String runId;
+    String threadId;
+    String appId;
+    String userId;
+    String roundId;
+    String traceId;
+
+    /** 产物根目录，绝对路径。 */
+    String workspaceRoot;
+    /** 产物目录名，如 {@code vue_project_431379639885025280}。 */
+    String workspaceName;
+    /** 生成类型，如 {@code html} / {@code vue_project}。 */
+    String codeGenType;
+    /** {@code create} 表示首轮建工程，{@code edit} 表示改已有产物。 */
+    String mode;
+
+    String message;
+    String initPrompt;
+
+    /** 冷启动时灌入的历史尾部。有 checkpoint 时 Python 会忽略它。 */
+    @Singular("historyItem")
+    List<Map<String, String>> historyTail;
+
+    Long deadlineMs;
+    Integer maxModelCalls;
+
+    /** 部署 key。Python 不感知部署，仅作为透传元信息。 */
+    String deployKey;
+
+    /** 序列化成一行 JSON。 */
+    public String toFrameJson(ObjectMapper mapper) {
+        Map<String, Object> frame = new LinkedHashMap<>();
+        frame.put("v", 1);
+        frame.put("runId", runId);
+        frame.put("threadId", threadId);
+        frame.put("appId", appId);
+        frame.put("userId", userId);
+        frame.put("roundId", roundId);
+        frame.put("traceId", traceId);
+
+        Map<String, Object> workspace = new LinkedHashMap<>();
+        workspace.put("root", workspaceRoot);
+        workspace.put("name", workspaceName);
+        workspace.put("codeGenType", codeGenType == null ? "html" : codeGenType);
+        workspace.put("mode", mode == null ? "create" : mode);
+        frame.put("workspace", workspace);
+
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("message", message);
+        input.put("initPrompt", initPrompt == null ? "" : initPrompt);
+        input.put("historyTail", historyTail == null ? List.of() : historyTail);
+        input.put("historyTailTruncated", false);
+        frame.put("input", input);
+
+        Map<String, Object> limits = new LinkedHashMap<>();
+        limits.put("deadlineMs", deadlineMs == null ? 600_000L : deadlineMs);
+        limits.put("maxModelCalls", maxModelCalls == null ? 60 : maxModelCalls);
+        frame.put("limits", limits);
+
+        Map<String, Object> artifacts = new LinkedHashMap<>();
+        artifacts.put("deployKey", deployKey == null ? "" : deployKey);
+        frame.put("artifacts", artifacts);
+
+        // Phase 0/1 恒为 false：Java 已经通过事件流实时拿到全部信息，
+        // 再加一条回调通道是多余的入站鉴权面加对账问题。
+        frame.put("callback", Map.of("enabled", false));
+
+        try {
+            return mapper.writeValueAsString(frame);
+        } catch (Exception e) {
+            throw new IllegalStateException("序列化 Agent 请求失败", e);
+        }
+    }
+}

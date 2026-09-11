@@ -1,7 +1,8 @@
 package com.dbts.glyahhaigeneratecode.controller;
 
-import com.dbts.glyahhaigeneratecode.constant.AppConstant;
-import com.dbts.glyahhaigeneratecode.service.AppService;
+import com.dbts.glyahhaigeneratecode.exception.MyException;
+import com.dbts.glyahhaigeneratecode.service.support.WorkspacePathResolver;
+import com.dbts.glyahhaigeneratecode.utils.ContentTypeUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.FileSystemResource;
@@ -15,62 +16,54 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.HandlerMapping;
 
-import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /**
- * 部署静态资源访问：读取 temp/code_deploy/{deployKey}。
+ * 部署静态资源访问：读取 {@code temp/code_deploy/{deployKey}}。
+ *
+ * <p>对外发布入口，拿到 deployKey 的人都能访问 —— 所以**必须**做路径越界校验。
+ * 收敛前这里是把 URL 子路径直接字符串拼接后交给 {@code new File(...)}，
+ * 没有归一化，存在 {@code ..} 穿越。
  */
 @RestController
 @RequestMapping("/deploy")
 @RequiredArgsConstructor
 public class DeployResourceController {
 
-    private AppService appService;
+    private final WorkspacePathResolver pathResolver;
 
     @GetMapping("/{deployKey}/**")
     public ResponseEntity<Resource> serveDeployResource(@PathVariable String deployKey, HttpServletRequest request) {
+        String resourcePath = (String) request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
+        resourcePath = resourcePath.substring(("/deploy/" + deployKey).length());
+
+        // 目录访问时补尾斜杠，避免相对资源路径解析偏移
+        if (resourcePath.isEmpty()) {
+            HttpHeaders headers = new HttpHeaders();
+            headers.add("Location", request.getRequestURI() + "/");
+            return new ResponseEntity<>(headers, HttpStatus.MOVED_PERMANENTLY);
+        }
+        if ("/".equals(resourcePath)) {
+            resourcePath = "/index.html";
+        }
+
         try {
-            String resourcePath = (String) request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
-            resourcePath = resourcePath.substring(("/deploy/" + deployKey).length());
-
-            // debug 修复：目录访问时补尾斜杠，避免相对资源路径解析偏移。
-            if (resourcePath.isEmpty()) {
-                HttpHeaders headers = new HttpHeaders();
-                headers.add("Location", request.getRequestURI() + "/");
-                return new ResponseEntity<>(headers, HttpStatus.MOVED_PERMANENTLY);
-            }
-            if ("/".equals(resourcePath)) {
-                resourcePath = "/index.html";
-            }
-
-            String filePath = AppConstant.CODE_DEPLOY_ROOT_DIR + "/" + deployKey + resourcePath;
-            File file = new File(filePath);
-            if (!file.exists()) {
+            Path file = pathResolver.resolveDeployResource(deployKey, resourcePath);
+            if (!Files.isRegularFile(file)) {
                 return ResponseEntity.notFound().build();
             }
-
-            Resource resource = new FileSystemResource(file);
-
             return ResponseEntity.ok()
-                    .header("Content-Type", getContentTypeWithCharset(filePath))
+                    .header("Content-Type", ContentTypeUtils.fromFileName(file.getFileName().toString()))
                     .header("Cache-Control", "no-cache, no-store, must-revalidate")
                     .header("Pragma", "no-cache")
                     .header("Expires", "0")
-                    .body(resource);
-
+                    .body(new FileSystemResource(file));
+        } catch (MyException e) {
+            // 路径越界。回 404 而不是 400/500 —— 不向探测者透露目录结构。
+            return ResponseEntity.notFound().build();
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
-    }
-
-    private String getContentTypeWithCharset(String filePath) {
-        if (filePath.endsWith(".html")) return "text/html; charset=UTF-8";
-        if (filePath.endsWith(".css")) return "text/css; charset=UTF-8";
-        if (filePath.endsWith(".js")) return "application/javascript; charset=UTF-8";
-        if (filePath.endsWith(".png")) return "image/png";
-        if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg")) return "image/jpeg";
-        if (filePath.endsWith(".svg")) return "image/svg+xml";
-        if (filePath.endsWith(".webp")) return "image/webp";
-        return "application/octet-stream";
     }
 }

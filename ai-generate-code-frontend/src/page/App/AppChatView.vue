@@ -78,6 +78,8 @@ import {
 } from '@/utils/visualEditMessageParser'
 import { createStreamRenderScheduler } from '@/utils/streamRenderScheduler'
 import { IncrementalMarkdownParser } from '@/utils/incrementalMarkdownParser'
+import { openAgentStream } from '@/utils/agentStreamTransport'
+import { mapAgentEvent } from '@/utils/agentEventMapping'
 import '@/assets/stream-layout.css'
 import { scrollElementToEnd } from '@/utils/scrollElement'
 
@@ -85,6 +87,17 @@ import { scrollElementToEnd } from '@/utils/scrollElement'
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 const PREVIEW_BASE_URL =
   import.meta.env.VITE_PREVIEW_BASE_URL ?? `${API_BASE_URL.replace(/\/$/, '')}/static`
+
+/**
+ * Agent 流式接口开关。
+ *
+ * 打开后走 `/api/ws/agent`（WebSocket 优先，失败或 3 秒未连上降级到 SSE），
+ * 事件是新协议（run.started / text.delta / tool.started ...）。
+ *
+ * 默认关闭：老的 `/chat/gen/code` 与 `/chat/gen/workflow` 仍在服务，
+ * 两者并存便于对比与回滚。等新链路稳定后把这个开关拿掉。
+ */
+const AGENT_STREAM_ENABLED = import.meta.env.VITE_AGENT_STREAM_ENABLED === 'true'
 
 const route = useRoute()
 const router = useRouter()
@@ -306,6 +319,11 @@ function onLoopSelect(loopId: string | number) {
  * 用 streamId 作为 key，保证后发请求不会 close 掉先发请求。
  */
 const eventSourceMap = new Map<string, EventSource>()
+/**
+ * Agent 传输句柄（WebSocket 优先 / SSE 降级）。
+ * 与 eventSourceMap 并存：开关打开时走这个，关闭时走老的 EventSource。
+ */
+const agentStreamMap = new Map<string, import('@/utils/agentStreamTransport').AgentStream>()
 const activeStreamOrder = ref<string[]>([])
 const activeStreamMeta = ref<Record<string, ActiveStreamMeta>>({})
 const streamRenderScheduler = createStreamRenderScheduler({
@@ -2356,6 +2374,60 @@ function handleVisitDeployUrl() {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
+/**
+ * 走 Agent 传输发起一轮生成。
+ *
+ * 传输本身（WebSocket 优先 / 3 秒未连上降级 SSE）与事件到 UI 的映射都在
+ * utils 里，这里只做胶水：把 Action 落到消息状态上。
+ */
+function startAgentStream(streamId: string, prompt: string) {
+  const apiBase = API_BASE_URL.replace(/\/$/, '')
+  const agentStream = openAgentStream(
+    apiBase,
+    { appId: String(appId.value), message: prompt },
+    {
+      onTransport: (kind) => {
+        // 打到控制台便于排障：一眼看出这次实际走的是哪条
+        console.info(`[agent-stream] 传输=${kind}`)
+      },
+      onEvent: (name, payload) => {
+        const action = mapAgentEvent(name, payload)
+        if (action.kind === 'text') {
+          maybeInjectToolSelectHint(action.text)
+          appendAssistantChunkToStream(streamId, action.text)
+          return
+        }
+        if (action.kind === 'error') {
+          appendAssistantChunkToStream(streamId, `\n\n❌ ${action.text}`)
+          message.error(action.text)
+          stopStream(streamId)
+          return
+        }
+        if (action.kind === 'done') {
+          finishAgentStream(streamId)
+        }
+      },
+      onError: (error) => {
+        console.error('[agent-stream] 连接异常', error)
+        // 断线不自动重连（重连会把这一轮重跑一遍，产生重复副作用）
+        appendAssistantChunkToStream(streamId, '\n\n❌ 连接中断，本轮未完成')
+        message.error('生成过程中出现错误，已结束本次对话')
+        stopStream(streamId)
+      },
+    },
+  )
+  agentStreamMap.set(streamId, agentStream)
+}
+
+/** 一轮正常结束后的收尾。与老链路的 done 处理保持一致。 */
+function finishAgentStream(streamId: string) {
+  stopStream(streamId)
+  hasGenerated.value = true
+  void refreshProjectFilesEchoFromDisk()
+  void refreshPreviewWithRetry()
+  void fetchRoundCount()
+}
+
 function stopStream(streamId?: string) {
   // stop a single stream
   if (streamId) {
@@ -2392,6 +2464,16 @@ function stopStream(streamId?: string) {
         // ignore
       }
       eventSourceMap.delete(streamId)
+    }
+    // Agent 传输（WebSocket 优先 / SSE 降级）走独立句柄
+    const agentStream = agentStreamMap.get(streamId)
+    if (agentStream) {
+      try {
+        agentStream.close()
+      } catch {
+        // ignore
+      }
+      agentStreamMap.delete(streamId)
     }
     if (activeStreamMeta.value[streamId]) {
       const nextMeta = { ...activeStreamMeta.value }
@@ -2436,6 +2518,14 @@ function stopStream(streamId?: string) {
       }
     }
     eventSourceMap.clear()
+    for (const [, agentStream] of agentStreamMap.entries()) {
+      try {
+        agentStream.close()
+      } catch {
+        // ignore
+      }
+    }
+    agentStreamMap.clear()
     activeStreamOrder.value = []
     activeStreamMeta.value = {}
   }
@@ -2674,6 +2764,13 @@ async function sendMessage(text?: string) {
   }
 
   try {
+    // 新链路：Agent 传输（WebSocket 优先 / SSE 降级）。
+    // 事件名与载荷走新协议，与下面老的 /chat/gen/* 完全不同，所以整个分支独立。
+    if (AGENT_STREAM_ENABLED) {
+      startAgentStream(streamId, prompt)
+      return
+    }
+
     const query = new URLSearchParams({
       appId: String(appId.value),
       message: prompt,

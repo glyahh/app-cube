@@ -98,6 +98,24 @@ tools/
 __pycache__/
 *.pyc
 
+### Python venv / 测试缓存 (DO NOT COMMIT) ###
+# venv 和 pytest 各自会在目录内写一个内容为 "*" 的 .gitignore，
+# 所以实际上已经被排除了。显式再列一遍是不想依赖工具行为 ——
+# 换个建 venv 的方式（或有人删掉那个文件）就会漏进来。
+.venv/
+.pytest_cache/
+
+### 浏览器自动化产物（截图 / 快照 / 控制台日志）###
+.playwright-mcp/
+
+### Prometheus TSDB (runtime state, ~128MB) ###
+/data/
+
+### Agent runtime secrets (DO NOT COMMIT) ###
+/.env
+/agent/.env
+# 仅提交样例：/.env.example
+
 ### Local Bug Notes (DO NOT COMMIT) ###
 bugs/
 .worktrees/
