@@ -5,7 +5,17 @@ import { userUpdateUsingPut, userPersonalizationGetUsingGet, userPersonalization
 import type { UserUpdateRequest } from '@/api/types'
 import type { ApplyHistoryVO } from '@/api/types'
 import { appApplyListMyHistoryUsingPost, appApplyUsingPost } from '@/api/appController'
-import { message } from 'ant-design-vue'
+import {
+  Avatar as AAvatar,
+  Button as AButton,
+  Form as AForm,
+  FormItem as AFormItem,
+  Input as AInput,
+  InputPassword as AInputPassword,
+  Tag as ATag,
+  Textarea as ATextarea,
+  message,
+} from 'ant-design-vue'
 import {
   LockOutlined,
   UserOutlined,
@@ -141,7 +151,7 @@ async function loadPersonalization() {
   }
 }
 
-function customCount(val: string) {
+function customCount(val?: string) {
   const remaining = 2000 - String(val ?? '').length
   return remaining > 0 ? '还可输入 ' + remaining + ' 字' : '已达上限'
 }
@@ -321,10 +331,10 @@ watch(
             <div class="form-card">
               <a-form layout="vertical">
                 <a-form-item label="应用风格">
-                  <a-textarea v-model:value="personalizationForm.appStyle" placeholder="例如：我喜欢简洁、使用毛玻璃效果、主色调为蓝色..." :rows="5" size="large" :maxlength="2000" :show-count="customCount" />
+                  <a-textarea v-model:value="personalizationForm.appStyle" placeholder="例如：我喜欢简洁、使用毛玻璃效果、主色调为蓝色..." :rows="5" size="large" :maxlength="2000" :show-count="{ formatter: ({ value }) => customCount(value) }" />
                 </a-form-item>
                 <a-form-item label="回答风格">
-                  <a-textarea v-model:value="personalizationForm.answerStyle" placeholder="例如：用正式的语气回答，代码与解释交替..." :rows="5" size="large" :maxlength="2000" :show-count="customCount" />
+                  <a-textarea v-model:value="personalizationForm.answerStyle" placeholder="例如：用正式的语气回答，代码与解释交替..." :rows="5" size="large" :maxlength="2000" :show-count="{ formatter: ({ value }) => customCount(value) }" />
                 </a-form-item>
                 <a-button type="primary" size="large" :loading="personalizationLoading" class="submit-btn"
                   @click="handlePersonalizationSubmit">

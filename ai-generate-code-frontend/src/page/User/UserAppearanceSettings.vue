@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import {
+  Button as AButton,
+  Select as ASelect,
+  SelectOption as ASelectOption,
+  Slider as ASlider,
+  Switch as ASwitch,
+} from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import { useAppearanceStore, CODE_THEME_OPTIONS, DEFAULT_CODE_TYPE_OPTIONS } from '@/stores/appearance'
 
@@ -68,7 +75,7 @@ function goBack() {
           <a-select
             :value="store.colorMode"
             style="width: 140px"
-            @change="(v: string) => store.colorMode = v as 'system' | 'light' | 'dark'"
+            @change="(v) => store.colorMode = v as 'system' | 'light' | 'dark'"
           >
             <a-select-option value="system">跟随系统</a-select-option>
             <a-select-option value="light">浅色</a-select-option>
@@ -83,12 +90,11 @@ function goBack() {
           <span class="row-desc">应用于按钮、链接和选中项</span>
         </div>
         <div class="row-control row-control--color">
-          <a-color-picker
-            :value="store.primaryColor"
-            format="hex"
-            :preset-colors="['#1677ff','#52c41a','#fa8c16','#eb2f96','#722ed1','#13c2c2','#f5222d','#faad14']"
-            :show-text="false"
-            @update:value="(v: any) => store.primaryColor = typeof v === 'string' ? v : '#1677ff'"
+          <input
+            v-model="store.primaryColor"
+            class="native-color-picker"
+            type="color"
+            aria-label="主题强调色"
           />
           <a-button size="small" @click="store.primaryColor = store.DEFAULTS.primaryColor">重置</a-button>
         </div>
@@ -111,7 +117,7 @@ function goBack() {
             :step="1"
             :value="store.fontSize"
             style="width: 160px"
-            @update:value="(v: number) => store.fontSize = v"
+            @update:value="(v) => store.fontSize = Number(v)"
           />
           <span class="slider-value">{{ store.fontSize }}px</span>
           <a-button size="small" @click="store.fontSize = store.DEFAULTS.fontSize">重置</a-button>
@@ -130,7 +136,7 @@ function goBack() {
             :step="1"
             :value="store.codeFontSize"
             style="width: 160px"
-            @update:value="(v: number) => store.codeFontSize = v"
+            @update:value="(v) => store.codeFontSize = Number(v)"
           />
           <span class="slider-value">{{ store.codeFontSize }}px</span>
           <a-button size="small" @click="store.codeFontSize = store.DEFAULTS.codeFontSize">重置</a-button>
@@ -155,7 +161,7 @@ function goBack() {
           <span class="row-desc">减小内边距和间距，显示更多内容</span>
         </div>
         <div class="row-control">
-          <a-switch :checked="store.compactMode" @change="(v: boolean) => store.compactMode = v" />
+          <a-switch :checked="store.compactMode" @change="(v) => store.compactMode = Boolean(v)" />
         </div>
       </div>
 
@@ -165,7 +171,7 @@ function goBack() {
           <span class="row-desc">关闭界面切换和内容加载的过渡动画</span>
         </div>
         <div class="row-control">
-          <a-switch :checked="store.reducedMotion" @change="(v: boolean) => store.reducedMotion = v" />
+          <a-switch :checked="store.reducedMotion" @change="(v) => store.reducedMotion = Boolean(v)" />
         </div>
       </div>
 
@@ -212,7 +218,7 @@ function goBack() {
           <a-select
             :value="store.defaultCodeType"
             style="width: 140px"
-            @change="(v: string) => store.defaultCodeType = v as 'auto' | 'html' | 'multi_file' | 'vue_project'"
+            @change="(v) => store.defaultCodeType = v as 'auto' | 'html' | 'multi_file' | 'vue_project'"
           >
             <a-select-option
               v-for="opt in DEFAULT_CODE_TYPE_OPTIONS"
@@ -229,7 +235,7 @@ function goBack() {
           <span class="row-desc">BETA — 逻辑更严谨、图片更贴切</span>
         </div>
         <div class="row-control">
-          <a-switch :checked="store.workflowEnabled" @change="(v: boolean) => store.workflowEnabled = v" />
+          <a-switch :checked="store.workflowEnabled" @change="(v) => store.workflowEnabled = Boolean(v)" />
         </div>
       </div>
 
@@ -242,7 +248,7 @@ function goBack() {
           <a-select
             :value="store.codeTheme"
             style="width: 120px"
-            @change="(v: string) => store.codeTheme = v as 'default' | 'high-contrast' | 'soft'"
+            @change="(v) => store.codeTheme = v as 'default' | 'high-contrast' | 'soft'"
           >
             <a-select-option
               v-for="opt in CODE_THEME_OPTIONS"
@@ -259,7 +265,7 @@ function goBack() {
           <span class="row-desc">写入/修改文件卡片默认收起</span>
         </div>
         <div class="row-control">
-          <a-switch :checked="store.toolCardCollapsed" @change="(v: boolean) => store.toolCardCollapsed = v" />
+          <a-switch :checked="store.toolCardCollapsed" @change="(v) => store.toolCardCollapsed = Boolean(v)" />
         </div>
       </div>
 
@@ -269,7 +275,7 @@ function goBack() {
           <span class="row-desc">打开对话时显示 iframe 预览</span>
         </div>
         <div class="row-control">
-          <a-switch :checked="store.previewExpanded" @change="(v: boolean) => store.previewExpanded = v" />
+          <a-switch :checked="store.previewExpanded" @change="(v) => store.previewExpanded = Boolean(v)" />
         </div>
       </div>
 
@@ -279,7 +285,7 @@ function goBack() {
           <span class="row-desc">新内容自动滚动到底部</span>
         </div>
         <div class="row-control">
-          <a-switch :checked="store.smoothScroll" @change="(v: boolean) => store.smoothScroll = v" />
+          <a-switch :checked="store.smoothScroll" @change="(v) => store.smoothScroll = Boolean(v)" />
         </div>
       </div>
     </section>
@@ -396,6 +402,16 @@ function goBack() {
 
 .row-control--color {
   gap: 6px;
+}
+
+.native-color-picker {
+  width: 32px;
+  height: 24px;
+  padding: 2px;
+  border: 1px solid var(--border-color, #d9d9d9);
+  border-radius: 4px;
+  background: var(--bg-card, #fff);
+  cursor: pointer;
 }
 
 .slider-value {

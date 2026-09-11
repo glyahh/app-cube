@@ -2,9 +2,6 @@ import { UserLoginStore } from '@/stores/UserLogin'
 import { message } from 'ant-design-vue'
 import router from '@/router'
 
-// 是否为首次获取登录用户
-let firstFetchLoginUser = true
-
 /**
  * 全局权限校验
  */
@@ -14,15 +11,12 @@ router.beforeEach(async (to, from, next) => {
   let loginUser = loginUserStore.userLogin
 
   // 确保页面刷新，首次加载时，能够等后端返回用户信息后再校验权限
-  if (firstFetchLoginUser) {
-    try {
-      await loginUserStore.fetchLoginUser()
-    } catch (error) {
-      console.warn('[access] failed to fetch login user', error)
-    } finally {
-      loginUser = loginUserStore.userLogin
-      firstFetchLoginUser = false
-    }
+  try {
+    await loginUserStore.ensureLoginUser()
+  } catch (error) {
+    console.warn('[access] failed to fetch login user', error)
+  } finally {
+    loginUser = loginUserStore.userLogin
   }
 
   // 登录页只作为认证入口，已有会话或登录成功后统一进入主入口页。

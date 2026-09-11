@@ -1,21 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
-// ConfigProvider 由 Ant Design Vue 全量注册（main.ts app.use(Antd)），模板中直接使用 <a-config-provider>
+import { ConfigProvider as AConfigProvider } from 'ant-design-vue'
 import BasicLayout from '@/layouts/BasicLayout.vue'
-import { UserLoginStore } from './stores/UserLogin'
 import { useAppearanceStore, resolveThemeConfig } from './stores/appearance'
-
-import { testUsingGet } from '@/api/test.ts'
-
-// 开发环境测试调用
-testUsingGet({}).then((res) => {
-  console.log(res)
-})
-
-// 登录态
-const userLoginStore = UserLoginStore()
-userLoginStore.fetchLoginUser()
 
 // 外观设置
 const appearanceStore = useAppearanceStore()

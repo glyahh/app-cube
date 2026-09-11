@@ -50,7 +50,16 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
+import {
+  Button as AButton,
+  Checkbox as ACheckbox,
+  CheckboxGroup as ACheckboxGroup,
+  Input as AInput,
+  Popover as APopover,
+  RadioButton as ARadioButton,
+  RadioGroup as ARadioGroup,
+  message,
+} from 'ant-design-vue'
 import { loopMyListPageVoUsingPost } from '@/api/loopController'
 import { appLoopBatchAddByAppId, appLoopListVoByAppId, type LongId } from '@/api/longIdApi'
 

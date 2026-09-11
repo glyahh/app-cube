@@ -1,22 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomeView from '../page/HomeView.vue'
-import UserLogin from '../page/User/UserLogin.vue'
-import UserSettings from '../page/User/UserSettings.vue'
-import UserAppearanceSettings from '../page/User/UserAppearanceSettings.vue'
-import UserChatHistory from '../page/User/UserChatHistory.vue'
-import AdminHome from '@/page/Admin/AdminHome.vue'
-import AdminAppManage from '@/page/Admin/AdminAppManage.vue'
-import AdminApplyManage from '@/page/Admin/AdminApplyManage.vue'
-import AdminChatManage from '@/page/Admin/AdminChatManage.vue'
-import AdminLoopManage from '@/page/Admin/AdminLoopManage.vue'
-import AppChatView from '@/page/App/AppChatView.vue'
-import AppEditView from '@/page/App/AppEditView.vue'
-import CodeGenerateEntry from '@/page/App/CodeGenerateEntry.vue'
-import MainIndexView from '@/page/MainIndex/MainIndexView.vue'
-import LoopMarketView from '@/page/Loop/LoopMarketView.vue'
-import MyLoopView from '@/page/Loop/MyLoopView.vue'
-import LoopCreateView from '@/page/Loop/LoopCreateView.vue'
-import LoopEditView from '@/page/Loop/LoopEditView.vue'
 
 const router = createRouter({
   // 去掉地址栏默认的 # 哈希符号，实现真实的 URL
@@ -26,112 +8,112 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: HomeView,
+      component: () => import('../page/HomeView.vue'),
     },
     {
       path: '/main_index',
       name: 'main-index',
-      component: MainIndexView,
+      component: () => import('@/page/MainIndex/MainIndexView.vue'),
       meta: { noLayout: true },
     },
     // 用户登录界面
     {
       path: '/user/login',
       name: 'user-login',
-      component: UserLogin,
+      component: () => import('@/page/User/UserLogin.vue'),
     },
     // 用户设置界面
     {
       path: '/user/settings',
       name: 'user-settings',
-      component: UserSettings,
+      component: () => import('@/page/User/UserSettings.vue'),
     },
     // 用户外观设置界面
     {
       path: '/user/appearance',
       name: 'user-appearance',
-      component: UserAppearanceSettings,
+      component: () => import('@/page/User/UserAppearanceSettings.vue'),
     },
     // 用户查看历史对话
     {
       path: '/user/chats',
       name: 'user-chats',
-      component: UserChatHistory,
+      component: () => import('@/page/User/UserChatHistory.vue'),
     },
     // 管理员管理用户界面
     {
       path: '/admin/users',
       name: 'admin-users',
-      component: AdminHome,
+      component: () => import('@/page/Admin/AdminHome.vue'),
     },
     // 管理员处理申请
     {
       path: '/admin/apply',
       name: 'admin-apply',
-      component: AdminApplyManage,
+      component: () => import('@/page/Admin/AdminApplyManage.vue'),
     },
     // 管理员管理应用界面
     {
       path: '/admin/apps',
       name: 'admin-apps',
-      component: AdminAppManage,
+      component: () => import('@/page/Admin/AdminAppManage.vue'),
     },
     // 管理员对话管理界面
     {
       path: '/admin/chats',
       name: 'admin-chats',
-      component: AdminChatManage,
+      component: () => import('@/page/Admin/AdminChatManage.vue'),
     },
     // 管理员 Loop 管理界面
     {
       path: '/admin/loops',
       name: 'admin-loops',
-      component: AdminLoopManage,
+      component: () => import('@/page/Admin/AdminLoopManage.vue'),
     },
     // 应用ai交互界面 (用户查看创建的应用)
     {
       path: '/code/generate',
       name: 'code-generate',
-      component: CodeGenerateEntry,
+      component: () => import('@/page/App/CodeGenerateEntry.vue'),
     },
     // 应用ai交互界面 (用户首次通过导航创建应用)
     {
       path: '/app/:id/chat',
       name: 'app-chat',
-      component: AppChatView,
+      component: () => import('@/page/App/AppChatView.vue'),
       props: true,
     },
     // 用户编辑应用界面
     {
       path: '/app/:id/edit',
       name: 'app-edit',
-      component: AppEditView,
+      component: () => import('@/page/App/AppEditView.vue'),
       props: true,
     },
     // Loop 技能市场
     {
       path: '/loop',
       name: 'loop-market',
-      component: LoopMarketView,
+      component: () => import('@/page/Loop/LoopMarketView.vue'),
     },
     // 我的Loop
     {
       path: '/user/loops',
       name: 'my-loop',
-      component: MyLoopView,
+      component: () => import('@/page/Loop/MyLoopView.vue'),
     },
     // 创建Loop
     {
       path: '/loop/create',
       name: 'loop-create',
-      component: LoopCreateView,
+      component: () => import('@/page/Loop/LoopCreateView.vue'),
     },
     // 编辑loop
     {
       // 动态路由id到不同的loop上
       path: '/loop/:id/edit',
       name: 'loop-edit',
-      component: LoopEditView,
+      component: () => import('@/page/Loop/LoopEditView.vue'),
       // 将路由 params 参数自动转为组件 props,可以直接通过 props.id 拿到id
       props: true,
     },

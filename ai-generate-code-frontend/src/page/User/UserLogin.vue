@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
+import {
+  Button as AButton,
+  Form as AForm,
+  FormItem as AFormItem,
+  Input as AInput,
+  InputPassword as AInputPassword,
+  TypographyText as ATypographyText,
+  message,
+} from 'ant-design-vue'
 import { userLoginUsingPost, userRegisterUsingPost } from '@/api/userController'
 import { UserLoginStore } from '@/stores/UserLogin'
 

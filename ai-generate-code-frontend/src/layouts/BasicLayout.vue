@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Layout as ALayout, LayoutContent as ALayoutContent, LayoutHeader as ALayoutHeader } from 'ant-design-vue'
 import GlobalHeader from '@/components/GlobalHeader.vue'
 import GlobalFooter from '@/components/GlobalFooter.vue'
 </script>

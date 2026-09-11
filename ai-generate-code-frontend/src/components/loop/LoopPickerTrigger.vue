@@ -53,7 +53,13 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
+import {
+  Button as AButton,
+  Checkbox as ACheckbox,
+  CheckboxGroup as ACheckboxGroup,
+  Popover as APopover,
+  message,
+} from 'ant-design-vue'
 import { loopMyListPageVoUsingPost, loopGetVoUsingGet } from '@/api/loopController'
 
 interface SelectedLoopInfo {

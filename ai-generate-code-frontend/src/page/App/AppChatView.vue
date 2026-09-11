@@ -10,6 +10,7 @@ import {
   Modal as AModal,
   Tooltip as ATooltip,
   Alert as AAlert,
+  Textarea as ATextarea,
 } from 'ant-design-vue'
 import type { AppVO, ChatHistory } from '@/api'
 import { appGetVoUsingGet, appApplyUsingPost } from '@/api/appController'

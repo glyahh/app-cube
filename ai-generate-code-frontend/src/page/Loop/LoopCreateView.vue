@@ -35,7 +35,7 @@
               <a-form-item label="Loop 名称" required>
                 <a-input
                   v-model:value="form.loopName"
-                  maxlength="128"
+                  :maxlength="128"
                   placeholder="给技能起个名字"
                   show-count
                 />
@@ -65,7 +65,7 @@
             <a-textarea
               v-model:value="form.description"
               :rows="2"
-              maxlength="512"
+              :maxlength="512"
               placeholder="简短的技能说明"
               show-count
             />
@@ -135,7 +135,21 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { message, Modal } from 'ant-design-vue'
+import {
+  Button as AButton,
+  Col as ACol,
+  Divider as ADivider,
+  Form as AForm,
+  FormItem as AFormItem,
+  Input as AInput,
+  Modal,
+  Radio as ARadio,
+  RadioGroup as ARadioGroup,
+  Row as ARow,
+  Space as ASpace,
+  Textarea as ATextarea,
+  message,
+} from 'ant-design-vue'
 import { loopAddUsingPost } from '@/api/loopController'
 import { loopGetVoById, loopUpdateById } from '@/api/longIdApi'
 

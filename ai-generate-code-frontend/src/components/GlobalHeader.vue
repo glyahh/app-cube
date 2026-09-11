@@ -2,12 +2,17 @@
 import { UserLoginStore } from '@/stores/UserLogin'
 import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { message } from 'ant-design-vue'
+import {
+  Avatar as AAvatar,
+  Button as AButton,
+  Menu as AMenu,
+  Space as ASpace,
+  message,
+} from 'ant-design-vue'
 import { userLogoutUsingPost } from '@/api/userController'
 import { RightOutlined, SettingOutlined, SkinOutlined, AppstoreOutlined } from '@ant-design/icons-vue'
 
 const userLoginStore = UserLoginStore()
-userLoginStore.fetchLoginUser()
 
 /** 基础菜单项 */
 const baseMenuItems = [
@@ -52,8 +57,8 @@ const selectedKeys = computed(() => {
 /**
  * 菜单项点击事件
  */
-function onMenuSelect({ key }: { key: string }) {
-  const item = menuItems.value.find((m) => m.key === key)
+function onMenuSelect({ key }: { key: string | number }) {
+  const item = menuItems.value.find((m) => m.key === String(key))
   if (item) router.push(item.path)
 }
 
@@ -106,7 +111,7 @@ async function handleLogout() {
 
     if (res.data.code === 20000 || res.data.code === 0) {
       // 清除用户信息
-      userLoginStore.setLoginUser({ userName: '未登录' })
+      userLoginStore.resetLoginUser()
       message.success('退出登录')
       // 跳转到登录页
       router.push('/user/login')
