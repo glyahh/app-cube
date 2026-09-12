@@ -1,8 +1,6 @@
 package com.dbts.glyahhaigeneratecode.ai.tool.tools;
 
 import cn.hutool.core.util.StrUtil;
-import cn.hutool.json.JSONObject;
-import com.dbts.glyahhaigeneratecode.ai.tool.BaseTool;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -23,7 +21,7 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 @Component
-public class VueSfcSyntaxCheckFixTool extends BaseTool {
+public class VueSfcSyntaxCheckFixTool {
 
     /**
      * LLM 常见错误：开始标签属性写完后漏写 {@code >}，直接嵌套下一个标签。
@@ -158,23 +156,6 @@ public class VueSfcSyntaxCheckFixTool extends BaseTool {
             idx += pattern.length();
         }
         return count;
-    }
-
-    @Override
-    public String getToolName() {
-        return "vueSfcSyntaxCheckFix";
-    }
-
-    @Override
-    public String getDisplayName() {
-        return "Vue SFC 语法检查与修复";
-    }
-
-    @Override
-    public String generateToolExecutedResult(JSONObject arguments) {
-        return String.format("[工具调用] %s %s",
-                getDisplayName(),
-                StrUtil.blankToDefault(arguments.getStr("projectRoot"), "-"));
     }
 
     public record FixSummary(int scannedFiles, int changedFiles, int failedFiles) {

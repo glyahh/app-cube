@@ -2,12 +2,13 @@ package com.dbts.glyahhaigeneratecode.service.impl;
 
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.core.util.ZipUtil;
-import com.dbts.glyahhaigeneratecode.constant.AppConstant;
+import com.dbts.glyahhaigeneratecode.config.WorkspaceProperties;
 import com.dbts.glyahhaigeneratecode.exception.ErrorCode;
 import com.dbts.glyahhaigeneratecode.exception.MyException;
 import com.dbts.glyahhaigeneratecode.exception.ThrowUtils;
 import com.dbts.glyahhaigeneratecode.service.ProjectDownloadService;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -25,7 +26,10 @@ import java.util.Set;
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class ProjectDownloadServiceImpl implements ProjectDownloadService {
+
+    private final WorkspaceProperties workspaceProperties;
 
     /**
      * 需要过滤的文件扩展名
@@ -52,7 +56,7 @@ public class ProjectDownloadServiceImpl implements ProjectDownloadService {
 
         // 统一校验：必须位于 code_output 根目录下
         Path rootPath = Paths.get(projectPath).normalize();
-        Path baseRoot = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR).toAbsolutePath().normalize();
+        Path baseRoot = workspaceProperties.getOutputRoot().toAbsolutePath().normalize();
         ThrowUtils.throwIf(!rootPath.startsWith(baseRoot), ErrorCode.NO_AUTH_ERROR, "非法的项目路径");
         ThrowUtils.throwIf(!Files.isDirectory(rootPath), ErrorCode.NOT_FOUND_ERROR, "项目目录不存在");
 
@@ -98,8 +102,9 @@ public class ProjectDownloadServiceImpl implements ProjectDownloadService {
      * @return true 表示允许打进 zip，false 表示跳过
      */
     private boolean acceptForZip(File rootDir, File file) {
-        // 名称命中忽略列表
-        if (AppConstant.PROJECT_DOWNLOAD_IGNORE_FILES.contains(file.getName())) {
+        // 名称命中忽略列表。走 workspaceProperties 而不是直接读常量 ——
+        // 那个字段的注释写的是「避免打包下载和记忆扫描用两份列表」，两边同源但仍是两份。
+        if (workspaceProperties.getIgnore().contains(file.getName())) {
             return false;
         }
         // 扩展名命中忽略列表
@@ -116,7 +121,7 @@ public class ProjectDownloadServiceImpl implements ProjectDownloadService {
         // 父目录命中忽略列表, 防止node_modules的子文件也被下载
         File parent = file.getParentFile();
         while (parent != null && !parent.equals(rootDir)) {
-            if (AppConstant.PROJECT_DOWNLOAD_IGNORE_FILES.contains(parent.getName())) {
+            if (workspaceProperties.getIgnore().contains(parent.getName())) {
                 return false;
             }
             parent = parent.getParentFile();

@@ -2,7 +2,7 @@ package com.dbts.glyahhaigeneratecode.service.support;
 
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
-import com.dbts.glyahhaigeneratecode.constant.AppConstant;
+import com.dbts.glyahhaigeneratecode.config.WorkspaceProperties;
 import com.dbts.glyahhaigeneratecode.exception.ErrorCode;
 import com.dbts.glyahhaigeneratecode.exception.MyException;
 import com.dbts.glyahhaigeneratecode.mapper.AppMapper;
@@ -17,7 +17,6 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -33,6 +32,26 @@ import java.util.stream.Stream;
 public class AppServiceSupport {
 
     private final AppMapper appMapper;
+    private final WorkspaceProperties workspaceProperties;
+    private final WorkspacePathResolver workspacePathResolver;
+
+    /**
+     * 解析应用声明的 codeGenType。
+     *
+     * <p>「按 value 查，查不到再按枚举名查」这段原先在三个地方各写了一遍。
+     * 收敛到一处，避免某处漏掉兜底分支而静默返回 null。
+     */
+    private CodeGenTypeEnum resolveType(String codeGenType) {
+        CodeGenTypeEnum type = CodeGenTypeEnum.getEnumByValue(codeGenType);
+        if (type == null && StrUtil.isNotBlank(codeGenType)) {
+            try {
+                type = CodeGenTypeEnum.valueOf(codeGenType);
+            } catch (IllegalArgumentException ignored) {
+                // 落到调用方的 null 判断
+            }
+        }
+        return type;
+    }
 
 
     /**
@@ -41,7 +60,7 @@ public class AppServiceSupport {
      * @param appId 应用 id
      */
     public void removeCodeOutputDirByAppId(Long appId) {
-        Path codeOutputRootPath = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR);
+        Path codeOutputRootPath = workspaceProperties.getOutputRoot();
         if (!Files.isDirectory(codeOutputRootPath)) {
             return;
         }
@@ -197,18 +216,14 @@ public class AppServiceSupport {
         if (app == null || app.getId() == null) {
             return false;
         }
-        String codeGenType = app.getCodeGenType();
-        CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
-        if (codeGenTypeEnum == null && StrUtil.isNotBlank(codeGenType)) {
-            try {
-                codeGenTypeEnum = CodeGenTypeEnum.valueOf(codeGenType);
-            } catch (IllegalArgumentException ignored) {
-            }
-        }
-        if (codeGenTypeEnum == null) {
+        CodeGenTypeEnum type = resolveType(app.getCodeGenType());
+        if (type == null) {
             return false;
         }
-        Path sourceDir = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, codeGenTypeEnum.getValue() + "_" + app.getId());
+        // 必须走 resolver：这里原先手拼 "value + _ + appId"，对 VUE 会拼成 vue_{appId}，
+        // 而产物目录实际是 vue_project_{appId} —— 于是 VUE 应用永远被判为「没生成过代码」，
+        // 前端据此每次都弹「分析代码 ing~」。目录名只该由 getDirPrefix() 决定。
+        Path sourceDir = workspacePathResolver.outputDir(app.getId(), type);
         if (!Files.isDirectory(sourceDir)) {
             return false;
         }
