@@ -193,7 +193,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>  implements U
             queryWrapper.eq(User::getUserRole, userRole);
         }
         if (StrUtil.isNotBlank(sortField) && StrUtil.isNotBlank(sortOrder)) {
-            queryWrapper.orderBy(sortField, "ascend".equals(sortOrder));
+            queryWrapper.orderBy("createTime".equals(sortField) ? "create_time" : sortField,
+                    "ascend".equals(sortOrder));
         }
 
 

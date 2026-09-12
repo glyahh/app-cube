@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import { mapAgentEvent } from '../agentEventMapping'
-import { TOOL_EXEC_HEADER_RE_WRITE_FILE, TOOL_REQUEST_ANY_RE } from '../assistantToolStreamProtocol'
 
 describe('mapAgentEvent · 正文', () => {
   it('文本增量直接透传', () => {
@@ -19,41 +18,79 @@ describe('mapAgentEvent · 正文', () => {
 })
 
 describe('mapAgentEvent · 工具卡片', () => {
-  it('工具开始能被前端的“选择工具”正则识别', () => {
-    const action = mapAgentEvent('tool.started', { toolName: 'write_file', file_path: '/index.html' })
-    expect(action.kind).toBe('text')
-    const matched = (action as { text: string }).text.match(TOOL_REQUEST_ANY_RE)
-    expect(matched?.[1]).toContain('写入文件')
-    expect(matched?.[1]).toContain('/index.html')
-  })
-
-  it('工具结束能被“工具调用”写入文件正则识别', () => {
-    const action = mapAgentEvent('tool.finished', {
+  it('按 Python 真实 inputPreview 生成结构化开始动作', () => {
+    expect(
+      mapAgentEvent('tool.started', {
+        callId: 'call-1',
+        toolName: 'write_file',
+        inputPreview: '{"file_path":"/index.html","content":"<html>"}',
+      }),
+    ).toEqual({
+      kind: 'tool_started',
+      callId: 'call-1',
       toolName: 'write_file',
-      file_path: '/index.html',
-      status: 'succeeded',
+      label: '写入文件',
+      target: '/index.html',
     })
-    const text = (action as { text: string }).text
-    const matched = text.match(TOOL_EXEC_HEADER_RE_WRITE_FILE)
-    expect(matched?.[1]).toBe('/index.html')
   })
 
-  it('失败的工具有可见标记', () => {
+  it('工具结束保持结构化，不再伪造旧文本协议', () => {
+    expect(mapAgentEvent('tool.finished', {
+      callId: 'call-1',
+      toolName: 'write_file',
+      status: 'succeeded',
+      outputPreview: 'ok',
+    })).toEqual({
+      kind: 'tool_finished',
+      callId: 'call-1',
+      toolName: 'write_file',
+      label: '写入文件',
+      status: 'succeeded',
+      outputPreview: 'ok',
+    })
+  })
+
+  it('失败状态保留给卡片层展示', () => {
     const action = mapAgentEvent('tool.finished', { toolName: 'execute', status: 'failed' })
-    expect((action as { text: string }).text).toContain('失败')
+    expect(action).toMatchObject({ kind: 'tool_finished', label: '执行命令', status: 'failed' })
   })
 
-  it('未知工具名退化成原样显示而不是丢掉', () => {
+  it('未知工具名仍生成结构化动作', () => {
     const action = mapAgentEvent('tool.started', { toolName: 'some_new_tool' })
-    expect((action as { text: string }).text).toContain('some_new_tool')
+    expect(action).toMatchObject({ kind: 'tool_started', label: 'some_new_tool' })
   })
 
-  it('参数过长会截断，避免刷屏', () => {
+  it('命令参数过长会截断，避免刷屏', () => {
     const action = mapAgentEvent('tool.started', {
       toolName: 'execute',
-      command: 'x'.repeat(500),
+      inputPreview: JSON.stringify({ command: 'x'.repeat(500) }),
     })
-    expect((action as { text: string }).text.length).toBeLessThan(200)
+    expect(action.kind).toBe('tool_started')
+    if (action.kind === 'tool_started') expect(action.target.length).toBeLessThan(100)
+  })
+
+  it('截断的 JSON 仍能提取文件路径', () => {
+    const action = mapAgentEvent('tool.started', {
+      toolName: 'write_file',
+      inputPreview: '{"file_path":"/long/index.html","content":"' + 'x'.repeat(500),
+    })
+    expect(action).toMatchObject({ kind: 'tool_started', target: '/long/index.html' })
+  })
+
+  it.each([
+    ['ls', '读取目录结构'],
+    ['glob', '查找文件'],
+    ['grep', '搜索内容'],
+    ['execute', '执行命令'],
+  ])('%s 都进入结构化卡片路径', (toolName, label) => {
+    expect(mapAgentEvent('tool.started', { callId: toolName, toolName })).toMatchObject({
+      kind: 'tool_started',
+      label,
+    })
+    expect(mapAgentEvent('tool.finished', { callId: toolName, toolName })).toMatchObject({
+      kind: 'tool_finished',
+      label,
+    })
   })
 })
 

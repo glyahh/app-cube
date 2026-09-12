@@ -117,7 +117,7 @@ public class UserAppApplyServiceImpl extends ServiceImpl<UserAppApplyMapper, Use
         // 2. 批量查询所有待处理申请（status=0）
         QueryWrapper queryWrapper = new QueryWrapper();
         queryWrapper.eq(UserAppApply::getStatus, 0);
-        queryWrapper.orderBy("createTime", false);
+        queryWrapper.orderBy("create_time", false);
         List<UserAppApply> applyList = this.list(queryWrapper);
         if (applyList == null || applyList.isEmpty()) {
             return Collections.emptyList();
@@ -162,7 +162,7 @@ public class UserAppApplyServiceImpl extends ServiceImpl<UserAppApplyMapper, Use
         // 2. 查询当前用户的全部申请记录
         QueryWrapper queryWrapper = new QueryWrapper();
         queryWrapper.eq(UserAppApply::getUserId, loginUser.getId());
-        queryWrapper.orderBy("createTime", false);
+        queryWrapper.orderBy("create_time", false);
         List<UserAppApply> applyList = this.list(queryWrapper);
         if (applyList == null || applyList.isEmpty()) {
             return Collections.emptyList();
@@ -304,4 +304,3 @@ public class UserAppApplyServiceImpl extends ServiceImpl<UserAppApplyMapper, Use
         return true;
     }
 }
-

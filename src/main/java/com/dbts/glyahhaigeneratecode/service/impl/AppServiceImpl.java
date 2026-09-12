@@ -94,12 +94,14 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             app.setIsBeta(0);
         }
 
-        // 优先使用前端显式选择的 codeGenType，避免 LLM 路由器覆盖用户意图。
-        // 如前端传入 vue_project（但后端 value 约定为 vue），CodeGenTypeEnum#getEnumByValue 会做兼容映射。
-        // 不再用模型猜类型：原来前端没传时会调一次 LLM 做分类，
-        // 那条链路已随 LangChain4j 一起移除。现在要求显式指定，
-        // 猜错会写出格式不对的产物，比直接报错更糟。
+        // 显式选择优先；Auto 模式不传类型时，根据需求文本选择最稳妥的生成模式。
         CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(appAddRequest.getCodeGenType());
+        if (codeGenTypeEnum == null && StrUtil.isNotBlank(appAddRequest.getCodeGenType())) {
+            ThrowUtils.throwIf(true, ErrorCode.PARAMS_ERROR, "生成类型不合法");
+        }
+        if (codeGenTypeEnum == null) {
+            codeGenTypeEnum = autoRouteCodeGenType(appAddRequest.getInitPrompt());
+        }
         ThrowUtils.throwIf(codeGenTypeEnum == null, ErrorCode.PARAMS_ERROR, "请指定生成类型");
         app.setCodeGenType(codeGenTypeEnum.getValue());
 
@@ -113,6 +115,21 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         }
 
         return app.getId();
+    }
+
+    /**
+     * Auto 模式的轻量路由。规则优先保证简单需求落到 HTML，复杂交互再升级到 Vue。
+     * 不调用模型，避免创建应用时额外引入一次不稳定的网络请求。
+     */
+    private CodeGenTypeEnum autoRouteCodeGenType(String prompt) {
+        String text = StrUtil.nullToEmpty(prompt).toLowerCase();
+        if (text.matches(".*(vue|react|dashboard|后台|管理系统|登录|注册|购物车|状态管理|多页面|复杂交互|路由|router|组件).*")) {
+            return CodeGenTypeEnum.VUE;
+        }
+        if (text.matches(".*(多个文件|多文件|html、?css|html.*js|css.*js|分离.*样式|分离.*脚本|multi[_ -]?file).*")) {
+            return CodeGenTypeEnum.MULTI_FILE;
+        }
+        return CodeGenTypeEnum.HTML;
     }
 
     @Override
@@ -222,7 +239,8 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         }
 
         if (StrUtil.isNotBlank(sortField) && StrUtil.isNotBlank(sortOrder)) {
-            queryWrapper.orderBy(sortField, "ascend".equals(sortOrder));
+            queryWrapper.orderBy("createTime".equals(sortField) ? "create_time" : sortField,
+                    "ascend".equals(sortOrder));
         }
 
         return queryWrapper;
@@ -253,7 +271,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
                 queryWrapper.isNotNull(App::getDeployKey);
                 queryWrapper.ne(App::getDeployKey, "");
             } else {
-                queryWrapper.and("(deployKey IS NULL OR deployKey = '')");
+                queryWrapper.and("(deploy_key IS NULL OR deploy_key = '')");
             }
         }
         // 代码类型筛选
@@ -261,9 +279,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             queryWrapper.eq(App::getCodeGenType, appQueryRequest.getCodeGenType());
         }
         if (StrUtil.isNotBlank(appQueryRequest.getSortField()) && StrUtil.isNotBlank(appQueryRequest.getSortOrder())) {
-            queryWrapper.orderBy(appQueryRequest.getSortField(), "ascend".equals(appQueryRequest.getSortOrder()));
+            String sortField = appQueryRequest.getSortField();
+            queryWrapper.orderBy("createTime".equals(sortField) ? "create_time" : sortField,
+                    "ascend".equals(appQueryRequest.getSortOrder()));
         } else {
-            queryWrapper.orderBy("createTime", false);
+            queryWrapper.orderBy("create_time", false);
         }
 
         return queryWrapper;

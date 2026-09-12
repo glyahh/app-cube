@@ -56,7 +56,9 @@ public class AgentRunRequestFactory {
                 .threadId(threadIdOf(appId))
                 .appId(String.valueOf(appId))
                 .userId(String.valueOf(userId))
-                .roundId(roundId == null ? "" : String.valueOf(roundId))
+                // null 表示 USER 消息落库失败；不要编码成空字符串，否则 tap() 会在
+                // 构建流时执行 Long.valueOf("")，让本可继续的 Agent 请求直接失败。
+                .roundId(roundId == null ? null : String.valueOf(roundId))
                 .traceId(UUID.randomUUID().toString())
                 // 工作区路径由 Java 下发，Python 不做任何自己的拼接
                 .workspaceRoot(workspace.getParent().toString())

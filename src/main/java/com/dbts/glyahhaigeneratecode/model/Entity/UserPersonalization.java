@@ -26,7 +26,7 @@ public class UserPersonalization implements Serializable {
     @Id(keyType = KeyType.Generator, value = KeyGenerators.snowFlakeId)
     private Long id;
 
-    @Column("userId")
+    @Column("user_id")
     private Long userId;
 
     @Column("app_style")
@@ -35,12 +35,12 @@ public class UserPersonalization implements Serializable {
     @Column("answer_style")
     private String answerStyle;
 
-    @Column("createTime")
+    @Column("create_time")
     private LocalDateTime createTime;
 
-    @Column("updateTime")
+    @Column("update_time")
     private LocalDateTime updateTime;
 
-    @Column(value = "isDelete", isLogicDelete = true)
+    @Column(value = "is_delete", isLogicDelete = true)
     private Integer isDelete;
 }

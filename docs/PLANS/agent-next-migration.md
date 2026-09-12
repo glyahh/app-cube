@@ -69,9 +69,9 @@ user_personalization      id, user_id, app_style, answer_style, create_time, upd
 **DDL 位置**：`src/main/resources/db/migration/V1__init_biz_schema.sql`（12 张表）、
 `V2__create_agent_run.sql`（新增的执行台账）。
 
-**已做过的校验**：用 PG 方言解析器确认了两份脚本语法合法；再把脚本与运行中 MySQL 的
-`information_schema` 逐列比对，确认 12 张表的每一列都有对应。**未做**：真实 PG 实例上
-跑一遍 —— PG 还没装。
+**数据策略**：本项目不做历史 MySQL 数据搬迁。新链路只保证新写入全部进入 PostgreSQL；
+旧 MySQL 保留给旧链路/历史查询，待业务确认后再处理。首次启动由 Flyway 创建 `biz`
+schema 和新表。真实 PG CRUD 验收仍需在本机 PostgreSQL 服务可连接后执行。
 
 ## 二、归属变更
 

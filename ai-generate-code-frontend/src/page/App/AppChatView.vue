@@ -79,7 +79,7 @@ import {
 import { createStreamRenderScheduler } from '@/utils/streamRenderScheduler'
 import { IncrementalMarkdownParser } from '@/utils/incrementalMarkdownParser'
 import { openAgentStream } from '@/utils/agentStreamTransport'
-import { mapAgentEvent } from '@/utils/agentEventMapping'
+import { mapAgentEvent, type AgentUiAction } from '@/utils/agentEventMapping'
 import '@/assets/stream-layout.css'
 import { scrollElementToEnd } from '@/utils/scrollElement'
 
@@ -185,6 +185,9 @@ type UiToolRequestSegment = {
   kind: 'tool_request'
   rawLabel: string
   toolName: string
+  callId?: string
+  agentToolName?: string
+  targetPath?: string
   /** pending 胶囊开始计时（流式 tool_request 创建时写入） */
   createdAt?: number
   segmentId?: string
@@ -2386,6 +2389,12 @@ function startAgentStream(streamId: string, prompt: string) {
           appendAssistantChunkToStream(streamId, action.text)
           return
         }
+        if (action.kind === 'tool_started' || action.kind === 'tool_finished') {
+          // 工具事件是结构化协议。先提交更早到达的正文，再直接更新 UI segment。
+          streamRenderScheduler.flush(streamId)
+          commitAgentToolActionToStream(streamId, action)
+          return
+        }
         if (action.kind === 'error') {
           appendAssistantChunkToStream(streamId, `\n\n❌ ${action.text}`)
           message.error(action.text)
@@ -2608,6 +2617,63 @@ function getToolRequestShimmerText(m: ChatMessage, idx: number): string {
 
 function appendAssistantChunkToStream(streamId: string, chunk: string) {
   streamRenderScheduler.enqueue(streamId, chunk)
+}
+
+function commitAgentToolActionToStream(
+  streamId: string,
+  action: Extract<AgentUiAction, { kind: 'tool_started' | 'tool_finished' }>,
+) {
+  const meta = activeStreamMeta.value[streamId]
+  if (!meta) return
+  const msg = sessionMessages.value.find((item) => item.id === meta.assistantMessageId)
+  if (!msg || msg.role !== 'assistant') return
+
+  if (!msg.uiState) msg.uiState = createAssistantUiState()
+  const state = msg.uiState
+  drainBufferToSegments(state)
+  state.stage = 'markdown'
+  state.lastToolRequestName = undefined
+  state.pendingFilePath = undefined
+  state.pendingLanguage = undefined
+  state.pendingFenceLen = undefined
+  state.pendingModifyPart = undefined
+  state.activeToolIndex = undefined
+
+  if (action.kind === 'tool_started') {
+    toolSelectHintShown.value = true
+    state.segments.push({
+      kind: 'tool_request',
+      rawLabel: `[选择工具] ${action.label}`,
+      toolName: action.label,
+      callId: action.callId,
+      agentToolName: action.toolName,
+      targetPath: action.target,
+      createdAt: Date.now(),
+      tier2ThresholdMs: generateTier2Threshold(action.label),
+    })
+  } else {
+    const request = [...state.segments]
+      .reverse()
+      .find(
+        (segment): segment is UiToolRequestSegment =>
+          segment.kind === 'tool_request' &&
+          (action.callId
+            ? segment.callId === action.callId
+            : segment.agentToolName === action.toolName),
+      )
+    const label = request?.toolName || action.label
+    const failed = action.status !== 'succeeded'
+    state.segments.push({
+      kind: 'tool_executed_simple_tool',
+      toolTitle: `[工具调用] ${label}${failed ? '（失败）' : ''}`,
+      filePath: request?.targetPath || '',
+      message: action.outputPreview,
+      done: true,
+    })
+  }
+
+  markFirstVisibleAt(msg)
+  scheduleChatAutoScroll()
 }
 
 function commitAssistantChunkToStream(streamId: string, chunk: string) {

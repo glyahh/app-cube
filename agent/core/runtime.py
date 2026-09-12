@@ -144,20 +144,35 @@ def _run_agent(
     message: str,
 ) -> None:
     from backends.local_shell import GuardedShellBackend
+    from env_utils import get_env
     from core.compaction import OverheadEstimator
     from core.persistence import make_checkpointer, make_store
-    from core.streaming_runtime import run_agent_with_events
+    from core.streaming_runtime import _event_loop, run_agent_with_events
     from retrieval.git_epoch import snapshot
     from retrieval.runtime_context import RunContext, clear_context, set_context
     from retrieval.search_trace import EvidenceLedger, SearchTraceLog
     from server import build_agent
     from tools import CUSTOM_TOOLS
 
+    backend = None
+    sandbox_busy_types = ()
     try:
-        backend = GuardedShellBackend(workspace)
+        backend_kind = get_env("AGENT_SANDBOX_BACKEND", get_env("AGENT_SANDBOX_TYPE", "local_shell")).strip().lower()
+        if backend_kind == "docker":
+            from backends.docker_sandbox import DockerSandboxBackend, SandboxBusy
+            sandbox_busy_types = (SandboxBusy,)
+
+            backend = DockerSandboxBackend(workspace, session_id=thread_id,
+                                           run_id=str(request.get("runId") or ""))
+        else:
+            backend = GuardedShellBackend(workspace)
     except Exception as exc:
         logger.exception("工作区初始化失败")
-        emitter.error(ErrorCode.WORKSPACE_INIT_FAILED, str(exc))
+        if get_env("AGENT_SANDBOX_BACKEND", get_env("AGENT_SANDBOX_TYPE", "local_shell")).lower() == "docker":
+            code = ErrorCode.SANDBOX_BUSY if isinstance(exc, sandbox_busy_types) else ErrorCode.SANDBOX_UNAVAILABLE
+        else:
+            code = ErrorCode.WORKSPACE_INIT_FAILED
+        emitter.error(code, str(exc), retryable=True)
         return
 
     # 版本基准先取一次：后面每条 SearchTrace 都绑这个 SHA，
@@ -174,6 +189,9 @@ def _run_agent(
     set_context(context)
 
     checkpointer = make_checkpointer(settings.postgres_dsn)
+    # AsyncPostgresSaver 的建表和连接初始化必须在后续复用的事件循环中完成。
+    if hasattr(checkpointer, "setup") and checkpointer.__class__.__name__ == "AsyncPostgresSaver":
+        _event_loop().run_until_complete(checkpointer.setup())
     store = make_store(settings.postgres_dsn)
 
     # 固定开销估计器由这里持有：装配时给中间件初值，跑起来后用真实 usage 校正。
@@ -206,6 +224,11 @@ def _run_agent(
         phase="agent_running",
         detail=f"task_kind={task_kind.value}",
         gitEpoch=epoch.label,
+        sandbox={
+            "mode": "session" if get_env("AGENT_SANDBOX_BACKEND", get_env("AGENT_SANDBOX_TYPE", "local_shell")).lower() == "docker" else "local",
+            "reused": bool(getattr(getattr(backend, "record", None), "reused", False)),
+            "containerId": getattr(getattr(backend, "record", None), "container_id", None),
+        },
     )
 
     try:
@@ -224,6 +247,9 @@ def _run_agent(
         return
     finally:
         clear_context()
+        close = getattr(backend, "close", None)
+        if callable(close):
+            close()
 
     # 检索与压缩统计挂到终态事件上，便于回看这一轮到底查了什么、压了什么
     summary.setdefault("usage", {})["search"] = context.trace_log.summary()

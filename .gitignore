@@ -126,3 +126,7 @@ bugs/
 /src/test/java/com/dbts/glyahhaigeneratecode/core/rag/ConversationMemoryInjectOrderTest.java
 /src/test/java/com/dbts/glyahhaigeneratecode/core/rag/CodeChunkIndexServiceDegradeTest.java
 /src/test/java/com/dbts/glyahhaigeneratecode/service/impl/ChatToGenCodeImplMonitorContextTest.java
+
+# Local env backups (never commit)
+/.env.*
+!/.env.example

@@ -9,29 +9,26 @@ spring:
   config:
     import: optional:file:./.env[.properties]
 
-  # mysql
+  # PostgreSQL。列名已统一 snake_case（PG 会把未加引号的标识符折叠成小写）。
+  # 回滚到 MySQL：把 driver/url 换回去、flyway.enabled 关掉即可，数据两边都在。
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/gly_ai_generate_code
-    username: ${spring.datasource.username}
-    password: ${spring.datasource.password}
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/gly_ai_generate_code?currentSchema=biz
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:gly@0124}
 
   # 迁移脚本见 src/main/resources/db/migration/
-  #
-  # **默认关闭**：脚本是 PostgreSQL 方言，而当前 datasource 是 MySQL ——
-  # 一旦默认启用，启动时就会拿 PG 脚本去 MySQL 上跑。
-  #
-  # 切到 PostgreSQL 时（见 docs/PLANS/agent-next-migration.md）：
-  #   1. 换 driver-class-name / url（url 加 ?currentSchema=biz）
-  #   2. 把 enabled 改成 true
-  #   3. 确认 schemas / default-schema 都是 biz
+  # 已切到 PostgreSQL，脚本与 datasource 方言一致，可以打开了。
+  # V1 建 8 张业务表，V2 建 agent_run 台账。
   flyway:
-    enabled: false
+    enabled: true
     schemas: biz
     default-schema: biz
     create-schemas: true
     locations: classpath:db/migration
+    # 新库首次启动自动建表；已有库由 Flyway 记录版本，不重复执行。
     baseline-on-migrate: true
+    baseline-version: 2
 
   #Redis
   data:

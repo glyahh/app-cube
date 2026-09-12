@@ -5,10 +5,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * 启用 Spring 计划任务（{@link org.springframework.scheduling.annotation.Scheduled}）。
- * <p>
- * 例如 {@link com.dbts.glyahhaigeneratecode.service.impl.ConversationMemoryStateServiceImpl} 中的定时清理；
- * 与 DDL 建表无关（会话记忆建表请执行 {@code sql/conversation_memory_tables.sql}）。
- * </p>
+ *
+ * <p>当前没有任何 {@code @Scheduled} 任务在用 —— 原先唯一的用途是 V4 双轨记忆的
+ * 定时清理，那套记忆已随旧链路移除。保留这个开关是为了后续加定时任务时不必再改配置。
  */
 @Configuration
 @EnableScheduling

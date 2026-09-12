@@ -42,19 +42,19 @@ public class UserAppApply implements Serializable {
     /**
      * 申请用户 id
      */
-    @Column("userId")
+    @Column("user_id")
     private Long userId;
 
     /**
      * 申请关联的应用 id，申请管理员时可为空
      */
-    @Column("appId")
+    @Column("app_id")
     private Long appId;
 
     /**
      * 应用展示优先级，模拟申请将应用设置为精选时的目标优先级（越大越靠前）
      */
-    @Column("appPropriety")
+    @Column("app_propriety")
     private Integer appPropriety;
 
     /**
@@ -66,7 +66,7 @@ public class UserAppApply implements Serializable {
     /**
      * 申请理由
      */
-    @Column("applyReason")
+    @Column("apply_reason")
     private String applyReason;
 
     /**
@@ -78,37 +78,37 @@ public class UserAppApply implements Serializable {
     /**
      * 审核管理员用户 id
      */
-    @Column("reviewUserId")
+    @Column("review_user_id")
     private Long reviewUserId;
 
     /**
      * 审核备注
      */
-    @Column("reviewRemark")
+    @Column("review_remark")
     private String reviewRemark;
 
     /**
      * 审核时间
      */
-    @Column("reviewTime")
+    @Column("review_time")
     private LocalDateTime reviewTime;
 
     /**
      * 创建时间
      */
-    @Column("createTime")
+    @Column("create_time")
     private LocalDateTime createTime;
 
     /**
      * 更新时间
      */
-    @Column("updateTime")
+    @Column("update_time")
     private LocalDateTime updateTime;
 
     /**
      * 是否删除
      */
-    @Column(value = "isDelete", isLogicDelete = true)
+    @Column(value = "is_delete", isLogicDelete = true)
     private Integer isDelete;
 }
 

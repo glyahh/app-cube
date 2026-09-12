@@ -39,61 +39,61 @@ public class User implements Serializable {
     /**
      * 账号
      */
-    @Column("userAccount")
+    @Column("user_account")
     private String userAccount;
 
     /**
      * 密码
      */
-    @Column("userPassword")
+    @Column("user_password")
     private String userPassword;
 
     /**
      * 用户昵称
      */
-    @Column("userName")
+    @Column("user_name")
     private String userName;
 
     /**
      * 用户头像
      */
-    @Column("userAvatar")
+    @Column("user_avatar")
     private String userAvatar;
 
     /**
      * 用户简介
      */
-    @Column("userProfile")
+    @Column("user_profile")
     private String userProfile;
 
     /**
      * 用户角色: user/admin
      */
-    @Column("userRole")
+    @Column("user_role")
     private String userRole;
 
     /**
      * 编辑时间
      */
-    @Column("editTime")
+    @Column("edit_time")
     private LocalDateTime editTime;
  
     /**
      * 创建时间
      */
-    @Column("createTime")
+    @Column("create_time")
     private LocalDateTime createTime;
  
     /**
      * 更新时间
      */
-    @Column("updateTime")
+    @Column("update_time")
     private LocalDateTime updateTime;
 
     /**
      * 是否删除
      */
-    @Column(value = "isDelete", isLogicDelete = true)
+    @Column(value = "is_delete", isLogicDelete = true)
     private Integer isDelete;
 
 }

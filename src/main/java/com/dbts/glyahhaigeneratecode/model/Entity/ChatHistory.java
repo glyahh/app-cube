@@ -44,55 +44,55 @@ public class ChatHistory implements Serializable {
     /**
      * user/ai
      */
-    @Column("messageType")
+    @Column("message_type")
     private String messageType;
 
     /**
      * 应用id
      */
-    @Column("appId")
+    @Column("app_id")
     private Long appId;
 
     /**
      * 创建用户id
      */
-    @Column("userId")
+    @Column("user_id")
     private Long userId;
 
     /**
      * 审查动作：ALLOW / REJECT / SKIP
      */
-    @Column("auditAction")
+    @Column("audit_action")
     private String auditAction;
 
     /**
      * 命中的审查规则编码，未命中时为 NONE
      */
-    @Column("auditHitRule")
+    @Column("audit_hit_rule")
     private String auditHitRule;
 
     /**
      * Loop ID（本轮注入的 Loop 快照，nullable）
      */
-    @Column("loopId")
+    @Column("loop_id")
     private Long loopId;
 
     /**
      * 创建时间
      */
-    @Column("createTime")
+    @Column("create_time")
     private LocalDateTime createTime;
 
     /**
      * 更新时间
      */
-    @Column("updateTime")
+    @Column("update_time")
     private LocalDateTime updateTime;
 
     /**
      * 是否删除
      */
-    @Column(value = "isDelete", isLogicDelete = true)
+    @Column(value = "is_delete", isLogicDelete = true)
     private Integer isDelete;
 
 }

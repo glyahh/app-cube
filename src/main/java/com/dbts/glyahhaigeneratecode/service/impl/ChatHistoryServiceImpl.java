@@ -419,7 +419,7 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
         }
         if (StrUtil.isNotBlank(queryRequest.getAppName())) {
             queryWrapper.and(new RawQueryCondition(
-                "EXISTS (SELECT 1 FROM app WHERE app.id = chat_history.appId AND app.appName LIKE CONCAT('%', ?, '%'))",
+                "EXISTS (SELECT 1 FROM app WHERE app.id = chat_history.app_id AND app.app_name LIKE ('%' || ? || '%'))",
                 new Object[]{queryRequest.getAppName()}
             ));
         }
@@ -442,10 +442,11 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
 
         // 如果有排序字段，则设置排序为对应的排序顺序
         if (StrUtil.isNotBlank(sortField) && StrUtil.isNotBlank(sortOrder)) {
-            queryWrapper.orderBy(sortField, "ascend".equals(sortOrder));
+            queryWrapper.orderBy("createTime".equals(sortField) ? "create_time" : sortField,
+                    "ascend".equals(sortOrder));
         } else {
             // 否则按创建时间降序
-            queryWrapper.orderBy("createTime", false);
+            queryWrapper.orderBy("create_time", false);
         }
 
         // 3. 返回组装完毕的 QueryWrapper,供分页或列表查询复用

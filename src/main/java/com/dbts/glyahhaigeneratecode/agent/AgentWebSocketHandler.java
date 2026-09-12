@@ -121,9 +121,12 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         String frameJson = runRequest.toFrameJson(objectMapper);
         String runId = runRequest.getRunId();
 
+        // 台账在这里落：前面都是同步校验（限流、归属），走到这一步才真的要跑
+        persistence.recordRun(runRequest);
+
         // 累积正文并在终态落一次 AI 行。挂在 filter 之前，才看得到 text.message。
         Flux<AgentEvent> events = persistence
-                .tap(agentRunService.stream(appId, frameJson), appId, userId, roundId)
+                .tap(agentRunService.stream(appId, frameJson), runRequest)
                 .filter(event -> !event.isEnd());
 
         Disposable subscription = withHeartbeat(events, runId)

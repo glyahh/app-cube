@@ -30,10 +30,12 @@ def make_checkpointer(dsn: str):
     """
     if dsn:
         try:
-            from langgraph.checkpoint.postgres import PostgresSaver
-            from psycopg_pool import ConnectionPool
+            # astream_events 使用异步 LangGraph API，必须配套 AsyncPostgresSaver；
+            # 同步 PostgresSaver 没有 aget_tuple，会在首个 run 直接抛 NotImplementedError。
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+            from psycopg_pool import AsyncConnectionPool
 
-            pool = ConnectionPool(
+            pool = AsyncConnectionPool(
                 conninfo=dsn,
                 min_size=1,
                 max_size=8,
@@ -41,8 +43,7 @@ def make_checkpointer(dsn: str):
                 open=True,
                 kwargs={"autocommit": True, "prepare_threshold": 0},
             )
-            saver = PostgresSaver(pool)
-            saver.setup()
+            saver = AsyncPostgresSaver(pool)
             logger.info("checkpointer：PostgreSQL")
             return saver
         except Exception as exc:

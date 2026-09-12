@@ -1,12 +1,4 @@
-/**
- * 把 Agent 的结构化事件映射成前端已有的 UI 动作。
- *
- * 为什么转成文本而不是新建一条渲染路径：现有工具卡片是靠解析流里的
- * `[工具调用] 写入文件 <path>` 这类标签渲染的（见 assistantToolStreamProtocol）。
- * 复用它可以少写一整套 UI 状态机，代价是多一次字符串拼装。
- *
- * 抽成纯函数是为了能测 —— 这层映射错了，前端会静默不显示或显示错。
- */
+/** 把 Agent 的结构化事件映射成 UI 动作。旧文本协议只留给历史和旧链路。 */
 
 /** 框架工具名 → 前端卡片认识的中文动作。认不出的走兜底文案。 */
 const TOOL_LABELS: Record<string, string> = {
@@ -24,25 +16,84 @@ const TOOL_LABELS: Record<string, string> = {
 }
 
 /** 从工具参数里取一个能看的参数值。不同工具的参数名不一样。 */
-function primaryArg(payload: Record<string, unknown>): string {
-  const candidates = ['file_path', 'path', 'command', 'pattern', 'claim']
+function truncate(value: string): string {
+  const text = value.trim()
+  return text.length > 80 ? `${text.slice(0, 80)}…` : text
+}
+
+const PRIMARY_ARG_KEYS = [
+  'file_path',
+  'filePath',
+  'relativeFilePath',
+  'path',
+  'command',
+  'pattern',
+  'query',
+  'claim',
+]
+
+function primaryArgFromObject(payload: Record<string, unknown>): string {
+  const candidates = PRIMARY_ARG_KEYS
   for (const key of candidates) {
     const value = payload[key]
     if (typeof value === 'string' && value.trim()) {
-      return value.trim().length > 80 ? `${value.trim().slice(0, 80)}…` : value.trim()
+      return truncate(value)
     }
-  }
-  // 参数在 input 里（不同版本的载荷形状不同）
-  const input = payload.input
-  if (typeof input === 'string' && input.trim()) {
-    const text = input.trim()
-    return text.length > 80 ? `${text.slice(0, 80)}…` : text
   }
   return ''
 }
 
+function primaryArgFromPreview(value: unknown): string {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return primaryArgFromObject(value as Record<string, unknown>)
+  }
+  if (typeof value !== 'string' || !value.trim()) return ''
+
+  const text = value.trim()
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const arg = primaryArgFromObject(parsed as Record<string, unknown>)
+      if (arg) return arg
+    }
+  } catch {
+    // inputPreview 可能被截断；继续从 JSON 前缀提取关键参数。
+  }
+
+  for (const key of PRIMARY_ARG_KEYS) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const matched = text.match(new RegExp(`["']?${escaped}["']?\\s*:\\s*["']([^"']+)`))
+    if (matched?.[1]) return truncate(matched[1])
+  }
+
+  return text.startsWith('{') || text.startsWith('[') ? '' : truncate(text)
+}
+
+function primaryArg(payload: Record<string, unknown>): string {
+  return (
+    primaryArgFromObject(payload) ||
+    primaryArgFromPreview(payload.input) ||
+    primaryArgFromPreview(payload.inputPreview)
+  )
+}
+
 export type AgentUiAction =
   | { kind: 'text'; text: string }
+  | {
+      kind: 'tool_started'
+      callId: string
+      toolName: string
+      label: string
+      target: string
+    }
+  | {
+      kind: 'tool_finished'
+      callId: string
+      toolName: string
+      label: string
+      status: string
+      outputPreview: string
+    }
   | { kind: 'error'; text: string }
   | { kind: 'done' }
   | { kind: 'ignore' }
@@ -63,19 +114,25 @@ export function mapAgentEvent(name: string, payload: Record<string, unknown>): A
 
     case 'tool.started': {
       const toolName = String(payload.toolName ?? '')
-      const label = TOOL_LABELS[toolName] ?? toolName ?? '调用工具'
-      const arg = primaryArg(payload)
-      // 标签行会把冒号后的整段都捕获进卡片标题，带上参数更有信息量
-      return { kind: 'text', text: `\n\n[选择工具] ${label}${arg ? ` ${arg}` : ''}\n` }
+      return {
+        kind: 'tool_started',
+        callId: String(payload.callId ?? ''),
+        toolName,
+        label: TOOL_LABELS[toolName] || toolName || '调用工具',
+        target: primaryArg(payload),
+      }
     }
 
     case 'tool.finished': {
       const toolName = String(payload.toolName ?? '')
-      const label = TOOL_LABELS[toolName] ?? toolName
-      const arg = primaryArg(payload)
-      const ok = String(payload.status ?? 'succeeded') === 'succeeded'
-      const mark = ok ? '' : '（失败）'
-      return { kind: 'text', text: `[工具调用] ${label}${mark}${arg ? ` ${arg}` : ''}\n` }
+      return {
+        kind: 'tool_finished',
+        callId: String(payload.callId ?? ''),
+        toolName,
+        label: TOOL_LABELS[toolName] || toolName || '调用工具',
+        status: String(payload.status ?? 'succeeded'),
+        outputPreview: typeof payload.outputPreview === 'string' ? payload.outputPreview : '',
+      }
     }
 
     case 'business-error': {

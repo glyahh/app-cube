@@ -25,6 +25,26 @@ echo '<请求>' | uv run python app.py 2>/tmp/agent.log | jq -c .
 uv run pytest -q
 ```
 
+## Docker Session 沙箱（可选）
+
+默认仍使用 `local_shell`。启用 WSL Ubuntu 中的 Docker Engine 后，可使用一个
+Session 复用一个容器：
+
+```bash
+export AGENT_SANDBOX_BACKEND=docker
+export AGENT_SANDBOX_IMAGE=ubuntu:24.04
+uv run python app.py
+```
+
+`AGENT_SANDBOX_TYPE=docker` 也被兼容支持；`AGENT_SANDBOX_BACKEND` 优先。
+Windows 进程找不到 `docker.exe` 时，会自动通过 `wsl.exe -d Ubuntu -- docker`
+连接 WSL Docker Engine。
+
+容器只把请求中的 workspace 挂载到 `/workspace`，不挂载 Docker socket。Run
+结束只释放 Session 锁；后台回收器会在空闲 10 分钟降低 CPU、30 分钟停止、
+120 分钟销毁容器。代码工作区仍由宿主机路径持久化。Docker 不可用时返回
+`SANDBOX_UNAVAILABLE`，不会静默回退到宿主机 shell。
+
 `tests/test_main_loop.py` 跑真实子进程，顺带盯住两件事：协议通道没被 `print`
 污染、以及**终止帧一定发得出去**（漏发会让 Java 侧永久阻塞在读上）。
 

@@ -26,15 +26,15 @@ CREATE TABLE biz.agent_run (
     -- 对账用：Python 的事件序号与最后活动时间。
     -- 「跨库一致性不能只靠 checkpoint 保证」，孤儿 run 要靠这两个字段识别。
     last_event_seq  INTEGER      NOT NULL DEFAULT 0,
-    last_event_at   TIMESTAMPTZ,
-    started_at      TIMESTAMPTZ,
-    finished_at     TIMESTAMPTZ,
-    deadline_at     TIMESTAMPTZ,
+    last_event_at   TIMESTAMP,
+    started_at      TIMESTAMP,
+    finished_at     TIMESTAMP,
+    deadline_at     TIMESTAMP,
     reconcile_tries INTEGER      NOT NULL DEFAULT 0,
     usage_json      JSONB,
     manifest_json   JSONB,
-    create_time     TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    update_time     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    create_time     TIMESTAMP  NOT NULL DEFAULT now(),
+    update_time     TIMESTAMP  NOT NULL DEFAULT now(),
     is_delete       SMALLINT     NOT NULL DEFAULT 0,
     -- status 取值：PENDING / RUNNING / SUCCEEDED / FAILED / CANCELLED / UNREACHABLE / UNKNOWN
     CONSTRAINT ck_agent_run_status CHECK (
