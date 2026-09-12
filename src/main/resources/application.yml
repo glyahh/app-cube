@@ -1,6 +1,14 @@
 spring:
   application:
     name: glyahh-ai-generate-code-backend
+
+  # 仓库根的 .env 同时被 Python 侧读取（agent/env_utils.py）。
+  # 两边读同一份，避免密钥与配置在两侧漂移。
+  # optional: 前缀保证文件不存在时不阻断启动（新克隆的仓库还没建 .env）。
+  # [.properties] 是给 Spring 的解析器提示 —— .env 不是它认识的标准扩展名。
+  config:
+    import: optional:file:./.env[.properties]
+
   # mysql
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -43,91 +51,6 @@ spring:
     store-type: redis
     timeout: 2592000 # 30天过期
 
-# ---------------------------------------------------------------------------
-# 会话记忆（V4）：MySQL 为真相源，以下为 Redis 热缓存 TTL + 治理与 manifest 重试
-# 绑定前缀见 ConversationMemoryProperties：conversation.memory.*
-# ---------------------------------------------------------------------------
-conversation:
-  memory:
-    # Redis key：cm:state:{appId}。缓存 conversation_memory_state 摘要/索引等，过期后从 DB 回填。
-    # 默认 14 天（秒）
-    state-ttl-seconds: 1209600
-    # Redis key：cm:ref:{refId}。超长归档片段热缓存，过期后从 conversation_memory_ref 表回源。
-    # 默认 3 天（秒）
-    ref-ttl-seconds: 259200
-    # --- G 数据治理：定时任务清理 conversation_memory_ref，多条件任一超限则删最旧 ---
-    # 单 app 最多保留 ref 行数（超出删旧）
-    ref-keep-count-per-app: 500
-    # 单 app ref 超过该创建天数的记录删除
-    ref-keep-days-per-app: 30
-    # 单 app ref 内容总字节上限（约 200MB，超出按滚动字节删旧）
-    ref-keep-bytes-per-app: 209715200
-    # onRoundCompleted 扫盘前：目录文件数/mtime 连续一致才认为落盘稳定；最大轮询次数
-    manifest-stable-retry-times: 3
-    # 每轮稳定性检查间隔（毫秒），与 retry-times 配合约覆盖「短暂落盘延迟」
-    manifest-stable-retry-sleep-ms: 150
-    # --- 方式 2：工具写盘后 fileNote（批量 LLM 摘要，见 ConversationMemoryFileNoteService）---
-    file-note-enabled: true
-    file-note-debounce-ms: 400
-    # 每轮最多总结的filenote数
-    file-note-max-paths-per-round: 40
-    file-note-input-chars: 2000
-    # mysql/redis中存储的filenote长度
-    file-note-max-note-chars: 200
-    # LangChain4j ChatMemory（AI 压缩上下文）TTL，秒
-    chat-ttl-seconds: 600
-    # 用户回显全文 echo Redis TTL，秒
-    echo-memory-ttl-seconds: 3600
-
-# ---------------------------------------------------------------------------
-# 工程记忆 RAG（Phase 1）：ES 向量检索 + Embedding
-# ---------------------------------------------------------------------------
-rag:
-  elasticsearch:
-    # ES 地址，逗号分隔
-    uris: ${RAG_ELASTICSEARCH_URIS:http://localhost:9200}
-    # 检索索引名
-    index-name: code_chunks_v4
-    # 连接超时毫秒
-    connect-timeout-ms: 3000
-    # socket 超时毫秒
-    socket-timeout-ms: 10000
-  embedding:
-    # OpenAI 兼容的 embedding API 地址（通常与 ai.platform.base-url 相同）
-    base-url: ${ai.platform.base-url}
-    api-key: ${ai.platform.api-key}
-    # 模型名：DashScope text-embedding-v4 默认输出 1024 维
-    model-name: text-embedding-v4
-    # 向量维度（必须与模型输出一致）
-    dimension: 1024
-    # 单次 embedding API 最多提交的文本数
-    batch-size: 10
-    # 首次失败后的补偿重试次数
-    batch-max-retries: 1
-    # 接口调用失败,等待 毫秒重试
-    retry-base-delay-ms: 300
-  chunk:
-    # 每块最大行数
-    max-lines: 200
-    # 块间重叠行数
-    overlap-lines: 20
-    # 单文件超过该行数时跳过大文件（0=不限制）
-    max-file-lines: 5000
-  retrieval:
-    # 每轮检索 Top-K
-    top-k: 5
-    # [memory_inject] 总字符预算
-    char-budget: 8000
-    # BM25 关键词检索分数权重
-    keyword-boost: 1.0
-    # KNN 向量检索分数权重
-    vector-boost: 1.0
-    # KNN 候选数 = top-k * 该倍率
-    num-candidates-multiplier: 2
-  # 主开关；false 时跳过索引与检索，日志记录降级
-  enabled: true
-
-
 server:
   port: 8124
   servlet:
@@ -137,118 +60,13 @@ server:
         max-age: 2592000
 
 
-# =============================================================================
-# AI 模型配置
-# 所有模型共享 base-url 与 api-key（由 ai.platform.* 提供），
-# 其余参数各自独立配置。
-# =============================================================================
-langchain4j:
-  open-ai:
-    # 最普通的模型
-    # 1. 对话记忆压缩/总结
-    # 2. 工作流图片相关
-    # 3. 代码生成主链路里的「非流式 / 工具侧」模型(几乎不用)
-    chat-model:
-      model-name: ${langchain4j.open-ai.chat-model.model-name}
-      # Qwen3.5-Plus 的兼容模式地址，以阿里云百炼为例
-      base-url: ${ai.platform.base-url}
-      # 你的 Qwen API Key
-      api-key: ${ai.platform.api-key}
-      # 开启详细的请求和回答日志记录
-      log-requests: ${langchain4j.open-ai.chat-model.log-requests}
-      log-responses: ${langchain4j.open-ai.chat-model.log-responses}
-      max-tokens: ${langchain4j.open-ai.chat-model.max-tokens}
-      # 最大重试次数
-      max-retries: ${langchain4j.open-ai.chat-model.max-retries}
-      output-guardrails-config:
-        max-retries: ${langchain4j.open-ai.chat-model.output-guardrails-config.max-retries}
-      # 结构化输出
-    #      strict-json-schema: true
-    #      response-format: json_object
-
-
-    # 1. 单页 HTML、多文件（HTML / MULTI_FILE）的流式生成
-    # 注意：此模型用于 SSE 流式透传，必须使用非 reasoning 模型。
-    # qwen3.6-flash 默认启用 thinking 会导致推理阶段 delta.content 为空，
-    # 若需切回 flash，必须同时配置 extra-body: {thinking: {type: disabled}}。
-    streaming-chat-model:
-      model-name: ${langchain4j.open-ai.streaming-chat-model.model-name}
-      # Qwen3.5-Plus 的兼容模式地址，以阿里云百炼为例
-      base-url: ${ai.platform.base-url}
-      # 你的 Qwen API Key
-      api-key: ${ai.platform.api-key}
-      # 开启详细的请求和回答日志记录
-      log-requests: ${langchain4j.open-ai.streaming-chat-model.log-requests}
-      log-responses: ${langchain4j.open-ai.streaming-chat-model.log-responses}
-      # 单页 HTML / 多文件流式输出易触顶 LENGTH；酌情调高（需与模型服务商上限一致）
-      max-tokens: ${langchain4j.open-ai.streaming-chat-model.max-tokens}
-      # 最大重试次数
-      max-retries: ${langchain4j.open-ai.streaming-chat-model.max-retries}
-
-
-    # 1. Vue 工程（VUE）的流式生成
-    reasoning-streaming-chat-model:
-      base-url: ${ai.platform.base-url}
-      api-key: ${ai.platform.api-key}
-      model-name: ${langchain4j.open-ai.reasoning-streaming-chat-model.model-name}
-      max-tokens: ${langchain4j.open-ai.reasoning-streaming-chat-model.max-tokens}
-      temperature: ${langchain4j.open-ai.reasoning-streaming-chat-model.temperature}
-      log-requests: ${langchain4j.open-ai.reasoning-streaming-chat-model.log-requests}
-      log-responses: ${langchain4j.open-ai.reasoning-streaming-chat-model.log-responses}
-
-    # 1. 轻量「分类/路由」——决定代码生成类型枚举 CodeGenTypeEnum
-    routing-chat-model:
-      base-url: ${ai.platform.base-url}
-      api-key: ${ai.platform.api-key}
-      model-name: ${langchain4j.open-ai.routing-chat-model.model-name}
-      log-requests: ${langchain4j.open-ai.routing-chat-model.log-requests}
-      log-responses: ${langchain4j.open-ai.routing-chat-model.log-responses}
-
-    # 1. 工作流里的「代码质检」
-    code-exam-chat-model:
-      base-url: ${ai.platform.base-url}
-      api-key: ${ai.platform.api-key}
-      model-name: ${langchain4j.open-ai.code-exam-chat-model.model-name}
-      max-tokens: ${langchain4j.open-ai.code-exam-chat-model.max-tokens}
-      temperature: ${langchain4j.open-ai.code-exam-chat-model.temperature}
-      log-requests: ${langchain4j.open-ai.code-exam-chat-model.log-requests}
-      log-responses: ${langchain4j.open-ai.code-exam-chat-model.log-responses}
-
-    # 工具 writeFile/modifyFile 落盘后的路径级中文 fileNote（批量摘要）
-    file-note-chat-model:
-      base-url: ${ai.platform.base-url}
-      api-key: ${ai.platform.api-key}
-      model-name: ${langchain4j.open-ai.file-note-chat-model.model-name}
-      max-tokens: ${langchain4j.open-ai.file-note-chat-model.max-tokens}
-      temperature: ${langchain4j.open-ai.file-note-chat-model.temperature}
-      log-requests: ${langchain4j.open-ai.file-note-chat-model.log-requests}
-      log-responses: ${langchain4j.open-ai.file-note-chat-model.log-responses}
-
-
-# 阿里云 DashScope 配置
-dashscope:
-  api-key: ${ai.platform.api-key}
-  image-model: ${dashscope.image-model}
-
-
-logging:
-  level:
-    dev.langchain4j.model.openai: ${logging.level.dev.langchain4j.model.openai}
-    dev.langchain4j.model.TokenCounter: ${logging.level.dev.langchain4j.model.TokenCounter}
-
-
-pexels:
-  api-key: ${pexels.api-key}
-
-
-# 添加 COS 对象存储配置
 aliyun:
   oss:
-    endpoint: ${aliyun.oss.endpoint}
-    accessKeyId: ${aliyun.oss.accessKeyId}
-    accessKeySecret: ${aliyun.oss.accessKeySecret}
-    bucketName: ${aliyun.oss.bucketName}
-    region: ${aliyun.oss.region}
+    endpoint: ${ALIYUN_OSS_ENDPOINT:}
+    accessKeyId: ${ALIYUN_OSS_ACCESS_KEY_ID:}
+    accessKeySecret: ${ALIYUN_OSS_ACCESS_KEY_SECRET:}
+    bucketName: ${ALIYUN_OSS_BUCKET_NAME:}
+    region: ${ALIYUN_OSS_REGION:cn-hangzhou}
 
 
 # springdoc-openapi 配置
