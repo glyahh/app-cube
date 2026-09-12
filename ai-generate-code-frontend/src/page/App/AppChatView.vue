@@ -88,17 +88,6 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 const PREVIEW_BASE_URL =
   import.meta.env.VITE_PREVIEW_BASE_URL ?? `${API_BASE_URL.replace(/\/$/, '')}/static`
 
-/**
- * Agent 流式接口开关。
- *
- * 打开后走 `/api/ws/agent`（WebSocket 优先，失败或 3 秒未连上降级到 SSE），
- * 事件是新协议（run.started / text.delta / tool.started ...）。
- *
- * 默认关闭：老的 `/chat/gen/code` 与 `/chat/gen/workflow` 仍在服务，
- * 两者并存便于对比与回滚。等新链路稳定后把这个开关拿掉。
- */
-const AGENT_STREAM_ENABLED = import.meta.env.VITE_AGENT_STREAM_ENABLED === 'true'
-
 const route = useRoute()
 const router = useRouter()
 const userLoginStore = UserLoginStore()
@@ -2764,120 +2753,8 @@ async function sendMessage(text?: string) {
   }
 
   try {
-    // 新链路：Agent 传输（WebSocket 优先 / SSE 降级）。
-    // 事件名与载荷走新协议，与下面老的 /chat/gen/* 完全不同，所以整个分支独立。
-    if (AGENT_STREAM_ENABLED) {
-      startAgentStream(streamId, prompt)
-      return
-    }
-
-    const query = new URLSearchParams({
-      appId: String(appId.value),
-      message: prompt,
-    })
-    const apiBase = API_BASE_URL.replace(/\/$/, '')
-    const endpoint = isAppWorkflowBeta() ? '/chat/gen/workflow' : '/chat/gen/code'
-    // loopId 仅支持 /gen/code 端点，/gen/workflow 暂不支持
-    const loopIdVal = selectedLoopId.value
-    if (loopIdVal && String(loopIdVal) !== '0' && endpoint === '/chat/gen/code') {
-      query.append('loopId', String(loopIdVal))
-    }
-    const url = `${apiBase}${endpoint}?${query.toString()}`
-
-    const es = new EventSource(url, { withCredentials: true })
-    eventSourceMap.set(streamId, es)
-
-    es.addEventListener('workflow-step', (event: MessageEvent) => {
-      const meta = activeStreamMeta.value[streamId]
-      if (!meta) return
-      const msg = sessionMessages.value.find((x) => x.id === meta.assistantMessageId)
-      if (!msg || msg.role !== 'assistant') return
-      try {
-        const payload = JSON.parse(event.data || '{}') as { step?: number; label?: string }
-        const step = Number(payload?.step)
-        const label = String(payload?.label ?? '').trim()
-        if (!Number.isFinite(step) || !label) return
-        if (!isFirstAppAssistantMessage(msg)) return
-        mergeWorkflowStepsIntoMessage(msg, [{ step, label }])
-      } catch {
-        // ignore malformed workflow-step payload
-      }
-    })
-
-    es.onmessage = (event) => {
-      const data = event.data
-      if (!data || data === 'null') {
-        return
-      }
-
-      const trimmed = (data ?? '').trim()
-      if (trimmed === '[DONE]' || trimmed === '__END__') {
-        stopStream(streamId)
-        hasGenerated.value = true
-        void refreshProjectFilesEchoFromDisk()
-        void refreshPreviewWithRetry()
-        void fetchRoundCount()
-        return
-      }
-
-      maybeInjectToolSelectHint(data)
-
-      appendAssistantChunkToStream(streamId, data)
-    }
-
-    // 监听自定义事件类型 "done"
-    es.addEventListener('done', () => {
-      stopStream(streamId)
-      hasGenerated.value = true
-      void refreshProjectFilesEchoFromDisk()
-      void refreshPreviewWithRetry()
-      void fetchRoundCount()
-    })
-
-    // 监听后端业务错误（如限流、参数校验等）并以 SSE 方式结束
-    es.addEventListener('business-error', (event: MessageEvent) => {
-      const meta = activeStreamMeta.value[streamId]
-      const msg = meta ? sessionMessages.value.find((x) => x.id === meta.assistantMessageId) : undefined
-      try {
-        const data = JSON.parse(event.data || '{}') as { message?: string }
-        const errorText = (data?.message || '生成过程中出现错误').trim()
-        if (msg && msg.role === 'assistant') {
-          msg.content += msg.content ? `\n\n❌ ${errorText}` : `❌ ${errorText}`
-          if (!msg.uiState) msg.uiState = createAssistantUiState()
-          processAssistantChunkIntoUiState(msg.uiState, `\n\n❌ ${errorText}`)
-        }
-        message.error(errorText)
-      } catch {
-        const fallback = '生成过程中出现错误'
-        if (msg && msg.role === 'assistant') {
-          msg.content += msg.content ? `\n\n❌ ${fallback}` : `❌ ${fallback}`
-          if (!msg.uiState) msg.uiState = createAssistantUiState()
-          processAssistantChunkIntoUiState(msg.uiState, `\n\n❌ ${fallback}`)
-        }
-        message.error(fallback)
-      } finally {
-        stopStream(streamId)
-      }
-    })
-
-    // 监听后端对话记忆压缩事件 — 压缩进行时显示"回忆分析中..."
-    es.addEventListener('memory-compress', (event: MessageEvent) => {
-      const meta = activeStreamMeta.value[streamId]
-      if (!meta) return
-      const msg = sessionMessages.value.find((x) => x.id === meta.assistantMessageId)
-      if (!msg || msg.role !== 'assistant') return
-      try {
-        const payload = JSON.parse(event.data || '{}') as { phase?: string }
-        msg.isMemoryCompressing = payload.phase === 'start'
-      } catch {
-        // ignore malformed memory-compress payload
-      }
-    })
-
-    es.onerror = () => {
-      stopStream(streamId)
-      message.error('生成过程中出现错误，已结束本次对话')
-    }
+    // Agent 传输：WebSocket 优先，不可用则降级 SSE。
+    startAgentStream(streamId, prompt)
   } catch {
     stopStream(streamId)
     message.error('无法建立对话连接，请稍后重试')

@@ -34,8 +34,6 @@ public class GlobalExceptionHandler {
      * **新增流式端点时必须登记到这里。**
      */
     private static final String[] SSE_PATHS = {
-            "/chat/gen/code",
-            "/chat/gen/workflow",
             "/chat/generate/stream",
     };
 

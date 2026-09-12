@@ -11,4 +11,3 @@ export * from './appLoopController';
 export * from './test';
 export * from './staticResourceController';
 export * from './deployResourceController';
-export * from './chatToGenCodeController';
