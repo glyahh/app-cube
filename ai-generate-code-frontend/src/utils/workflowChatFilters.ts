@@ -101,6 +101,8 @@ const STACK_JARGON_LINE_RES: RegExp[] = [
   /主要技术栈/i,
   /技术栈/i,
 ]
+// Agent 内部工作日志（英文计划/沙箱说明）不属于用户答案，禁止泄漏到聊天正文。
+const INTERNAL_AGENT_LOG_LINE_RE = /^(?:i['’]?ll\s|the workspace\b|let me\s|now i['’]?ll\s|no (?:python|node)\b|all (?:the )?\w+ (?:is|are)\b|structure is\s)/i
 
 function isStackJargonLine(trimmed: string): boolean {
   if (!trimmed) return false
@@ -512,6 +514,7 @@ export function stripAssistantNoiseLines(text: string): string {
     if (LEGACY_AI_ERROR_LINE_RE.test(t)) continue
     if (INTERNAL_DIR_LINE_RE.test(t)) continue
     if (isStackJargonLine(t)) continue
+    if (INTERNAL_AGENT_LOG_LINE_RE.test(t)) continue
     const stripped = stripInlineNoiseFragments(line)
     if (!stripped) continue
     if (SHORT_NOISE_ENGLISH_WORD_RE.test(stripped)) continue
@@ -537,4 +540,3 @@ export function mergeWorkflowSteps(
     .sort((a, b) => a[0] - b[0])
     .map(([step, label]) => ({ step, label }))
 }
-

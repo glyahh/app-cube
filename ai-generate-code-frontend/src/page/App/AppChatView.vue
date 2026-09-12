@@ -82,6 +82,7 @@ import { openAgentStream } from '@/utils/agentStreamTransport'
 import { mapAgentEvent, type AgentUiAction } from '@/utils/agentEventMapping'
 import '@/assets/stream-layout.css'
 import { scrollElementToEnd } from '@/utils/scrollElement'
+import { marked } from 'marked'
 
 // 与全局请求保持一致：默认走当前页面 origin 下的 `/api`
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
@@ -93,6 +94,11 @@ const router = useRouter()
 const userLoginStore = UserLoginStore()
 const appearanceStore = useAppearanceStore()
 const genMode = ref<'legacy' | 'workflow'>('legacy')
+
+/** 将普通文本片段统一按 Markdown 渲染，避免仅代码围栏生效。 */
+function renderMarkdown(text: string): string {
+  return marked.parse(text ?? '', { async: false, breaks: true }) as string
+}
 
 // 保持 id 为字符串，避免雪花算法生成的 Long ID 精度丢失
 const appId = computed(() => {
@@ -3449,9 +3455,7 @@ onBeforeUnmount(() => {
                           />
                           <!-- 证据：隐藏流式 markdown 会导致“生成计划/生成完毕”等说明文本在生成时不可见。
                                修复：流式阶段也展示文本片段，保证与历史回显一致。 -->
-                          <span v-else class="text-segment">
-                            {{ mdSeg.content }}
-                          </span>
+                          <span v-else class="text-segment" v-html="renderMarkdown(mdSeg.content)" />
                         </template>
                       </template>
                       </template>

@@ -23,6 +23,7 @@
   "dependencies": {
     "ant-design-vue": "^4.2.6",
     "axios": "^1.13.5",
+    "marked": "^15.0.12",
     "pinia": "^3.0.4",
     "three": "^0.184.0",
     "vue": "^3.5.27",
