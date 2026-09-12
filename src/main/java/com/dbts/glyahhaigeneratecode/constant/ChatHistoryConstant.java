@@ -16,7 +16,7 @@ public interface ChatHistoryConstant {
     int TARGET_UNMERGED_DB_USER_ROUNDS = 2;
 
     /**
-     * {@link dev.langchain4j.memory.chat.MessageWindowChatMemory}
+     * 对话记忆窗口
      * 窗口上限（条），含 user/ai/tool 等。
      */
     int CHAT_MEMORY_MAX_MESSAGES = 160;

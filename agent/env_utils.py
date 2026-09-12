@@ -47,6 +47,25 @@ def get_env(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
 
 
+_TRUE = {"1", "true", "yes", "on"}
+_FALSE = {"0", "false", "no", "off", ""}
+
+
+def get_env_bool(name: str, default: bool = False) -> bool:
+    """读布尔环境变量。
+
+    不能写成 `bool(get_env(name))` —— 非空字符串一律为真，`"false"` 会被读成 `True`。
+    无法识别的值回落到 default 而不是抛错：配置写错不该让进程起不来。
+    """
+    raw = get_env(name, "").strip().lower()
+    if raw in _TRUE:
+        return True
+    if raw in _FALSE:
+        return default if raw == "" else False
+    return default
+
+
+
 def require_env(name: str) -> str:
     value = get_env(name)
     if not value:

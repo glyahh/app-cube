@@ -46,9 +46,10 @@
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
 
-        <!-- 开发阶段的热重启工具（会引入双类加载器，导致自定义 dev.langchain4j 与 Maven 依赖冲突）
-             为了让本地改过的 dev.langchain4j 类真正覆盖依赖包中的同名类，这里先移除 devtools 依赖。
-             如需再次开启热重启，可以在不复制第三方源码的前提下再加回此依赖。 -->
+        <!-- 开发阶段的热重启工具。
+             当初移除是因为 devtools 的双类加载器会让自定义的 dev.langchain4j 补丁类失效；
+             那层源码补丁已随 LangChain4j 一起移除，现在没有这个冲突了。
+             目前仍不加回：Agent 子进程池在重启时需要正确关停，热重启会让进程生命周期更难判断。 -->
 <!--        <dependency>-->
 <!--            <groupId>org.springframework.boot</groupId>-->
 <!--            <artifactId>spring-boot-devtools</artifactId>-->
@@ -126,40 +127,21 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
-        <!-- LangChain4j -->
+        <!-- 响应式编程。
+             这一条原先由 langchain4j-reactor 传递引入；LangChain4j 整体移除后必须显式声明 ——
+             接入层仍在用 Flux 把 Python 子进程的 stdin/stdout 读取桥接成对前端的 SSE 流。 -->
         <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j</artifactId>
-            <version>1.1.0</version>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
         </dependency>
-        <!-- LangChain4j-OpenAI兼容的大模型接口 -->
+        <!-- Redis 客户端。这一条原先由 langchain4j-community-redis-spring-boot-starter
+             传递引入；那个 starter 随 LangChain4j 一起移除后必须显式声明。
+             注意只加 spring-session-data-redis 不够 —— 它只带 spring-data-redis 这层抽象，
+             不带 Lettuce 驱动，缺了驱动 RedisConnectionFactory 建不出来，
+             StringRedisTemplate 这个 bean 也就跟着消失，报错要等到启动容器才露头。 -->
         <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-open-ai-spring-boot-starter</artifactId>
-            <version>1.1.0-beta7</version>
-        </dependency>
-        <!-- 响应式编程 -->
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-reactor</artifactId>
-            <version>1.1.0-beta7</version>
-        </dependency>
-        <!-- Redis -->
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-community-redis-spring-boot-starter</artifactId>
-            <version>1.1.0-beta7</version>
-        </dependency>
-        <!-- caffeine -->
-        <dependency>
-            <groupId>com.github.ben-manes.caffeine</groupId>
-            <artifactId>caffeine</artifactId>
-        </dependency>
-        <!-- Elasticsearch Java Client -->
-        <dependency>
-            <groupId>co.elastic.clients</groupId>
-            <artifactId>elasticsearch-java</artifactId>
-            <version>8.16.0</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
         <!-- Spring Session + Redis 把用户登录session放到Redis中去保存 -->
         <dependency>
@@ -182,25 +164,6 @@
             <groupId>com.aliyun.oss</groupId>
             <artifactId>aliyun-sdk-oss</artifactId>
             <version>3.15.1</version>
-        </dependency>
-        <!-- LangGraph4j -->
-        <dependency>
-            <groupId>org.bsc.langgraph4j</groupId>
-            <artifactId>langgraph4j-core</artifactId>
-            <version>1.8.3</version>
-        </dependency>
-        <!-- 阿里云 DashScope SDK -->
-        <dependency>
-            <groupId>com.alibaba</groupId>
-            <artifactId>dashscope-sdk-java</artifactId>
-            <version>2.22.9</version>
-            <!-- 排除slf4j-simple依赖，避免冲突 -->
-            <exclusions>
-                <exclusion>
-                    <groupId>org.slf4j</groupId>
-                    <artifactId>slf4j-simple</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <!-- Redisson -->
         <dependency>

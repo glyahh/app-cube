@@ -3,8 +3,6 @@ package com.dbts.glyahhaigeneratecode.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
-import com.dbts.glyahhaigeneratecode.ai.aiCodeGeneratorRoutineService;
-import com.dbts.glyahhaigeneratecode.ai.aiCodeGeneratorRoutineServiceFactory;
 import com.dbts.glyahhaigeneratecode.constant.AppConstant;
 import com.dbts.glyahhaigeneratecode.core.Builder.vueProjectBuilder;
 import com.dbts.glyahhaigeneratecode.exception.ErrorCode;
@@ -66,9 +64,6 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     private vueProjectBuilder vueProjectBuilder;
 
     @Resource
-    private aiCodeGeneratorRoutineServiceFactory aiCodeGeneratorRoutineServiceFactory;
-
-    @Resource
     private ScreenshotService screenshotService;
 
     @Resource
@@ -79,9 +74,6 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Resource
     private ChatHistoryService chatHistoryService;
-
-    @Resource
-    private CodeChunkIndexService codeChunkIndexService;
 
     @Resource
     private ProjectDownloadService projectDownloadService;
@@ -100,15 +92,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
         // 优先使用前端显式选择的 codeGenType，避免 LLM 路由器覆盖用户意图。
         // 如前端传入 vue_project（但后端 value 约定为 vue），CodeGenTypeEnum#getEnumByValue 会做兼容映射。
+        // 不再用模型猜类型：原来前端没传时会调一次 LLM 做分类，
+        // 那条链路已随 LangChain4j 一起移除。现在要求显式指定，
+        // 猜错会写出格式不对的产物，比直接报错更糟。
         CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(appAddRequest.getCodeGenType());
-        if (codeGenTypeEnum == null) {
-            aiCodeGeneratorRoutineService aiCodeGeneratorRoutineService = aiCodeGeneratorRoutineServiceFactory.createAiCodeGeneratorRoutineService();
-            codeGenTypeEnum = aiCodeGeneratorRoutineService.aiCodeGeneratorRoutine(app.getInitPrompt());
-        }
-        if (codeGenTypeEnum == null) {
-            // 显式 if：便于静态分析准确收窄空值分支
-            throw new MyException(ErrorCode.PARAMS_ERROR, "生成类型无法确定");
-        }
+        ThrowUtils.throwIf(codeGenTypeEnum == null, ErrorCode.PARAMS_ERROR, "请指定生成类型");
         app.setCodeGenType(codeGenTypeEnum.getValue());
 
         //这里最好使用这个save,不要mapper中的insert,否则id会因为没有声明而被覆盖雪花算法的值,而且其他未声明的字段会报数据库不能非空
@@ -511,11 +499,6 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         } catch (Exception e) {
             log.warn("删除应用对话历史失败, appId={}", appId, e);
         }
-        try {
-            codeChunkIndexService.deleteAppChunks(appId);
-        } catch (Exception e) {
-            log.warn("删除应用 RAG 索引失败, appId={}", appId, e);
-        }
         // 清理 code_output 下该应用产物目录
         appServiceSupport.removeCodeOutputDirByAppId(appId);
         return true;
@@ -596,11 +579,6 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             chatHistoryService.removeByAppId(appId);
         } catch (Exception e) {
             log.warn("管理员删除应用对话历史失败, appId={}", appId, e);
-        }
-        try {
-            codeChunkIndexService.deleteAppChunks(appId);
-        } catch (Exception e) {
-            log.warn("管理员删除应用 RAG 索引失败, appId={}", appId, e);
         }
         // 清理 code_output 下该应用产物目录
         appServiceSupport.removeCodeOutputDirByAppId(appId);

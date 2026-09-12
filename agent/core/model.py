@@ -24,9 +24,39 @@ logger = logging.getLogger(__name__)
 # 关掉思考模式。顶层字段，不是嵌套的 extra_body。
 THINKING_DISABLED = {"type": "disabled"}
 
+# 按出口策略缓存。worker 是常驻进程，模型对象每次 run 都重建 ——
+# client 要是跟着重建，连接会一直堆在池里没人关，而且每轮都要重做 TLS 握手。
+_CLIENTS: dict[bool, tuple] = {}
+
+
+def _clients(use_system_proxy: bool):
+    """进程内复用的 (同步, 异步) httpx 客户端。
+
+    `trust_env` 决定要不要读系统代理。**必须显式给值**：httpx 默认 True，
+    在开了代理的机器上会把到国内模型端点的请求也截走，报出来只有一句
+    "Connection error."（LangChain 把 SSL 层的异常压平了），排查时完全看不出方向。
+    """
+    cached = _CLIENTS.get(use_system_proxy)
+    if cached is None:
+        import httpx
+
+        kwargs = dict(
+            trust_env=use_system_proxy,
+            # 连接要快速失败；读取要够久 —— 生成整个文件时单次响应可能跑几分钟。
+            timeout=httpx.Timeout(connect=15.0, read=600.0, write=60.0, pool=15.0),
+            limits=httpx.Limits(max_connections=8, max_keepalive_connections=4),
+        )
+        cached = (httpx.Client(**kwargs), httpx.AsyncClient(**kwargs))
+        _CLIENTS[use_system_proxy] = cached
+        logger.info("模型 httpx 客户端：trust_env=%s（%s）", use_system_proxy,
+                    "走系统代理" if use_system_proxy else "直连")
+    return cached
+
 
 def _build(model_id: str, base_url: str, api_key: str, settings: ModelSettings, *, streaming: bool):
     from langchain_openai import ChatOpenAI
+
+    http_client, http_async_client = _clients(settings.use_system_proxy)
 
     return ChatOpenAI(
         model=model_id,
@@ -37,6 +67,10 @@ def _build(model_id: str, base_url: str, api_key: str, settings: ModelSettings, 
         streaming=streaming,
         # 摊到请求体顶层，见模块 docstring
         extra_body={"thinking": THINKING_DISABLED},
+        # 主模型走 astream_events（异步），摘要模型走 invoke（同步）——
+        # 两条独立的连接路径，少给一边就会只剩压缩在某类机器上单独失效。
+        http_client=http_client,
+        http_async_client=http_async_client,
     )
 
 

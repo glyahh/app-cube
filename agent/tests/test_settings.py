@@ -58,3 +58,54 @@ def test_单条工具结果预算是字符数不是_token():
     assert settings.limits.tool_output_max_chars == 2_000
     assert settings.limits.tool_output_spill_chars == 40_000
     assert settings.limits.tool_output_spill_chars > settings.limits.tool_output_max_chars
+
+
+# ═══════════════════════ 模型出口策略 ═══════════════════════
+# httpx 默认 trust_env=True 会读系统代理。本机开着 127.0.0.1:7897，
+# DeepSeek 是国内端点，被代理截走后只报一句 "Connection error."。
+# 所以「走不走代理」必须是显式配置，且默认直连。
+
+@pytest.mark.parametrize("raw,expected", [
+    ("true", True), ("1", True), ("yes", True), ("on", True), ("TRUE", True),
+    ("false", False), ("0", False), ("no", False), ("off", False), ("False", False),
+])
+def test_布尔环境变量识别真假(monkeypatch, raw, expected):
+    """`bool("false")` 是 True —— 非空字符串一律为真，这类配置项踩过一次就够。"""
+    from env_utils import get_env_bool
+
+    monkeypatch.setenv("AGENT_TEST_BOOL", raw)
+    assert get_env_bool("AGENT_TEST_BOOL", not expected) is expected
+
+
+def test_布尔环境变量为空时回落到默认值(monkeypatch):
+    from env_utils import get_env_bool
+
+    monkeypatch.setenv("AGENT_TEST_BOOL", "")
+    assert get_env_bool("AGENT_TEST_BOOL", True) is True
+    assert get_env_bool("AGENT_TEST_BOOL", False) is False
+
+
+def test_模型客户端默认直连():
+    """两个客户端都要设 —— 主模型走 astream_events，摘要模型走 invoke。"""
+    from core.model import _clients
+
+    sync_client, async_client = _clients(False)
+    assert sync_client._trust_env is False
+    assert async_client._trust_env is False
+
+
+def test_模型客户端可显式走系统代理():
+    from core.model import _clients
+
+    sync_client, async_client = _clients(True)
+    assert sync_client._trust_env is True
+    assert async_client._trust_env is True
+
+
+def test_客户端在进程内复用():
+    """worker 是常驻进程、模型每次 run 重建 —— client 跟着重建会一直漏连接。"""
+    from core.model import _clients
+
+    assert _clients(False)[0] is _clients(False)[0]
+    assert _clients(False)[0] is not _clients(True)[0]
+

@@ -16,7 +16,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from env_utils import REPO_ROOT, get_env
+from env_utils import REPO_ROOT, get_env, get_env_bool
 
 # 窗口解析全部失败时的兜底。宁可低估：低估只会提前压缩，多花一次摘要钱；
 # 高估则会永不触发，直接撞供应商上限。
@@ -46,6 +46,13 @@ class ModelSettings:
     summarizer_model_id: str = ""
     summarizer_base_url: str = ""
     summarizer_api_key: str = ""
+    # 模型请求走不走系统代理。默认 False（直连）。
+    #
+    # httpx 默认 trust_env=True，会去读 Windows 注册表里的系统代理。本机那个代理
+    # 是给外网用的，把到国内模型端点的请求也截走，表现为 SSL EOF，而 LangChain
+    # 把它压成一句 "Connection error."，完全看不出跟代理有关。
+    # 出口策略显式化，比依赖「这台机器碰巧没开代理」可靠。
+    use_system_proxy: bool = False
 
 
 @dataclass(frozen=True)
@@ -93,6 +100,7 @@ def load_settings() -> Settings:
             summarizer_model_id=get_env("AGENT_SUMMARIZER_MODEL_ID"),
             summarizer_base_url=get_env("AGENT_SUMMARIZER_BASE_URL"),
             summarizer_api_key=get_env("AGENT_SUMMARIZER_API_KEY"),
+            use_system_proxy=get_env_bool("AGENT_MODEL_USE_SYSTEM_PROXY", False),
         ),
         limits=Limits(
             deadline_ms=int(get_env("AGENT_DEADLINE_MS", "600000")),
