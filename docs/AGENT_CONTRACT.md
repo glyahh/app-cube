@@ -169,7 +169,7 @@ Java 侧另外合成 `AGENT_UNREACHABLE`（Python 进程起不来），不是 Py
 **必须杀进程树**：Python 起的 `npm.cmd` / `node` 不会随父进程退出，
 `destroyForcibly()` 只杀直接子进程。遍历 `process.toHandle().descendants()` 逐个 destroy。
 
-## Python 侧的两个硬约束
+## Python 侧的三个硬约束
 
 ### 1. stdout 是协议通道，必须保护
 
@@ -187,6 +187,22 @@ sys.stdout = sys.stderr      # 之后所有 print 都进 stderr
 
 启动时设 `PYTHONIOENCODING=utf-8`，Java 侧读写都显式指定 UTF-8。
 Windows 默认编码会让中文乱码。
+
+### 3. 网络出口必须显式
+
+`httpx` 默认 `trust_env=True`，会去读 Windows 注册表里的系统代理。本机装了抓包 /
+代理工具时，到国内模型端点的请求会被一起截走，SSL 层报
+`UNEXPECTED_EOF_WHILE_READING`，而 LangChain 把它压平成一句
+`Connection error.` —— 从错误信息完全看不出跟代理有关。
+
+所以 `core/model.py` 显式构造 httpx 客户端，`trust_env` 由
+`AGENT_MODEL_USE_SYSTEM_PROXY` 决定，**默认 `false`（直连）**。
+
+两个客户端都要给：主模型走 `astream_events`（异步，用 `http_async_client`），
+摘要模型走 `invoke`（同步，用 `http_client`）。少给一边，压缩就会在某类机器上单独失效。
+
+客户端在进程内复用。worker 是常驻的而模型对象每次 run 重建，client 跟着重建会让连接
+一直堆在池里，也白付每轮的 TLS 握手。
 
 ## 本地验证
 
@@ -209,3 +225,4 @@ cd agent && uv run pytest -q
 | 日期 | 改动 |
 |---|---|
 | 2026-09-12 | 初版。子进程 stdio 协议、14 个事件、进程池伸缩策略（3/5/缩容冷却 5 分钟） |
+| 2026-09-12 | 旧链路下线后复验。补第 3 条硬约束「网络出口必须显式」——修 httpx 静默走系统代理导致的 `Connection error.` |
