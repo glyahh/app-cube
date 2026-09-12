@@ -19,6 +19,7 @@ import com.dbts.glyahhaigeneratecode.service.ChatHistoryService;
 import com.dbts.glyahhaigeneratecode.service.ProjectDownloadService;
 import com.dbts.glyahhaigeneratecode.service.ScreenshotService;
 import com.dbts.glyahhaigeneratecode.service.support.AppServiceSupport;
+import com.dbts.glyahhaigeneratecode.service.support.WorkspacePathResolver;
 import com.mybatisflex.core.paginate.Page;
 import jakarta.servlet.http.HttpServletResponse;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
@@ -80,6 +81,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Resource
     private AppLoopService appLoopService;
+
+    @Resource
+    private WorkspacePathResolver workspacePathResolver;
 
     @Override
     public long createApp (User loginUser, AppAddRequest appAddRequest) {
@@ -306,16 +310,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             throw new MyException(ErrorCode.PARAMS_ERROR, "应用配置的 codeGenType 无效");
         }
 
-        // 生成对应的data-output中的文件夹名
-        Path sourceDirPath = null;
-        switch (codeGenTypeEnum){
-            case VUE -> sourceDirPath = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, codeGenTypeEnum.getValue() + "_project_" + appId);
-            case HTML, MULTI_FILE -> sourceDirPath = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, codeGenTypeEnum.getValue() + "_" + appId);
-        }
-        if (sourceDirPath == null) {
-            // 防御式：避免枚举扩展后 switch 未覆盖导致 NPE
-            throw new MyException(ErrorCode.PARAMS_ERROR, "应用 codeGenType 无法确定部署路径");
-        }
+        // 产物目录名统一走 resolver。VUE 的 "vue_project" 特例已经封在枚举的
+        // getDirPrefix() 里，调用点再拼一次 "value + _project_" 是重复实现 ——
+        // 两处一旦不同步，就会出现「生成写 A 目录、部署读 B 目录」，且不一定报错。
+        Path sourceDirPath = workspacePathResolver.outputDir(appId, codeGenTypeEnum);
 
         // 6. 校验路径下的文件是否存在
         if (!Files.isDirectory(sourceDirPath)) {
@@ -354,11 +352,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             log.info("Vue 项目构建成功，将部署 dist 目录: {}", distDir.getAbsolutePath());
         }
 
-        // 8. 复制文件到部署目录
-        String deployDirPath = AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + deployKey;
-
-        // 9. 复制文件到deploy文件夹下
-        Path deployDir = Paths.get(AppConstant.CODE_DEPLOY_ROOT_DIR, deployKey);
+        // 8. 复制文件到部署目录。
+        // 走 resolver 而不是字符串拼接：那里做归一化与越界校验。同一个 deployKey
+        // 在 Resource Controller 上受保护、在这里不受保护，是不该存在的差异。
+        Path deployDir = workspacePathResolver.deployDir(deployKey);
+        String deployDirPath = deployDir.toString();
         try {
             FileUtil.copyContent(sourceDir, deployDir.toFile(), true);
         } catch (Exception e) {
@@ -413,7 +411,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             return false;
         }
 
-        Path deployDir = Paths.get(AppConstant.CODE_DEPLOY_ROOT_DIR, deployKey);
+        Path deployDir = workspacePathResolver.deployDir(deployKey);
         // 5. 下线同时删除 OSS 中该应用截图（cover）
         // 说明：cover 由部署时异步截图写入；下线后该截图通常已无意义，避免对象存储堆积。
         // 备注：即使部署目录不存在（被手动删/异常丢失），也应清理 cover 与 deployKey，保证状态可回到“未部署”。
@@ -647,25 +645,31 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 组装 service 所需参数：appName + 项目路径
         String appName = app.getAppName();
 
-        String codeGenType = app.getCodeGenType();
-        CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
-        if (codeGenTypeEnum == null && StrUtil.isNotBlank(codeGenType)) {
-            try {
-                codeGenTypeEnum = CodeGenTypeEnum.valueOf(codeGenType);
-            } catch (IllegalArgumentException ignored) {
-            }
-        }
-        ThrowUtils.throwIf(codeGenTypeEnum == null, ErrorCode.PARAMS_ERROR, "应用配置的 codeGenType 无效");
-
-        String projectPath;
-        switch (codeGenTypeEnum) {
-            case VUE -> projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/" + codeGenTypeEnum.getValue() + "_project_" + appId;
-            // debug 修复：下载路径与生成目录命名保持一致，避免“目录不存在”误报。
-            case HTML, MULTI_FILE -> projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/" + codeGenTypeEnum.getValue() + "_" + appId;
-            default -> throw new MyException(ErrorCode.PARAMS_ERROR, "暂不支持的 codeGenType");
-        }
+        String projectPath = resolveOutputDir(app).toString();
 
         projectDownloadService.downloadProject(response, appName, projectPath);
+    }
+
+    /**
+     * 解析应用的 codeGenType 并定位其产物目录。
+     *
+     * <p>这段解析原先在下载与文件列表两个方法里各复制了一份，目录名也各自拼接
+     * （其中一处直接写死了 {@code "/vue_project_"} 这类字面量）。收敛到一处之后，
+     * 目录命名只由 {@link CodeGenTypeEnum#getDirPrefix()} 决定 —— 否则一旦枚举改规则，
+     * 会出现「生成写 A 目录、读取读 B 目录」而不一定报错的错位。
+     */
+    private Path resolveOutputDir(App app) {
+        String codeGenType = app.getCodeGenType();
+        CodeGenTypeEnum type = CodeGenTypeEnum.getEnumByValue(codeGenType);
+        if (type == null && StrUtil.isNotBlank(codeGenType)) {
+            try {
+                type = CodeGenTypeEnum.valueOf(codeGenType);
+            } catch (IllegalArgumentException ignored) {
+                // 落到下面的统一校验里报错
+            }
+        }
+        ThrowUtils.throwIf(type == null, ErrorCode.PARAMS_ERROR, "应用配置的 codeGenType 无效");
+        return workspacePathResolver.outputDir(app.getId(), type);
     }
 
     @Override
@@ -679,23 +683,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
                 ErrorCode.NO_AUTH_ERROR, "只能查看自己的应用");
 
         // 根据 codeGenType 定位项目根目录
-        String codeGenType = app.getCodeGenType();
-        CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
-        if (codeGenTypeEnum == null && StrUtil.isNotBlank(codeGenType)) {
-            try {
-                codeGenTypeEnum = CodeGenTypeEnum.valueOf(codeGenType);
-            } catch (IllegalArgumentException ignored) {
-            }
-        }
-        ThrowUtils.throwIf(codeGenTypeEnum == null, ErrorCode.PARAMS_ERROR, "应用配置的 codeGenType 无效");
-
-        String projectRootPath;
-        switch (codeGenTypeEnum) {
-            case VUE -> projectRootPath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/vue_project_" + appId;
-            case HTML -> projectRootPath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/html_" + appId;
-            case MULTI_FILE -> projectRootPath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/multi_file_" + appId;
-            default -> throw new MyException(ErrorCode.PARAMS_ERROR, "暂不支持的 codeGenType");
-        }
+        String projectRootPath = resolveOutputDir(app).toString();
 
         Path projectRoot = Paths.get(projectRootPath);
         if (!Files.isDirectory(projectRoot)) {
