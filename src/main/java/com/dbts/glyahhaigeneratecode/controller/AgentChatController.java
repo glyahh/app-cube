@@ -80,7 +80,7 @@ public class AgentChatController {
         String frameJson = runRequest.toFrameJson(objectMapper);
 
         // defer：把借进程推迟到订阅时，保证取消能一路传下去
-        return Flux.defer(() -> agentRunService.stream(frameJson))
+        return Flux.defer(() -> agentRunService.stream(appId, frameJson))
                 // 累积正文并在终态落一次 AI 行。挂在 filter 之前，才看得到 text.message。
                 .transform(events -> persistence.tap(events, appId, user.getId(), roundId))
                 // 终止帧是传输层收尾，不转给前端 —— 由末尾补的 done 事件承担这个职责

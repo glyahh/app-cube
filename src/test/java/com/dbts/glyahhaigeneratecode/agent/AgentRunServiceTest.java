@@ -70,7 +70,7 @@ class AgentRunServiceTest {
         runtimeProps.setReadTimeout(Duration.ofSeconds(30));
 
         pool = new AgentWorkerPool(poolProps, runtimeProps);
-        service = new AgentRunService(pool, runtimeProps, mapper);
+        service = new AgentRunService(pool, runtimeProps, mapper, new AppRunCoordinator());
     }
 
     @AfterEach
@@ -154,7 +154,7 @@ class AgentRunServiceTest {
     @Test
     @DisplayName("完整跑一轮：事件顺序正确，终止帧收尾，进程归还池中")
     void streamsFullRunAndReturnsWorker() {
-        List<AgentEvent> events = service.stream(requestJson("s-1", "做一个登录页"))
+        List<AgentEvent> events = service.stream(1L, requestJson("s-1", "做一个登录页"))
                 .collectList()
                 .block(Duration.ofSeconds(60));
 
@@ -178,7 +178,7 @@ class AgentRunServiceTest {
     @Test
     @DisplayName("seq 单调递增且不重复")
     void seqIsMonotonic() {
-        List<AgentEvent> events = service.stream(requestJson("s-2", "x"))
+        List<AgentEvent> events = service.stream(1L, requestJson("s-2", "x"))
                 .collectList()
                 .block(Duration.ofSeconds(60));
 
@@ -195,7 +195,7 @@ class AgentRunServiceTest {
     @DisplayName("取消订阅会杀掉 Python 进程，池随后补齐一个可用的新进程")
     void cancellingKillsWorkerAndReplenishes() throws Exception {
         CountDownLatch gotFirst = new CountDownLatch(1);
-        Disposable subscription = service.stream(requestJson("s-3", "取消我"))
+        Disposable subscription = service.stream(1L, requestJson("s-3", "取消我"))
                 .subscribe(event -> gotFirst.countDown());
 
         assertTrue(gotFirst.await(30, TimeUnit.SECONDS), "应能拿到首帧");
@@ -216,7 +216,7 @@ class AgentRunServiceTest {
         assertTrue(ready, "取消后应补齐一个可用进程，实际：" + pool.stats());
 
         // 补齐的进程必须是新的且真的能用
-        List<AgentEvent> events = service.stream(requestJson("s-3b", "再来一轮"))
+        List<AgentEvent> events = service.stream(1L, requestJson("s-3b", "再来一轮"))
                 .collectList()
                 .block(Duration.ofSeconds(60));
         assertNotNull(events);
@@ -228,7 +228,7 @@ class AgentRunServiceTest {
     void errorEventSurfacesAndWorkerIsRecyclable() {
         String bad = "{\"v\":1,\"runId\":\"s-4\",\"input\":{\"message\":\"x\"}}";
 
-        List<AgentEvent> events = service.stream(bad).collectList().block(Duration.ofSeconds(60));
+        List<AgentEvent> events = service.stream(1L, bad).collectList().block(Duration.ofSeconds(60));
 
         assertNotNull(events);
         assertEquals(2, events.size(), "应是错误帧 + 终止帧");
@@ -243,10 +243,10 @@ class AgentRunServiceTest {
     @Test
     @DisplayName("连续两轮复用同一个进程")
     void reusesWorkerAcrossRuns() {
-        service.stream(requestJson("s-5a", "第一次")).collectList().block(Duration.ofSeconds(60));
+        service.stream(1L, requestJson("s-5a", "第一次")).collectList().block(Duration.ofSeconds(60));
         assertEquals(1, pool.stats().idle());
 
-        service.stream(requestJson("s-5b", "第二次")).collectList().block(Duration.ofSeconds(60));
+        service.stream(1L, requestJson("s-5b", "第二次")).collectList().block(Duration.ofSeconds(60));
         assertEquals(1, pool.stats().total(), "不应为第二轮新建进程");
     }
 }

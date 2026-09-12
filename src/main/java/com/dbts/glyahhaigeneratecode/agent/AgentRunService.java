@@ -24,6 +24,7 @@ public class AgentRunService {
     private final AgentWorkerPool pool;
     private final AgentProperties props;
     private final ObjectMapper objectMapper;
+    private final AppRunCoordinator coordinator;
 
     /**
      * 跑一次 run，返回事件流。
@@ -31,9 +32,22 @@ public class AgentRunService {
      * <p>取消语义：订阅方取消 → 杀掉 Python 进程 → 阻塞中的读立刻 EOF → 循环退出。
      * 这也是子进程方案相对 HTTP 方案最省事的地方，不需要协作式取消加轮询。
      *
+     * <p>整个 run 挂在 {@code appId} 的临界区里。同一个 app 的并发请求在这里排队 ——
+     * 它们写的是同一个产物目录，并跑会互相覆盖。
+     *
+     * @param appId       应用标识，用于串行化
      * @param requestJson 已经序列化好的请求帧
      */
-    public Flux<AgentEvent> stream(String requestJson) {
+    public Flux<AgentEvent> stream(Long appId, String requestJson) {
+        return coordinator.serialize(appId, () -> runOnce(requestJson))
+                // 调度必须留在最外层：等锁是阻塞的，而 defer 的落点由它外层的 subscribeOn
+                // 决定。放在 runOnce 里面的话，等锁会占住订阅线程（SSE 的 Tomcat 线程
+                // 或 WS 的 Netty 事件循环）而不是 boundedElastic。
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /** 单次执行：借进程、下发、逐帧读回。锁的持有范围由调用方 {@link #stream} 划定。 */
+    private Flux<AgentEvent> runOnce(String requestJson) {
         return Flux.<AgentEvent>create(sink -> {
             // 取消可能发生在「进程已归还池子」之后。若不设这道闸，
             // 迟到的取消会把一个健康的池内进程杀掉。
@@ -90,7 +104,7 @@ public class AgentRunService {
             // 紧接着查池会看到它仍在借出中。
             settle(worker, holder, cancelled, cleanFinish);
             sink.complete();
-        }).subscribeOn(Schedulers.boundedElastic());
+        });
     }
 
     /**
