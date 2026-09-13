@@ -49,6 +49,14 @@ class SandboxRecord:
     reused: bool = False
 
 
+@dataclass
+class ConfigCheckResult:
+    """容器配置校验结果。"""
+    matches: bool
+    belongs_to_session: bool
+    diffs: list[str]
+
+
 class DockerSandboxManager:
     """进程内 Session→容器注册表；宿主机 workspace 是持久化真相源。"""
 
@@ -75,6 +83,10 @@ class DockerSandboxManager:
                 logger.exception("Docker 沙箱回收失败")
 
     @staticmethod
+    def _container_name(session_id: str) -> str:
+        return "glyahh-sbx-" + uuid.uuid5(uuid.NAMESPACE_DNS, session_id).hex[:16]
+
+    @staticmethod
     def _docker_command(timeout: int = 30) -> list[str]:
         if shutil.which("docker"):
             return ["docker"]
@@ -91,6 +103,13 @@ class DockerSandboxManager:
         if len(text) >= 2 and text[1] == ":":
             return "/mnt/" + text[0].lower() + text[2:]
         return text
+
+    @staticmethod
+    def _normalize_mount_path(path: str) -> str:
+        text = str(path).replace("\\", "/").rstrip("/")
+        if len(text) >= 2 and text[1] == ":":
+            return "/mnt/" + text[0].lower() + text[2:].lower()
+        return text.lower()
 
     @classmethod
     def _docker(cls, *args: str, check: bool = True, timeout: int = 30) -> subprocess.CompletedProcess[str]:
@@ -124,6 +143,154 @@ class DockerSandboxManager:
     def _healthy(self) -> None:
         self._docker("info", "--format", "{{.ServerVersion}}", timeout=10)
 
+    def _inspect_container(self, name_or_id: str) -> dict | None:
+        """检查并返回指定容器的 inspect 字典；容器不存在或解析失败时返回 None。"""
+        result = self._docker("inspect", name_or_id, check=False)
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        try:
+            data = json.loads(result.stdout)
+            if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+                return data[0]
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            logger.warning("解析 docker inspect 输出失败: %s", result.stdout[:200])
+        return None
+
+    def _validate_container_config(self, container_info: dict, session_id: str,
+                                  workspace: Path) -> ConfigCheckResult:
+        """校验容器关键属性，确认配置是否完全匹配且属于当前 session。"""
+        diffs: list[str] = []
+
+        # 1. 容器名称校验
+        expected_name = self._container_name(session_id)
+        actual_name = (container_info.get("Name") or "").lstrip("/")
+        if actual_name != expected_name:
+            diffs.append(f"容器名称不匹配: 实际={actual_name}, 期望={expected_name}")
+
+        # 2. 镜像校验
+        config = container_info.get("Config") or {}
+        actual_image = config.get("Image") or ""
+        if actual_image != self.image:
+            diffs.append(f"镜像不匹配: 实际={actual_image}, 期望={self.image}")
+
+        # 3. 工作目录校验
+        actual_workdir = config.get("WorkingDir") or ""
+        if actual_workdir != "/workspace":
+            diffs.append(f"工作目录不匹配: 实际={actual_workdir}, 期望=/workspace")
+
+        # 4. session 标识校验
+        labels = config.get("Labels") or {}
+        session_label = labels.get("glyahh.session_id") or labels.get("session_id")
+        belongs_to_session = (session_label == session_id)
+
+        # 5. workspace 挂载源与目标校验
+        expected_wsl_norm = self._normalize_mount_path(self._wsl_path(workspace))
+        expected_raw_norm = self._normalize_mount_path(str(workspace))
+        mount_matched = False
+        mount_diff = "未找到 /workspace 挂载点"
+
+        mounts = container_info.get("Mounts")
+        if isinstance(mounts, list) and len(mounts) > 0:
+            for m in mounts:
+                if m.get("Destination") == "/workspace":
+                    actual_src = self._normalize_mount_path(m.get("Source", ""))
+                    rw = m.get("RW", True) and ("ro" not in m.get("Mode", ""))
+                    if actual_src in (expected_wsl_norm, expected_raw_norm):
+                        if rw:
+                            mount_matched = True
+                        else:
+                            mount_diff = f"workspace 挂载模式非读写: {m.get('Mode')}"
+                    else:
+                        mount_diff = f"workspace 挂载源不匹配: 实际={actual_src}, 期望={expected_wsl_norm}"
+                    break
+
+        if not mount_matched and "HostConfig" in container_info:
+            binds = (container_info.get("HostConfig") or {}).get("Binds") or []
+            for b in binds:
+                if ":/workspace" in b:
+                    idx = b.index(":/workspace")
+                    src = self._normalize_mount_path(b[:idx])
+                    parts = b.split(":")
+                    mode = parts[-1] if len(parts) >= 3 and parts[-1] in ("rw", "ro") else "rw"
+                    if src in (expected_wsl_norm, expected_raw_norm):
+                        if mode == "rw":
+                            mount_matched = True
+                        else:
+                            mount_diff = f"workspace 挂载模式非读写: {mode}"
+                    else:
+                        mount_diff = f"workspace 挂载源不匹配: 实际={src}, 期望={expected_wsl_norm}"
+                    break
+
+        if not mount_matched:
+            diffs.append(mount_diff)
+
+        # 6. 兼容旧版无标签容器：名称、挂载和旧版安全配置必须同时匹配。
+        host_config = container_info.get("HostConfig") or {}
+        legacy_matches = (
+            "glyahh.session_id" not in labels and "session_id" not in labels
+            and not diffs and mount_matched
+            and isinstance(mounts, list) and len(mounts) == 1
+            and mounts[0].get("Type") == "bind"
+            and mounts[0].get("RW") is True
+            and self._normalize_mount_path(mounts[0].get("Source", ""))
+                in (expected_wsl_norm, expected_raw_norm)
+            and config.get("Cmd") == ["sleep", "infinity"]
+            and host_config.get("Privileged") is False
+            and "ALL" in (host_config.get("CapDrop") or [])
+            and "no-new-privileges" in (host_config.get("SecurityOpt") or [])
+        )
+        if legacy_matches:
+            belongs_to_session = True
+            logger.info("旧版容器 %s 指纹匹配，保留并复用", expected_name)
+        if not belongs_to_session:
+            diffs.append(f"session 标识不匹配: 实际={session_label}, 期望={session_id}")
+
+        return ConfigCheckResult(
+            matches=len(diffs) == 0,
+            belongs_to_session=belongs_to_session,
+            diffs=diffs,
+        )
+
+    def _resume_container(self, info: dict) -> str:
+        """恢复空闲时降低的 CPU 配额，必要时启动容器。"""
+        container_id = info["Id"]
+        self._docker("update", "--cpus", os.getenv("AGENT_SANDBOX_CPUS", "2"), container_id)
+        if (info.get("State") or {}).get("Status", "").lower() != "running":
+            self._docker("start", container_id)
+        return container_id
+
+    def _create_and_start_container(self, name: str, session_id: str, workspace: Path) -> tuple[str, bool]:
+        """创建并启动容器；若发生 Conflict 则重新 inspect 并安全复用。返回 (container_id, is_reused)。"""
+        # 1. 执行 docker create 并注入 session 标识
+        try:
+            result = self._docker("create", "--name", name, "--workdir", "/workspace",
+                                  "--label", f"glyahh.session_id={session_id}",
+                                  "--network", "bridge", "--pids-limit", "512",
+                                  "--cpus", os.getenv("AGENT_SANDBOX_CPUS", "2"),
+                                  "--memory", os.getenv("AGENT_SANDBOX_MEMORY", "4g"),
+                                  "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+                                  "-v", f"{self._wsl_path(workspace)}:/workspace:rw", self.image,
+                                  "sleep", "infinity")
+            container_id = result.stdout.strip()
+            self._docker("start", container_id)
+            return container_id, False
+        except SandboxError as exc:
+            err_msg = str(exc)
+            if "conflict" in err_msg.lower() or "already in use" in err_msg.lower():
+                # 2. 对 Docker Conflict 做一次重新 inspect + 复用，避免并发竞态
+                logger.info("创建容器 %s 遇到 Conflict，重新 inspect 并尝试复用", name)
+                retry_info = self._inspect_container(name)
+                if retry_info:
+                    check = self._validate_container_config(retry_info, session_id, workspace)
+                    if check.matches:
+                        cid = self._resume_container(retry_info)
+                        return cid, True
+                    raise SandboxError(f"容器配置冲突：并发创建检测到容器配置不匹配（{', '.join(check.diffs)}）")
+                raise SandboxBusy(f"Session {session_id} 容器正在并发初始化中，请重试") from exc
+            raise
+
     def acquire(self, session_id: str, workspace: Path, *, run_id: str = "") -> SandboxRecord:
         if not session_id:
             raise SandboxError("缺少 threadId/sessionId，无法复用 Session 沙箱")
@@ -133,48 +300,55 @@ class DockerSandboxManager:
             self._healthy()
             now = time.time()
             record = self._records.get(session_id)
-            if record:
-                if record.active:
-                    raise SandboxBusy(f"Session {session_id} 已有任务执行中")
-                inspect = self._docker("inspect", "-f", "{{.State.Status}}", record.container_id,
-                                       check=False)
-                status = inspect.stdout.strip()
-                if status in {"", "dead", "removing"}:
-                    self._records.pop(session_id, None)
-                    record = None
-                elif status != "running":
-                    self._docker("start", record.container_id)
-            if record is None:
-                name = "glyahh-sbx-" + uuid.uuid5(uuid.NAMESPACE_DNS, session_id).hex[:16]
-                existing = self._docker("inspect", "-f", "{{.Id}}|{{.State.Status}}", name, check=False)
-                if existing.returncode == 0 and "|" in existing.stdout.strip():
-                    container_id, status = existing.stdout.strip().split("|", 1)
-                    if status != "running":
-                        self._docker("start", container_id)
+            if record and record.active:
+                raise SandboxBusy(f"Session {session_id} 已有任务执行中")
+            if record and record.workspace != workspace:
+                raise SandboxError("同一 Session 不允许切换 workspace")
+
+            name = self._container_name(session_id)
+            # 1. 创建容器前先按完整容器名执行 docker inspect
+            container_info = self._inspect_container(name)
+
+            if container_info is None:
+                # 2. 容器不存在：正常执行 docker create
+                container_id, reused = self._create_and_start_container(name, session_id, workspace)
+            else:
+                # 3. 容器存在：执行配置校验
+                check = self._validate_container_config(container_info, session_id, workspace)
+                if check.matches:
+                    # 容器存在且配置匹配：复用现有容器
+                    container_id = self._resume_container(container_info)
                     reused = True
                 else:
-                    result = self._docker("create", "--name", name, "--workdir", "/workspace",
-                                          "--network", "bridge", "--pids-limit", "512",
-                                          "--cpus", os.getenv("AGENT_SANDBOX_CPUS", "2"),
-                                          "--memory", os.getenv("AGENT_SANDBOX_MEMORY", "4g"),
-                                          "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-                                          "-v", f"{self._wsl_path(workspace)}:/workspace:rw", self.image,
-                                          "sleep", "infinity")
-                    container_id = result.stdout.strip()
-                    self._docker("start", container_id)
-                    reused = False
-                record = SandboxRecord(session_id, container_id, workspace, self.image, now, now,
-                                       reused=reused)
-                self._records[session_id] = record
-            elif record.workspace != workspace:
-                raise SandboxError("同一 Session 不允许切换 workspace")
-            # 记录本次 acquire 之前是否已有 run，不能在覆盖 last_run_id 后再判断。
-            was_reused = bool(record.last_run_id)
-            record.active = True
-            record.reused = was_reused
-            record.last_active_at = now
-            record.last_run_id = run_id
-            return record
+                    # 容器存在但配置不匹配
+                    if not check.belongs_to_session:
+                        # 无法确认归属时不删除容器
+                        logger.error("容器 %s 存在但无法确认归属当前 Session %s（%s），禁止删除",
+                                     name, session_id, ", ".join(check.diffs))
+                        raise SandboxError(f"容器配置冲突：容器 {name} 存在但归属无法确认")
+                    # 确认属于当前 session 且配置不匹配：先记录差异，停止并删除该容器，使用原名称重新创建
+                    logger.warning("容器 %s 属于当前 Session 但配置不匹配，差异：%s；停止并重建容器",
+                                   name, ", ".join(check.diffs))
+                    self._docker("stop", "-t", "2", container_info["Id"], check=False)
+                    self._docker("rm", "-f", container_info["Id"], check=False)
+                    self._records.pop(session_id, None)
+                    container_id, reused = self._create_and_start_container(name, session_id, workspace)
+
+            was_reused = reused or bool(record and record.last_run_id)
+            created_at = record.created_at if (record and was_reused) else now
+            new_record = SandboxRecord(
+                session_id=session_id,
+                container_id=container_id,
+                workspace=workspace,
+                image=self.image,
+                created_at=created_at,
+                last_active_at=now,
+                last_run_id=run_id,
+                active=True,
+                reused=was_reused,
+            )
+            self._records[session_id] = new_record
+            return new_record
 
     def release(self, session_id: str) -> None:
         with self._lock:
@@ -195,6 +369,22 @@ class DockerSandboxManager:
             for session_id, record in list(self._records.items()):
                 if record.active:
                     continue
+
+                # 1. 检查容器在 Docker 中是否仍然有效，避免内存状态与实际脱节
+                inspect = self._docker("inspect", "-f", "{{.State.Status}}", record.container_id, check=False)
+                if inspect.returncode != 0:
+                    self._records.pop(session_id, None)
+                    destroyed.append(session_id)
+                    continue
+
+                status = inspect.stdout.strip().lower()
+                if status in {"", "dead", "removing"}:
+                    self._docker("rm", "-f", record.container_id, check=False)
+                    self._records.pop(session_id, None)
+                    destroyed.append(session_id)
+                    continue
+
+                # 2. 按空闲和存活时间执行生命周期操作
                 idle = now - record.last_active_at
                 age = now - record.created_at
                 if idle >= self.destroy_idle_seconds or age >= self.max_lifetime_seconds:
@@ -202,7 +392,8 @@ class DockerSandboxManager:
                     self._records.pop(session_id, None)
                     destroyed.append(session_id)
                 elif idle >= self.stop_idle_seconds:
-                    self._docker("stop", "-t", "2", record.container_id, check=False)
+                    if status == "running":
+                        self._docker("stop", "-t", "2", record.container_id, check=False)
                 elif idle >= self.idle_cpu_seconds:
                     self._docker("update", "--cpus", "0.5", record.container_id, check=False)
         return destroyed
@@ -260,4 +451,10 @@ class DockerSandboxBackend(LocalShellBackend):
         self.manager.release(self.session_id)
 
 
-__all__ = ["DockerSandboxBackend", "DockerSandboxManager", "SandboxError", "SandboxBusy"]
+__all__ = [
+    "DockerSandboxBackend",
+    "DockerSandboxManager",
+    "SandboxError",
+    "SandboxBusy",
+    "ConfigCheckResult",
+]
