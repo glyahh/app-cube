@@ -12,8 +12,13 @@ $shell = (Get-Process -Id $PID).Path
 $backendScript = (Join-Path $PSScriptRoot 'start-backend.ps1')
 $frontendScript = (Join-Path $PSScriptRoot 'start-frontend.ps1')
 # 路径包含空格时，-File 参数必须显式加引号，否则子窗口会立即退出。
-Start-Process $shell -ArgumentList @('-NoExit','-ExecutionPolicy','Bypass','-File',('"' + $backendScript + '"'))
-Start-Process $shell -ArgumentList @('-NoExit','-ExecutionPolicy','Bypass','-File',('"' + $frontendScript + '"'))
+# `Start-Process -ArgumentList` 会把数组元素重新拼接；路径含空格时，
+# 仅给 -File 参数单独加引号在部分 Windows PowerShell 版本会被再次剥离。
+# 传入完整参数字符串，确保脚本路径作为一个参数交给子进程。
+$backendArgs = '-NoExit -ExecutionPolicy Bypass -File "' + $backendScript + '"'
+$frontendArgs = '-NoExit -ExecutionPolicy Bypass -File "' + $frontendScript + '"'
+Start-Process -FilePath $shell -ArgumentList $backendArgs -WorkingDirectory $ProjectRoot
+Start-Process -FilePath $shell -ArgumentList $frontendArgs -WorkingDirectory $ProjectRoot
 Write-Host '已启动后端窗口和前端窗口，等待服务监听...' -ForegroundColor Yellow
 $deadline = (Get-Date).AddSeconds(60)
 do {

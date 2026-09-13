@@ -14,71 +14,163 @@
 PostgreSQL 不可用时降级到进程内内存实现。降级是刻意的：Phase 1 要能在没有
 PG 的机器上跑通闭环，而内存 checkpoint 的代价只是「进程重启后会话历史丢失」，
 不影响单轮执行。降级会打 WARN，不要让它静默发生。
+
+**连接池生命周期**：进程级单例。所有 run 共用同一个池，进程退出时显式关闭。
+每次 run 重建池会导致连接数无限增长 —— 3 个 Python 进程 × N 轮 × max_size
+很快就会撞 PostgreSQL 的 max_connections。
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# ─────────────────── 进程级单例缓存 ───────────────────
+# 键是 DSN 字符串，值是已初始化的 checkpointer / store。
+# 一个进程只有一个 DSN，但用 dict 而不是全局变量：避免模块级副作用，测试时也好替换。
+_checkpointer_cache: dict[str, Any] = {}
+_store_cache: dict[str, Any] = {}
 
-def make_checkpointer(dsn: str):
-    """构造 checkpointer。优先 PostgreSQL，连不上则降级到内存。
+# 需要在退出时关闭的连接池。append-only，close_pools() 遍历关闭。
+_pools_to_close: list[Any] = []
 
-    PG 路径的表由 LangGraph 自己建（`setup()` 幂等），不需要 Alembic 声明。
+
+async def get_checkpointer(dsn: str):
+    """获取 checkpointer（进程级缓存）。**必须在事件循环中调用。**
+
+    首次调用时完成：
+    1. 创建 AsyncConnectionPool（open=False）
+    2. await pool.open()
+    3. await checkpointer.setup()  — 幂等建表
+    4. 最小读写验证
+    失败则降级为 InMemorySaver。
     """
+    if dsn in _checkpointer_cache:
+        return _checkpointer_cache[dsn]
+
     if dsn:
         try:
-            # astream_events 使用异步 LangGraph API，必须配套 AsyncPostgresSaver；
-            # 同步 PostgresSaver 没有 aget_tuple，会在首个 run 直接抛 NotImplementedError。
-            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-            from psycopg_pool import AsyncConnectionPool
-
-            pool = AsyncConnectionPool(
-                conninfo=dsn,
-                min_size=1,
-                max_size=8,
-                # 建表要在连接建立后做，交给 setup
-                open=True,
-                kwargs={"autocommit": True, "prepare_threshold": 0},
-            )
-            saver = AsyncPostgresSaver(pool)
-            logger.info("checkpointer：PostgreSQL")
+            saver = await _init_pg_checkpointer(dsn)
+            _checkpointer_cache[dsn] = saver
             return saver
         except Exception as exc:
             logger.warning(
-                "PostgreSQL checkpointer 不可用（%s），降级为内存 checkpointer。"
-                "进程重启后会话历史会丢，单轮执行不受影响。",
+                "checkpointer：内存降级\n原因：%s",
                 exc,
             )
+
     else:
         logger.info("未配置 AGENT_POSTGRES_DSN，使用内存 checkpointer")
 
     from langgraph.checkpoint.memory import InMemorySaver
 
-    return InMemorySaver()
+    fallback = InMemorySaver()
+    _checkpointer_cache[dsn] = fallback
+    return fallback
 
 
-def make_store(dsn: str):
-    """跨会话长期记忆。走 LangGraph Store，作用域按 appId 隔离。"""
+async def _init_pg_checkpointer(dsn: str):
+    """在事件循环中创建连接池、打开、建表、验证。"""
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    from psycopg_pool import AsyncConnectionPool
+
+    # 1. 创建时不打开 —— open=True 会调 asyncio.get_running_loop()，
+    #    在同步上下文中必然报错，这正是之前永远降级的根因。
+    pool = AsyncConnectionPool(
+        conninfo=dsn,
+        min_size=1,
+        max_size=8,
+        open=False,
+        kwargs={"autocommit": True, "prepare_threshold": 0},
+    )
+    _pools_to_close.append(pool)
+
+    # 2. 在当前事件循环中打开
+    await pool.open()
+
+    # 3. 建表（幂等）
+    saver = AsyncPostgresSaver(pool)
+    await saver.setup()
+
+    # 4. 最小读写验证：确认 setup 建的表真的能用
+    await _verify_checkpointer(saver)
+
+    logger.info("checkpointer：PostgreSQL")
+    logger.info("checkpointer setup：成功")
+    return saver
+
+
+async def _verify_checkpointer(saver) -> None:
+    """对 checkpointer 做一次最小读操作。
+
+    只读不写 —— 写入会留下垃圾数据。读 get_tuple 对空表返回 None，
+    不会报错，但能验证 SQL 可以跑通。
+    """
+    config = {"configurable": {"thread_id": "__healthcheck__"}}
+    result = await saver.aget_tuple(config)
+    # result 为 None 是正常的（没有这个 thread 的数据）
+    logger.debug("checkpointer 验证通过（result=%s）", type(result).__name__ if result else "None")
+
+
+async def get_store(dsn: str):
+    """获取 store（进程级缓存）。
+
+    store 用同步 PostgresStore —— 它不需要在事件循环中初始化，
+    但为了统一入口和保证缓存语义，也走 async 接口。
+    """
+    if dsn in _store_cache:
+        return _store_cache[dsn]
+
     if dsn:
         try:
-            from langgraph.store.postgres import PostgresStore
-            from psycopg_pool import ConnectionPool
-
-            pool = ConnectionPool(conninfo=dsn, min_size=1, max_size=4, open=True,
-                                  kwargs={"autocommit": True, "prepare_threshold": 0})
-            store = PostgresStore(pool)
-            store.setup()
-            logger.info("store：PostgreSQL")
+            store = _init_pg_store(dsn)
+            _store_cache[dsn] = store
             return store
         except Exception as exc:
-            logger.warning("PostgreSQL store 不可用（%s），降级为内存 store", exc)
+            logger.warning("store：内存降级\n原因：%s", exc)
 
     from langgraph.store.memory import InMemoryStore
 
-    return InMemoryStore()
+    fallback = InMemoryStore()
+    _store_cache[dsn] = fallback
+    return fallback
+
+
+def _init_pg_store(dsn: str):
+    """同步创建 store 连接池并建表。"""
+    from langgraph.store.postgres import PostgresStore
+    from psycopg_pool import ConnectionPool
+
+    pool = ConnectionPool(
+        conninfo=dsn, min_size=1, max_size=4, open=True,
+        kwargs={"autocommit": True, "prepare_threshold": 0},
+    )
+    _pools_to_close.append(pool)
+
+    store = PostgresStore(pool)
+    store.setup()
+    logger.info("store：PostgreSQL")
+    return store
+
+
+async def close_pools() -> None:
+    """关闭所有连接池。进程退出时调用。"""
+    for pool in _pools_to_close:
+        try:
+            if hasattr(pool, "close"):
+                result = pool.close()
+                # AsyncConnectionPool.close() 返回 coroutine
+                if asyncio.iscoroutine(result) or asyncio.isfuture(result):
+                    await result
+        except Exception as exc:
+            logger.warning("关闭连接池失败：%s", exc)
+    _pools_to_close.clear()
+    _checkpointer_cache.clear()
+    _store_cache.clear()
+    logger.info("所有持久化连接池已关闭")
 
 
 def memory_namespace(app_id: str) -> tuple[str, ...]:

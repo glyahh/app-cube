@@ -56,6 +56,7 @@ def build_agent(*, settings, backend, checkpointer, store, task_kind: str, tools
         settings.model.base_url,
         settings.model.api_key,
         override=settings.model.context_window_override,
+        use_system_proxy=settings.model.use_system_proxy,
     ).window
 
     spill_dir = (Path(workspace) / ".scratch") if workspace else Path(".scratch")

@@ -146,7 +146,7 @@ def _run_agent(
     from backends.local_shell import GuardedShellBackend
     from env_utils import get_env
     from core.compaction import OverheadEstimator
-    from core.persistence import make_checkpointer, make_store
+    from core.persistence import get_checkpointer, get_store
     from core.streaming_runtime import _event_loop, run_agent_with_events
     from retrieval.git_epoch import snapshot
     from retrieval.runtime_context import RunContext, clear_context, set_context
@@ -188,11 +188,8 @@ def _run_agent(
     )
     set_context(context)
 
-    checkpointer = make_checkpointer(settings.postgres_dsn)
-    # AsyncPostgresSaver 的建表和连接初始化必须在后续复用的事件循环中完成。
-    if hasattr(checkpointer, "setup") and checkpointer.__class__.__name__ == "AsyncPostgresSaver":
-        _event_loop().run_until_complete(checkpointer.setup())
-    store = make_store(settings.postgres_dsn)
+    checkpointer = _event_loop().run_until_complete(get_checkpointer(settings.postgres_dsn))
+    store = _event_loop().run_until_complete(get_store(settings.postgres_dsn))
 
     # 固定开销估计器由这里持有：装配时给中间件初值，跑起来后用真实 usage 校正。
     # 它不在 messages 里，但不计进去压缩触发点永远到不了。

@@ -100,18 +100,22 @@ def learn_from_error(model_id: str, message: str) -> int | None:
     return learned
 
 
-def _probe_models_endpoint(base_url: str, api_key: str, model_id: str) -> int | None:
+def _probe_models_endpoint(
+    base_url: str, api_key: str, model_id: str, *, use_system_proxy: bool = False,
+) -> int | None:
     """探一次 /v1/models。拿不到就返回 None —— 这是常态，不是错误。"""
     if not base_url:
-        return None
-    try:
-        import httpx
-    except ImportError:
         return None
     url = base_url.rstrip("/") + "/models"
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     try:
-        resp = httpx.get(url, headers=headers, timeout=5.0)
+        # 复用 model.py 的进程级缓存客户端，继承代理策略。
+        # 之前用裸 httpx.get() 默认 trust_env=True，
+        # 在开了系统代理的机器上探测请求会被截走。
+        from core.model import _clients
+
+        sync_client, _ = _clients(use_system_proxy)
+        resp = sync_client.get(url, headers=headers, timeout=5.0)
         resp.raise_for_status()
         payload = resp.json()
     except Exception:
@@ -135,6 +139,8 @@ def resolve_window(
     base_url: str = "",
     api_key: str = "",
     override: int = 0,
+    *,
+    use_system_proxy: bool = False,
 ) -> WindowResolution:
     """按优先级链解析窗口。结果缓存，同一进程不重复探测。"""
     key = f"{base_url}|{model_id}"
@@ -151,7 +157,7 @@ def resolve_window(
         _RESOLVED[key] = learned
         return WindowResolution(learned, "learned")
 
-    probed = _probe_models_endpoint(base_url, api_key, model_id)
+    probed = _probe_models_endpoint(base_url, api_key, model_id, use_system_proxy=use_system_proxy)
     if probed:
         _RESOLVED[key] = probed
         logger.info("窗口来自 /models 探测：%s -> %d", model_id, probed)

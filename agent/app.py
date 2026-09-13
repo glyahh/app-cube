@@ -73,6 +73,11 @@ def handle_line(line: str, settings) -> None:
 def main() -> int:
     settings = load_settings()
     _configure_logging(settings.log_level)
+
+    # 启动预检：提前初始化持久化层，打出明确状态。
+    # 不等到第一个请求 —— 那时候失败信息会和业务日志混在一起不好找。
+    _precheck_persistence(settings)
+
     logger.info("agent 运行时已就绪，等待 stdio 请求")
 
     for line in _sys.stdin:
@@ -81,8 +86,44 @@ def main() -> int:
             continue
         handle_line(line, settings)
 
+    # 退出清理：显式关闭连接池，释放 PostgreSQL 连接。
+    _shutdown_pools()
     logger.info("stdin 已关闭，退出")
     return 0
+
+
+def _precheck_persistence(settings) -> None:
+    """启动时预热持久化层。
+
+    在进入 stdin 主循环前完成 checkpointer 和 store 的初始化。
+    这样 Java 侧能从 stderr 里立刻看到持久化状态，不用等到第一个请求。
+    """
+    from core.persistence import get_checkpointer, get_store
+    from core.streaming_runtime import _event_loop
+
+    loop = _event_loop()
+    try:
+        loop.run_until_complete(get_checkpointer(settings.postgres_dsn))
+        loop.run_until_complete(get_store(settings.postgres_dsn))
+    except Exception as exc:
+        # 不阻断启动 —— 降级逻辑已在 get_checkpointer 内部处理
+        logger.warning("持久化预检异常：%s", exc)
+
+
+def _shutdown_pools() -> None:
+    """关闭连接池和事件循环。"""
+    from core.persistence import close_pools
+    from core.streaming_runtime import _event_loop
+
+    loop = _event_loop()
+    if not loop.is_closed():
+        try:
+            loop.run_until_complete(close_pools())
+        except Exception as exc:
+            logger.warning("关闭连接池异常：%s", exc)
+        finally:
+            loop.close()
+    logger.info("连接池已关闭")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [int]$Port = 8124,
     [int]$TimeoutSeconds = 60
 )

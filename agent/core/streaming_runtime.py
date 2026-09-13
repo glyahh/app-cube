@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 import time
 from typing import Any
 
@@ -29,11 +30,17 @@ PREVIEW_CHARS = 500
 
 _loop: asyncio.AbstractEventLoop | None = None
 
+# psycopg 的异步驱动不支持 Windows ProactorEventLoop；统一使用 Selector。
+# 必须在创建本模块事件循环前设置，避免连接池拿到不兼容的 loop。
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 
 def _event_loop() -> asyncio.AbstractEventLoop:
     global _loop
     if _loop is None or _loop.is_closed():
         _loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_loop)
     return _loop
 
 
