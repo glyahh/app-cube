@@ -3,6 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { mapAgentEvent } from '../agentEventMapping'
 
 describe('mapAgentEvent · 正文', () => {
+  it('映射 thinking 事件并保留稳定 ID', () => {
+    expect(mapAgentEvent('thinking.delta', { thinkingId: 't-1', summary: '正在构思画报', details: '确定配色' })).toEqual({
+      kind: 'thinking_delta', thinkingId: 't-1', summary: '正在构思画报', details: '确定配色', status: 'running',
+    })
+  })
   it('文本增量直接透传', () => {
     expect(mapAgentEvent('text.delta', { content: '你好' })).toEqual({ kind: 'text', text: '你好' })
   })
@@ -57,7 +62,7 @@ describe('mapAgentEvent · 工具卡片', () => {
 
   it('未知工具名仍生成结构化动作', () => {
     const action = mapAgentEvent('tool.started', { toolName: 'some_new_tool' })
-    expect(action).toMatchObject({ kind: 'tool_started', label: 'some_new_tool' })
+    expect(action).toMatchObject({ kind: 'tool_started', label: '正在处理' })
   })
 
   it('命令参数过长会截断，避免刷屏', () => {
@@ -130,4 +135,12 @@ describe('mapAgentEvent · 未知事件', () => {
   it('完全未知的事件名也忽略 —— 后端加新事件不该让前端崩', () => {
     expect(mapAgentEvent('brand.new.event', { x: 1 }).kind).toBe('ignore')
   })
+})
+
+
+it('preserves the actual tool label instead of the generic server status', () => {
+  expect(mapAgentEvent('tool.started', { toolName: 'read_file', label: '正在检查文件' }))
+    .toMatchObject({ kind: 'tool_started', label: '读取文件' })
+  expect(mapAgentEvent('tool.finished', { toolName: 'execute', label: '正在检查结果' }))
+    .toMatchObject({ kind: 'tool_finished', label: '执行命令' })
 })

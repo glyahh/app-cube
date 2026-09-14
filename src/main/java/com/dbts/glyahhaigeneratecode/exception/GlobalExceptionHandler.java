@@ -45,7 +45,7 @@ public class GlobalExceptionHandler {
             return null;
         }
         // 对于普通请求，返回标准 JSON 响应
-        return ResultUtils.error(e.getCode(), e.getMessage());
+        return ResultUtils.error(e.getCode(), com.dbts.glyahhaigeneratecode.agent.UserFacingOutputHandler.sanitize(e.getMessage()));
     }
 
     @ExceptionHandler(RuntimeException.class)
@@ -109,7 +109,7 @@ public class GlobalExceptionHandler {
                 Map<String, Object> errorData = Map.of(
                         "error", true,
                         "code", errorCode,
-                        "message", errorMessage
+                        "message", com.dbts.glyahhaigeneratecode.agent.UserFacingOutputHandler.sanitize(errorMessage)
                 );
                 String errorJson = JSONUtil.toJsonStr(errorData);
                 // 发送业务错误事件（避免与标准error事件冲突）

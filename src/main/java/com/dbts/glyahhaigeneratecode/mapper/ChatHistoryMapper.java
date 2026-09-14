@@ -14,4 +14,7 @@ import com.mybatisflex.core.BaseMapper;
  * @author <a href="https://github.com/glyahh">glyahh</a>
  */
 public interface ChatHistoryMapper extends BaseMapper<ChatHistory> {
+    @org.apache.ibatis.annotations.Update("UPDATE chat_history SET thinking_segments = CAST(#{segments} AS jsonb) WHERE id = #{id} AND is_delete = 0")
+    int updateThinkingSegments(@org.apache.ibatis.annotations.Param("id") Long id,
+                               @org.apache.ibatis.annotations.Param("segments") String segments);
 }

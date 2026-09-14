@@ -12,6 +12,10 @@ import reactor.core.publisher.SignalType;
 
 import java.time.LocalDateTime;
 import java.util.concurrent.atomic.AtomicBoolean;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 把一轮对话落到 {@code chat_history}，并把执行过程落到 {@code agent_run}。
@@ -31,6 +35,7 @@ public class AgentRunPersistence {
 
     private final ChatHistoryService chatHistoryService;
     private final AgentRunMapper agentRunMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * 落 USER 行并拿到本轮 ID。
@@ -112,23 +117,32 @@ public class AgentRunPersistence {
 
         return Flux.defer(() -> {
             StringBuilder buffer = new StringBuilder();
+            List<Map<String, Object>> thinking = new ArrayList<>();
             AtomicBoolean persisted = new AtomicBoolean(false);
             AtomicBoolean settled = new AtomicBoolean(false);
+            java.util.concurrent.atomic.AtomicReference<String> outcome = new java.util.concurrent.atomic.AtomicReference<>("FAILED");
 
             return events
-                    .doOnNext(event -> accumulate(event, buffer))
+                    .doOnNext(event -> {
+                        accumulate(event, buffer, thinking);
+                        if (AgentEvent.RUN_COMPLETED.equals(event.event()))
+                            outcome.set("succeeded".equals(event.status()) ? "SUCCEEDED" : "FAILED");
+                        if (AgentEvent.ERROR.equals(event.event())) outcome.set("FAILED");
+                    })
                     .doOnComplete(() -> {
-                        persistOnce(appId, userId, roundId, buffer, persisted);
-                        finishRun(runId, "SUCCEEDED", null, null, settled);
+                        persistOnce(appId, userId, roundId, buffer, thinking, persisted);
+                        finishRun(runId, outcome.get(), null, null, settled);
                     })
                     .doOnError(error -> {
-                        persistOnce(appId, userId, roundId, buffer, persisted);
+                        persistOnce(appId, userId, roundId, buffer, thinking, persisted);
                         finishRun(runId, "FAILED", null, error.getMessage(), settled);
                     })
                     // 取消既不走 onComplete 也不走 onError，只能靠 doFinally 的信号类型区分。
                     // 少这一条的话，前端关页面留下的 run 会永远停在 RUNNING。
                     .doFinally(signal -> {
                         if (signal == SignalType.CANCEL) {
+                            thinking.forEach(item -> { if ("running".equals(item.get("status"))) item.put("status", "cancelled"); });
+                            persistOnce(appId, userId, roundId, buffer, thinking, persisted);
                             finishRun(runId, "CANCELLED", null, "客户端取消", settled);
                         }
                     });
@@ -165,7 +179,28 @@ public class AgentRunPersistence {
         return message.length() <= 512 ? message : message.substring(0, 512);
     }
 
-    private void accumulate(AgentEvent event, StringBuilder buffer) {
+    private void accumulate(AgentEvent event, StringBuilder buffer, List<Map<String, Object>> thinking) {
+        if (event.event().startsWith("thinking.")) {
+            String id = event.frame().path("thinkingId").asText("");
+            if (id.isBlank()) return;
+            Map<String, Object> item = thinking.stream()
+                    .filter(x -> id.equals(x.get("thinkingId"))).findFirst().orElse(null);
+            if (item == null) {
+                item = new java.util.LinkedHashMap<>();
+                item.put("thinkingId", id);
+                item.put("details", new ArrayList<String>());
+                thinking.add(item);
+            }
+            String summary = event.frame().path("summary").asText("");
+            if (!summary.isBlank()) item.put("summary", summary);
+            @SuppressWarnings("unchecked")
+            List<String> details = (List<String>) item.get("details");
+            String detail = event.frame().path("details").asText("");
+            if (!detail.isBlank() && !details.contains(detail)) details.add(detail);
+            if (!"completed".equals(item.get("status")))
+                item.put("status", event.frame().path("status").asText("running"));
+            return;
+        }
         if (event.isTextDelta()) {
             buffer.append(event.textContent());
         } else if (AgentEvent.TEXT_MESSAGE.equals(event.event())) {
@@ -175,18 +210,20 @@ public class AgentRunPersistence {
         }
     }
 
-    private void persistOnce(Long appId, Long userId, Long roundId, StringBuilder buffer, AtomicBoolean persisted) {
+    private void persistOnce(Long appId, Long userId, Long roundId, StringBuilder buffer, List<Map<String, Object>> thinking, AtomicBoolean persisted) {
         // 正常完成与异常可能都触发，只落一次
         if (!persisted.compareAndSet(false, true)) {
             return;
         }
         String text = buffer.toString();
-        if (text.isBlank()) {
+        if (text.isBlank() && thinking.isEmpty()) {
             log.warn("本轮没有正文可落库：appId={}, roundId={}", appId, roundId);
             return;
         }
+        thinking.forEach(item -> { if ("running".equals(item.get("status"))) item.put("status", "failed"); });
         try {
-            chatHistoryService.addChatMessage(appId, text, ChatHistoryMessageTypeEnum.AI.getValue(), userId);
+            chatHistoryService.saveAgentMessage(appId, userId,
+                    text.isBlank() ? "本轮未产生最终回答。" : text, objectMapper.writeValueAsString(thinking));
         } catch (Exception e) {
             // 落 AI 行失败不该影响已经推给前端的流
             log.error("落 AI 消息失败：appId={}, roundId={}", appId, roundId, e);

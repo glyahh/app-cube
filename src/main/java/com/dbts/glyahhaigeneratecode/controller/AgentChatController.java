@@ -83,7 +83,7 @@ public class AgentChatController {
         return Flux.defer(() -> {
                     // 台账在订阅时才落 —— 从没订阅过的请求不该留下「起了头」的记录
                     persistence.recordRun(runRequest);
-                    return agentRunService.stream(appId, frameJson);
+                    return agentRunService.streamForDisplay(appId, frameJson);
                 })
                 // 累积正文并在终态落一次 AI 行。挂在 filter 之前，才看得到 text.message。
                 .transform(events -> persistence.tap(events, runRequest))

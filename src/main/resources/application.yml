@@ -22,6 +22,9 @@ spring:
   # V1 建 8 张业务表，V2 建 agent_run 台账。
   flyway:
     enabled: true
+    # 建表账号与业务读写账号分开，避免给业务账号增加 DDL 权限。
+    user: ${FLYWAY_USER:${POSTGRES_USER:postgres}}
+    password: ${FLYWAY_PASSWORD:${POSTGRES_PASSWORD:}}
     schemas: biz
     default-schema: biz
     create-schemas: true

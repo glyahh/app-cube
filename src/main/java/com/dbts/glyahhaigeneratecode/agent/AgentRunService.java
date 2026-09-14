@@ -46,6 +46,11 @@ public class AgentRunService {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
+    /** SSE 与 WebSocket 的唯一展示入口，原始流保留内部执行语义。 */
+    public Flux<AgentEvent> streamForDisplay(Long appId, String requestJson) {
+        return UserFacingOutputHandler.apply(stream(appId, requestJson));
+    }
+
     /** 单次执行：借进程、下发、逐帧读回。锁的持有范围由调用方 {@link #stream} 划定。 */
     private Flux<AgentEvent> runOnce(String requestJson) {
         return Flux.<AgentEvent>create(sink -> {

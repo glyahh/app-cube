@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlparse
 
 from env_utils import REPO_ROOT, get_env, get_env_bool
 
@@ -46,13 +47,13 @@ class ModelSettings:
     summarizer_model_id: str = ""
     summarizer_base_url: str = ""
     summarizer_api_key: str = ""
-    # 模型请求走不走系统代理。默认 False（直连）。
-    #
-    # httpx 默认 trust_env=True，会去读 Windows 注册表里的系统代理。本机那个代理
-    # 是给外网用的，把到国内模型端点的请求也截走，表现为 SSL EOF，而 LangChain
-    # 把它压成一句 "Connection error."，完全看不出跟代理有关。
-    # 出口策略显式化，比依赖「这台机器碰巧没开代理」可靠。
+    # 模型请求是否读取 HTTP_PROXY 等系统代理。默认 False。
+    # 注意：trust_env 不会绕过 Windows 路由或 TUN；它只控制 httpx 的显式代理配置。
     use_system_proxy: bool = False
+    # 国内模型的专用本地代理入口。空值表示不启用该出口。
+    domestic_direct_enabled: bool = False
+    domestic_direct_hosts: tuple[str, ...] = ()
+    domestic_direct_proxy: str = ""
 
 
 @dataclass(frozen=True)
@@ -88,7 +89,66 @@ class Settings:
     postgres_dsn: str
 
 
+def parse_model_hosts(raw: str) -> tuple[str, ...]:
+    """解析精确匹配的模型主机名列表。"""
+    hosts: list[str] = []
+    for item in raw.split(","):
+        host = item.strip().lower().rstrip(".")
+        if not host:
+            continue
+        try:
+            parsed = urlparse(f"//{host}")
+            parsed_host = parsed.hostname
+        except ValueError as exc:
+            raise ValueError(
+                "AGENT_MODEL_DOMESTIC_DIRECT_HOSTS 只能填写逗号分隔的完整主机名"
+            ) from exc
+        if parsed_host != host or any(char in host for char in "/:*?#[\\]"):
+            raise ValueError(
+                "AGENT_MODEL_DOMESTIC_DIRECT_HOSTS 只能填写逗号分隔的完整主机名"
+            )
+        if host not in hosts:
+            hosts.append(host)
+    return tuple(hosts)
+
+
+def validate_domestic_direct_config(
+    enabled: bool, hosts: tuple[str, ...], proxy_url: str,
+) -> None:
+    """校验开启专用出口时必须具备的配置。"""
+    if not enabled:
+        return
+    if not hosts:
+        raise ValueError(
+            "AGENT_MODEL_DOMESTIC_DIRECT_ENABLED=true 时必须配置 "
+            "AGENT_MODEL_DOMESTIC_DIRECT_HOSTS"
+        )
+    try:
+        parsed = urlparse(proxy_url)
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError as exc:
+        raise ValueError(
+            "AGENT_MODEL_DOMESTIC_DIRECT_PROXY 必须是带主机名的 http(s) URL"
+        ) from exc
+    if parsed.scheme not in {"http", "https"} or not hostname:
+        raise ValueError(
+            "AGENT_MODEL_DOMESTIC_DIRECT_PROXY 必须是带主机名的 http(s) URL"
+        )
+
+
 def load_settings() -> Settings:
+    domestic_direct_enabled = get_env_bool("AGENT_MODEL_DOMESTIC_DIRECT_ENABLED", False)
+    domestic_direct_hosts = (
+        parse_model_hosts(get_env("AGENT_MODEL_DOMESTIC_DIRECT_HOSTS", ""))
+        if domestic_direct_enabled
+        else ()
+    )
+    domestic_direct_proxy = get_env("AGENT_MODEL_DOMESTIC_DIRECT_PROXY", "").strip()
+    validate_domestic_direct_config(
+        domestic_direct_enabled, domestic_direct_hosts, domestic_direct_proxy
+    )
+
     return Settings(
         model=ModelSettings(
             model_id=get_env("AGENT_MODEL_ID", "deepseek-v4-flash"),
@@ -101,6 +161,9 @@ def load_settings() -> Settings:
             summarizer_base_url=get_env("AGENT_SUMMARIZER_BASE_URL"),
             summarizer_api_key=get_env("AGENT_SUMMARIZER_API_KEY"),
             use_system_proxy=get_env_bool("AGENT_MODEL_USE_SYSTEM_PROXY", False),
+            domestic_direct_enabled=domestic_direct_enabled,
+            domestic_direct_hosts=domestic_direct_hosts,
+            domestic_direct_proxy=domestic_direct_proxy,
         ),
         limits=Limits(
             deadline_ms=int(get_env("AGENT_DEADLINE_MS", "600000")),

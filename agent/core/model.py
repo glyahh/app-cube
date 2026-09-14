@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlparse
 
 from core.settings import ModelSettings
 
@@ -26,37 +27,86 @@ THINKING_DISABLED = {"type": "disabled"}
 
 # 按出口策略缓存。worker 是常驻进程，模型对象每次 run 都重建 ——
 # client 要是跟着重建，连接会一直堆在池里没人关，而且每轮都要重做 TLS 握手。
-_CLIENTS: dict[bool, tuple] = {}
+_CLIENTS: dict[tuple[bool, str | None], tuple] = {}
 
 
-def _clients(use_system_proxy: bool):
+def model_host(base_url: str) -> str | None:
+    """取模型 base URL 的主机名，供专用出口做精确匹配。"""
+    try:
+        host = urlparse(base_url).hostname
+    except ValueError:
+        return None
+    return host.lower().rstrip(".") if host else None
+
+
+def domestic_direct_proxy_for_url(base_url: str, settings: ModelSettings) -> str | None:
+    """返回命中主机的国内专用代理，否则返回 None。"""
+    if not settings.domestic_direct_enabled:
+        return None
+    host = model_host(base_url)
+    if host in settings.domestic_direct_hosts:
+        return settings.domestic_direct_proxy
+    return None
+
+
+def model_connection_options(
+    base_url: str, settings: ModelSettings,
+) -> tuple[bool, str | None]:
+    """返回 (trust_env, explicit_proxy)，不改变操作系统路由/TUN。"""
+    proxy_url = domestic_direct_proxy_for_url(base_url, settings)
+    if proxy_url:
+        return False, proxy_url
+    return settings.use_system_proxy, None
+
+
+def _proxy_label(proxy_url: str | None) -> str:
+    if not proxy_url:
+        return "none"
+    try:
+        parsed = urlparse(proxy_url)
+        port = f":{parsed.port}" if parsed.port else ""
+        return f"{parsed.scheme}://{parsed.hostname}{port}"
+    except ValueError:
+        return "invalid"
+
+
+def _clients(use_system_proxy: bool, proxy_url: str | None = None):
     """进程内复用的 (同步, 异步) httpx 客户端。
 
-    `trust_env` 决定要不要读系统代理。**必须显式给值**：httpx 默认 True，
-    在开了代理的机器上会把到国内模型端点的请求也截走，报出来只有一句
-    "Connection error."（LangChain 把 SSL 层的异常压平了），排查时完全看不出方向。
+    `trust_env` 只决定要不要读 HTTP_PROXY 等显式代理环境变量；它不会绕过
+    Windows 路由或 TUN。传入 `proxy_url` 时走指定的本机入口，并强制关闭环境代理。
     """
-    cached = _CLIENTS.get(use_system_proxy)
+    trust_env = bool(use_system_proxy) if proxy_url is None else False
+    cache_key = (trust_env, proxy_url)
+    cached = _CLIENTS.get(cache_key)
     if cached is None:
         import httpx
 
         kwargs = dict(
-            trust_env=use_system_proxy,
+            trust_env=trust_env,
             # 连接要快速失败；读取要够久 —— 生成整个文件时单次响应可能跑几分钟。
             timeout=httpx.Timeout(connect=15.0, read=600.0, write=60.0, pool=15.0),
             limits=httpx.Limits(max_connections=8, max_keepalive_connections=4),
         )
+        if proxy_url:
+            kwargs["proxy"] = proxy_url
         cached = (httpx.Client(**kwargs), httpx.AsyncClient(**kwargs))
-        _CLIENTS[use_system_proxy] = cached
-        logger.info("模型 httpx 客户端：trust_env=%s（%s）", use_system_proxy,
-                    "走系统代理" if use_system_proxy else "直连")
+        _CLIENTS[cache_key] = cached
+        logger.info("模型 httpx 客户端：trust_env=%s proxy=%s", trust_env,
+                    _proxy_label(proxy_url))
     return cached
 
 
 def _build(model_id: str, base_url: str, api_key: str, settings: ModelSettings, *, streaming: bool):
     from langchain_openai import ChatOpenAI
 
-    http_client, http_async_client = _clients(settings.use_system_proxy)
+    use_system_proxy, proxy_url = model_connection_options(base_url, settings)
+    http_client, http_async_client = _clients(use_system_proxy, proxy_url)
+    logger.debug(
+        "模型请求出口：host=%s route=%s",
+        model_host(base_url) or "<unknown>",
+        _proxy_label(proxy_url) if proxy_url else ("system" if use_system_proxy else "tun/direct"),
+    )
 
     return ChatOpenAI(
         model=model_id,

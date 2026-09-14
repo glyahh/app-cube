@@ -72,6 +72,10 @@ public class User implements Serializable {
     @Column("user_role")
     private String userRole;
 
+    /** 新消息是否默认展开执行过程。 */
+    @Column("expand_execution_process")
+    private Boolean expandExecutionProcess;
+
     /**
      * 编辑时间
      */

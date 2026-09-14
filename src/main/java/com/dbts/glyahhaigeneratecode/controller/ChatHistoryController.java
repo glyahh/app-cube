@@ -151,6 +151,8 @@ public class ChatHistoryController {
         QueryWrapper queryWrapper = chatHistoryService.buildQueryWrapper(chatHistoryQueryRequest);
 
         Page<ChatHistory> voPage = chatHistoryService.page(Page.of(pageNum, pageSize), queryWrapper);
+        voPage.getRecords().forEach(item -> item.setMessage(
+                com.dbts.glyahhaigeneratecode.agent.UserFacingOutputHandler.history(item.getMessageType(), item.getMessage())));
 
         return ResultUtils.success(voPage);
     }

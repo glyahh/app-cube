@@ -44,23 +44,35 @@ def build_agent(*, settings, backend, checkpointer, store, task_kind: str, tools
         ToolOutputBudgetMiddleware,
         make_summarizer,
     )
-    from core.model import make_main_model, make_summarizer_model
+    from core.model import make_main_model, make_summarizer_model, model_connection_options
     from core.model_window import resolve_window
 
     model = make_main_model(settings.model)
 
     # 窗口走动态解析（配置 > /models 探测 > 内置表 > 保守默认），不硬编码。
     # 所有压缩阈值都是它的函数，估错了整条链路会静默失效。
+    window_use_system_proxy, window_proxy_url = model_connection_options(
+        settings.model.base_url, settings.model
+    )
     effective_window = window or resolve_window(
         settings.model.model_id,
         settings.model.base_url,
         settings.model.api_key,
         override=settings.model.context_window_override,
-        use_system_proxy=settings.model.use_system_proxy,
+        use_system_proxy=window_use_system_proxy,
+        proxy_url=window_proxy_url,
     ).window
 
     spill_dir = (Path(workspace) / ".scratch") if workspace else Path(".scratch")
-    system_prompt = get_system_prompt(task_kind)
+    system_prompt = get_system_prompt(task_kind) + "\n面向用户的最终回答使用简体中文，简洁说明作品与实际检查结果，不介绍内部运行架构。"
+
+    system_prompt += (
+        "\n每次调用工具前，先输出两句简短的用户可见进度说明：第一句概述当前阶段，"
+        "第二句说明具体将做什么或已得到什么检查结果。结合本轮需求与实际反馈动态撰写，"
+        "不要反复使用固定状态词，不要把工具失败说成成功。"
+        "这些文字用于进度展示，不是内部思维链；不要输出隐含推理、密钥、内部环境或长代码。"
+        "最后一次无需工具时，直接输出最终答复。"
+    )
 
     # 固定开销的初值：system prompt 可以精确算，工具 schema 只能先给个保守值，
     # 第一次模型调用后会被真实 usage 校正。

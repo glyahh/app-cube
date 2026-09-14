@@ -10,9 +10,16 @@ import {
 } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import { useAppearanceStore, CODE_THEME_OPTIONS, DEFAULT_CODE_TYPE_OPTIONS } from '@/stores/appearance'
+import { useExecutionPreference } from '@/stores/executionPreference'
+import { message } from 'ant-design-vue'
 
 const router = useRouter()
 const store = useAppearanceStore()
+const execution = useExecutionPreference()
+async function saveExecutionPreference(value: boolean | string | number) {
+  try { await execution.save(value === true) }
+  catch { message.error('保存失败，请重试') }
+}
 const collapseMotionDesc = ref(true) // 减少动画说明列表默认折叠
 
 const previewCode = `function hello() {
@@ -62,6 +69,17 @@ function goBack() {
       <p class="page-desc">自定义界面颜色、字体、布局和生成偏好</p>
     </div>
 
+    <section class="appearance-section">
+      <div class="section-header">对话展示</div>
+      <div class="appearance-row">
+        <div class="row-label">
+          <span class="row-title" id="execution-preference-label">展开思考过程</span>
+          <span class="row-desc">按账号保存，立即同步当前与历史消息；仅控制详情展开，不改变已记录内容。</span>
+        </div>
+        <a-switch :checked="execution.expanded" :loading="execution.saving"
+          aria-labelledby="execution-preference-label" @change="saveExecutionPreference" />
+      </div>
+    </section>
     <!-- A. 基础颜色 -->
     <section class="appearance-section">
       <div class="section-header">基础颜色</div>

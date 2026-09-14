@@ -41,6 +41,10 @@ public class ChatHistory implements Serializable {
      */
     private String message;
 
+    /** 面向用户的动态思考阶段 JSON。旧记录为空时按旧协议展示。 */
+    @Column("thinking_segments")
+    private String thinkingSegments;
+
     /**
      * user/ai
      */

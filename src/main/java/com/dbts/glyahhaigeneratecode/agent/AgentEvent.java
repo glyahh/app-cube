@@ -27,6 +27,9 @@ public record AgentEvent(String runId, int seq, long ts, String event, JsonNode 
     public static final String HEARTBEAT = "heartbeat";
     public static final String TEXT_DELTA = "text.delta";
     public static final String TEXT_MESSAGE = "text.message";
+    public static final String THINKING_STARTED = "thinking.started";
+    public static final String THINKING_DELTA = "thinking.delta";
+    public static final String THINKING_COMPLETED = "thinking.completed";
     public static final String TODO_DELTA = "todo.delta";
     public static final String STEP = "step";
     public static final String TOOL_STARTED = "tool.started";

@@ -18,8 +18,9 @@ public final class AgentFrames {
      * （{@code {"error":true,"message":"..."}}），前端两条流式路径可以用同一套解析。
      */
     public static String businessErrorPayload(String message) {
+        message = UserFacingOutputHandler.sanitize(message);
         String safe = message == null ? "" : message.replace("\\", "\\\\").replace("\"", "\\\"");
-        return "{\"error\":true,\"message\":\"" + safe + "\"}";
+        return "{\"error\":true,\"message\":\"" + safe.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\"}";
     }
 
     /** WebSocket 上的错误帧：外层带 event 名，内层与 SSE 的 data 同形状。 */

@@ -56,6 +56,25 @@ import java.util.stream.Collectors;
 @Slf4j
 public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatHistory> implements ChatHistoryService {
 
+    @Override
+    public boolean updateThinkingSegments(Long messageId, String thinkingSegments) {
+        if (messageId == null || StrUtil.isBlank(thinkingSegments)) return false;
+        return mapper.updateThinkingSegments(messageId, thinkingSegments) == 1;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long saveAgentMessage(Long appId, Long userId, String message, String thinkingSegments) {
+        // 1. 沿用消息校验和主键生成规则。
+        Long id = addChatMessageAndReturnId(appId, message, "ai", userId, "SKIP", "NONE", null);
+        ThrowUtils.throwIf(id == null, ErrorCode.SYSTEM_ERROR, "保存对话失败");
+        // 2. JSONB 显式转换；失败时回滚正文，防止产生半条历史。
+        if (StrUtil.isNotBlank(thinkingSegments)) {
+            ThrowUtils.throwIf(!updateThinkingSegments(id, thinkingSegments), ErrorCode.SYSTEM_ERROR, "保存思考阶段失败");
+        }
+        return id;
+    }
+
     /**
      * 应用服务。用 {@code @Lazy} 断开循环依赖：
      * AppServiceImpl 需要本类做删除应用的级联清理，本类又需要它校验应用存在。
@@ -277,6 +296,8 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
         // 3. 组装 Page 对象（records 为当前页、totalRow 为全文条数）
         Page<ChatHistory> page = new Page<>(1, pageSize);
         page.setRecords(new ArrayList<>(filtered));
+        page.getRecords().forEach(item -> item.setMessage(
+                com.dbts.glyahhaigeneratecode.agent.UserFacingOutputHandler.history(item.getMessageType(), item.getMessage())));
         page.setTotalRow(fullList.size());
         return page;
     }
@@ -345,7 +366,7 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
         List<UserChatHistoryItemVO> voList = records.stream().map(item -> {
             UserChatHistoryItemVO vo = new UserChatHistoryItemVO();
             vo.setId(item.getId());
-            vo.setMessage(item.getMessage());
+            vo.setMessage(com.dbts.glyahhaigeneratecode.agent.UserFacingOutputHandler.history(item.getMessageType(), item.getMessage()));
             vo.setMessageType(item.getMessageType());
             vo.setAppId(item.getAppId());
             vo.setCreateTime(item.getCreateTime());
@@ -472,6 +493,8 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
         // 2. 创建 VO 并复制同名字段,得到前端展示用的 ChatHistoryVO 实例
         ChatHistoryVO chatHistoryVO = new ChatHistoryVO();
         BeanUtil.copyProperties(chatHistory, chatHistoryVO);
+        chatHistoryVO.setMessage(com.dbts.glyahhaigeneratecode.agent.UserFacingOutputHandler.history(
+                chatHistory.getMessageType(), chatHistory.getMessage()));
         // 3. 返回填充后的 VO,供接口层序列化给前端
         return chatHistoryVO;
     }

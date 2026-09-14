@@ -96,11 +96,24 @@ export type AgentUiAction =
     }
   | { kind: 'error'; text: string }
   | { kind: 'done' }
+  | { kind: 'thinking_started'; thinkingId: string; summary: string; details: string; status: string }
+  | { kind: 'thinking_delta'; thinkingId: string; summary: string; details: string; status: string }
+  | { kind: 'thinking_completed'; thinkingId: string; summary: string; details: string; status: string }
   | { kind: 'ignore' }
 
 /** 映射一帧 Agent 事件。未知事件一律 ignore —— 新事件不该让前端报错。 */
 export function mapAgentEvent(name: string, payload: Record<string, unknown>): AgentUiAction {
   switch (name) {
+    case 'thinking.started':
+    case 'thinking.delta':
+    case 'thinking.completed': {
+      const thinkingId = String(payload.thinkingId ?? '')
+      const summary = String(payload.summary ?? '')
+      const details = String(payload.details ?? '')
+      const status = String(payload.status ?? (name.endsWith('completed') ? 'completed' : 'running'))
+      const kind = name === 'thinking.started' ? 'thinking_started' : name === 'thinking.delta' ? 'thinking_delta' : 'thinking_completed'
+      return { kind, thinkingId, summary, details, status } as AgentUiAction
+    }
     case 'text.delta': {
       const content = typeof payload.content === 'string' ? payload.content : ''
       return content ? { kind: 'text', text: content } : { kind: 'ignore' }
@@ -118,7 +131,7 @@ export function mapAgentEvent(name: string, payload: Record<string, unknown>): A
         kind: 'tool_started',
         callId: String(payload.callId ?? ''),
         toolName,
-        label: TOOL_LABELS[toolName] || toolName || '调用工具',
+        label: TOOL_LABELS[toolName] || (typeof payload.label === 'string' ? payload.label : '正在处理'),
         target: primaryArg(payload),
       }
     }
@@ -129,7 +142,7 @@ export function mapAgentEvent(name: string, payload: Record<string, unknown>): A
         kind: 'tool_finished',
         callId: String(payload.callId ?? ''),
         toolName,
-        label: TOOL_LABELS[toolName] || toolName || '调用工具',
+        label: TOOL_LABELS[toolName] || (typeof payload.label === 'string' ? payload.label : '正在处理'),
         status: String(payload.status ?? 'succeeded'),
         outputPreview: typeof payload.outputPreview === 'string' ? payload.outputPreview : '',
       }

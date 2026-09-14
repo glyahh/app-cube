@@ -109,3 +109,84 @@ def test_客户端在进程内复用():
     assert _clients(False)[0] is _clients(False)[0]
     assert _clients(False)[0] is not _clients(True)[0]
 
+
+def test_国内专用出口按完整主机名命中():
+    from core.model import model_connection_options
+    from core.settings import ModelSettings
+
+    settings = ModelSettings(
+        domestic_direct_enabled=True,
+        domestic_direct_hosts=("api.deepseek.com",),
+        domestic_direct_proxy="http://127.0.0.1:17897",
+        use_system_proxy=True,
+    )
+
+    assert model_connection_options("https://api.deepseek.com/v1", settings) == (
+        False,
+        "http://127.0.0.1:17897",
+    )
+    assert model_connection_options("https://dashscope.aliyuncs.com/v1", settings) == (
+        True,
+        None,
+    )
+
+
+def test_国内专用出口不会匹配相似主机名():
+    from core.model import model_connection_options
+    from core.settings import ModelSettings
+
+    settings = ModelSettings(
+        domestic_direct_enabled=True,
+        domestic_direct_hosts=("api.deepseek.com",),
+        domestic_direct_proxy="http://127.0.0.1:17897",
+    )
+
+    assert model_connection_options("https://evil-api.deepseek.com", settings) == (
+        False,
+        None,
+    )
+
+
+def test_国内专用出口客户端与其他出口隔离():
+    from core.model import _clients
+
+    domestic_sync, domestic_async = _clients(False, "http://127.0.0.1:17897")
+    again_sync, again_async = _clients(False, "http://127.0.0.1:17897")
+    plain_sync, plain_async = _clients(False)
+
+    assert domestic_sync is again_sync
+    assert domestic_async is again_async
+    assert domestic_sync is not plain_sync
+    assert domestic_async is not plain_async
+    assert domestic_sync._trust_env is False
+    assert domestic_async._trust_env is False
+    assert len(domestic_sync._mounts) == 1
+    assert len(domestic_async._mounts) == 1
+
+
+def test_国内专用出口配置非法时明确失败():
+    import pytest
+
+    from core.settings import validate_domestic_direct_config
+
+    with pytest.raises(ValueError, match="HOSTS"):
+        validate_domestic_direct_config(True, (), "http://127.0.0.1:17897")
+    with pytest.raises(ValueError, match="PROXY"):
+        validate_domestic_direct_config(True, ("api.deepseek.com",), "127.0.0.1:17897")
+
+
+def test_国内专用出口配置从环境变量加载(monkeypatch):
+    from core.settings import load_settings
+
+    monkeypatch.setenv("AGENT_MODEL_DOMESTIC_DIRECT_ENABLED", "true")
+    monkeypatch.setenv("AGENT_MODEL_DOMESTIC_DIRECT_HOSTS", "api.deepseek.com, dashscope.aliyuncs.com")
+    monkeypatch.setenv("AGENT_MODEL_DOMESTIC_DIRECT_PROXY", "http://127.0.0.1:17897")
+
+    settings = load_settings()
+
+    assert settings.model.domestic_direct_enabled is True
+    assert settings.model.domestic_direct_hosts == (
+        "api.deepseek.com",
+        "dashscope.aliyuncs.com",
+    )
+    assert settings.model.domestic_direct_proxy == "http://127.0.0.1:17897"

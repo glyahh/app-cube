@@ -25,6 +25,19 @@ echo '<请求>' | uv run python app.py 2>/tmp/agent.log | jq -c .
 uv run pytest -q
 ```
 
+## TUN 下的国内模型出口
+
+保持 Clash Verge 的 TUN 开启时，可在仓库根目录 `.env` 中开启国内模型专用入口：
+
+```dotenv
+AGENT_MODEL_DOMESTIC_DIRECT_ENABLED=true
+AGENT_MODEL_DOMESTIC_DIRECT_HOSTS=api.deepseek.com,dashscope.aliyuncs.com
+AGENT_MODEL_DOMESTIC_DIRECT_PROXY=http://127.0.0.1:17897
+```
+
+主模型和摘要模型只有在主机名精确命中 `AGENT_MODEL_DOMESTIC_DIRECT_HOSTS` 时才使用该入口；
+其他请求继续按 `AGENT_MODEL_USE_SYSTEM_PROXY` 执行。修改后重启后端和 Agent worker 生效。
+
 ## Docker Session 沙箱（可选）
 
 默认仍使用 `local_shell`。启用 WSL Ubuntu 中的 Docker Engine 后，可使用一个

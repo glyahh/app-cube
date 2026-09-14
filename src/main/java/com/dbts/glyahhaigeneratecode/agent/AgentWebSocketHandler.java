@@ -126,7 +126,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
 
         // 累积正文并在终态落一次 AI 行。挂在 filter 之前，才看得到 text.message。
         Flux<AgentEvent> events = persistence
-                .tap(agentRunService.stream(appId, frameJson), runRequest)
+                .tap(agentRunService.streamForDisplay(appId, frameJson), runRequest)
                 .filter(event -> !event.isEnd());
 
         Disposable subscription = withHeartbeat(events, runId)

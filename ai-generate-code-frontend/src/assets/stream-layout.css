@@ -7,8 +7,7 @@
 }
 
 .stream-file-slot--empty {
-  visibility: hidden;
-  pointer-events: none;
+  display: none;
 }
 
 .stream-file-slot > .generated-files-bar {

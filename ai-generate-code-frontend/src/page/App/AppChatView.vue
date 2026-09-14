@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   message,
@@ -82,7 +82,12 @@ import { openAgentStream } from '@/utils/agentStreamTransport'
 import { mapAgentEvent, type AgentUiAction } from '@/utils/agentEventMapping'
 import '@/assets/stream-layout.css'
 import { scrollElementToEnd } from '@/utils/scrollElement'
-import { marked } from 'marked'
+import { renderSafeMarkdown } from '@/utils/safeMarkdown'
+import ExecutionProcess from '@/components/ExecutionProcess.vue'
+import ExecutionTerminal from '@/components/ExecutionTerminal.vue'
+import { cleanExecutionText } from '@/utils/executionDisplay'
+import ThinkingStage from '@/components/ThinkingStage.vue'
+import { parseThinkingSegments, mergeThinkingAction, type ThinkingSegment } from '@/utils/thinkingSegments'
 
 // 与全局请求保持一致：默认走当前页面 origin 下的 `/api`
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
@@ -93,11 +98,55 @@ const route = useRoute()
 const router = useRouter()
 const userLoginStore = UserLoginStore()
 const appearanceStore = useAppearanceStore()
+/** 保留原始索引，工具状态查询仍对应原来的事件序列。 */
+function displaySegments(m: ChatMessage) {
+  const active = isStreamActiveForMessage(m)
+  const clean = (text: string) => cleanExecutionText(text, active)
+  return getMessageUiSegments(m).map((source, idx) => {
+    let segment = source
+    if (source.kind === 'thinking') {
+      segment = { ...source, summary: clean(source.summary), details: source.details.map(clean).filter(text => text.trim()) }
+    } else if (source.kind === 'markdown') {
+      segment = { ...source, content: clean(source.content) }
+    } else if (source.kind === 'tool_request') {
+      segment = { ...source, toolName: clean(source.toolName), targetPath: clean(source.targetPath ?? '') }
+    } else if (source.kind === 'tool_executed_simple_tool') {
+      segment = { ...source, toolTitle: clean(source.toolTitle), filePath: clean(source.filePath), message: clean(source.message) }
+    } else if (source.kind === 'tool_executed_write_file') {
+      segment = { ...source, filePath: clean(source.filePath), content: clean(source.content) }
+    } else if (source.kind === 'tool_executed_modify_file') {
+      segment = { ...source, filePath: clean(source.filePath), beforeContent: clean(source.beforeContent), afterContent: clean(source.afterContent) }
+    } else if (source.kind === 'generation_status') {
+      segment = { ...source, message: clean(source.message) }
+    }
+    return { segment, idx }
+  }).filter(({ segment }) => segment.kind === 'thinking'
+    ? !!(segment.summary.trim() || segment.details.length)
+    : segment.kind !== 'markdown' || !!segment.content.trim())
+}
+
+function isExecutionSegment(segment: UiSegment): boolean {
+  return segment.kind === 'thinking' || segment.kind === 'tool_request' || isToolExecutedUiSegmentKind(segment.kind)
+}
+
+function executionSegments(m: ChatMessage) {
+  return displaySegments(m).filter(({ segment }) => isExecutionSegment(segment))
+}
+
+function answerSegments(m: ChatMessage) {
+  return displaySegments(m).filter(({ segment }) => !isExecutionSegment(segment))
+}
+
+function terminalStatus(segment: UiToolRequestSegment | UiToolExecutedSimpleToolSegment, m: ChatMessage): string {
+  if (segment.kind === 'tool_request') return isStreamActiveForMessage(m) ? '执行中' : '已结束（未收到结果）'
+  if (segment.status === 'cancelled') return '已取消'
+  return segment.status === 'succeeded' ? '成功' : '失败'
+}
 const genMode = ref<'legacy' | 'workflow'>('legacy')
 
 /** 将普通文本片段统一按 Markdown 渲染，避免仅代码围栏生效。 */
 function renderMarkdown(text: string): string {
-  return marked.parse(text ?? '', { async: false, breaks: true }) as string
+  return renderSafeMarkdown(text)
 }
 
 // 保持 id 为字符串，避免雪花算法生成的 Long ID 精度丢失
@@ -153,6 +202,7 @@ type ChatMessage = {
   id: number
   role: 'user' | 'assistant'
   content: string
+  thinkingSegments?: unknown
   createTime?: string
   /** 会话消息流式开始时间（历史回放无此字段） */
   streamStartedAt?: number
@@ -187,6 +237,7 @@ type ActiveStreamMeta = {
 }
 
 type UiMarkdownSegment = { kind: 'markdown'; content: string; segmentId?: string }
+type UiThinkingSegment = ThinkingSegment
 type UiToolRequestSegment = {
   kind: 'tool_request'
   rawLabel: string
@@ -224,6 +275,9 @@ type UiToolExecutedModifyFileSegment = {
 type UiToolExecutedSimpleToolSegment = {
   kind: 'tool_executed_simple_tool'
   toolTitle: string
+  callId?: string
+  agentToolName?: string
+  status?: string
   filePath: string
   message: string
   done: boolean
@@ -239,6 +293,7 @@ type UiVisualEditSelectionSegment = {
 
 type UiSegment =
   | UiMarkdownSegment
+  | UiThinkingSegment
   | UiToolRequestSegment
   | UiToolExecutedWriteFileSegment
   | UiToolExecutedModifyFileSegment
@@ -443,6 +498,7 @@ function historyToMessage(r: ChatHistory): ChatMessage {
     role,
     content: r.message ?? '',
     createTime: r.createTime,
+    thinkingSegments: (r as ChatHistory & { thinkingSegments?: unknown }).thinkingSegments,
   }
   precomputeMessageRenderCaches(msg)
   return msg
@@ -467,9 +523,9 @@ function buildUiRenderVersion(m: ChatMessage): string {
     // markdown segment 时可能都不变，导致缓存版本 key 不变、getMessageUiSegments
     // 返回旧 segments（画面卡在早期代码位置）。纳入 content.length 确保内容增长
     // 时缓存一定失效。
-    return `stream:${m.content.length}:${m.uiState.segments.length}:${m.uiState.buffer.length}:${m.uiState.stage}`
+    return `stream:${m.content.length}:${m.uiState.segments.length}:${m.uiState.buffer.length}:${m.uiState.stage}:${JSON.stringify(m.uiState.segments.filter(s => s.kind === 'thinking'))}`
   }
-  return `hist:${m.content ?? ''}`
+  return `hist:${m.content ?? ''}:${JSON.stringify(m.thinkingSegments)}`
 }
 
 function precomputeMessageRenderCaches(m: ChatMessage) {
@@ -496,7 +552,7 @@ function precomputeMessageRenderCaches(m: ChatMessage) {
   m.cachedWorkflowSteps = normalizedWorkflow
 
   const uiVersion = buildUiRenderVersion(m)
-  const uiSegments = buildUiSegmentsFromFullText(stripAssistantNoiseLines(m.content ?? ''))
+  const uiSegments = computeMessageUiSegments(m)
   cache.uiVersion = uiVersion
   cache.uiSegments = uiSegments
   m.cachedUiSegments = uiSegments
@@ -2147,6 +2203,7 @@ function stampSegmentIds(segments: UiSegment[]): UiSegment[] {
 }
 
 function computeMessageUiSegments(m: ChatMessage): UiSegment[] {
+  const persistedThinking = parseThinkingSegments(m.thinkingSegments)
   if (m.uiState) {
     // 流式 buffer 必须与最后一个 markdown segment 合并展示，否则
     // `flushSafeMarkdown` 在字符位置切分时会把开围栏 ```html``` 留在 segment[0]、
@@ -2173,9 +2230,9 @@ function computeMessageUiSegments(m: ChatMessage): UiSegment[] {
         }
       }
     }
-    return stampSegmentIds(normalizeFirstRoundUiSegments(m, applyGenerationStatusToSegments(segs, m.content ?? '')))
+    return stampSegmentIds(normalizeFirstRoundUiSegments(m, [...persistedThinking, ...applyGenerationStatusToSegments(segs, m.content ?? '')]))
   }
-  return stampSegmentIds(buildUiSegmentsFromFullText(stripAssistantNoiseLines(m.content ?? '')))
+  return stampSegmentIds([...persistedThinking, ...buildUiSegmentsFromFullText(stripAssistantNoiseLines(m.content ?? ''))])
 }
 
 function assistantHasNonWorkflowRenderableOutput(m: ChatMessage): boolean {
@@ -2399,6 +2456,10 @@ function startAgentStream(streamId: string, prompt: string) {
           // 工具事件是结构化协议。先提交更早到达的正文，再直接更新 UI segment。
           streamRenderScheduler.flush(streamId)
           commitAgentToolActionToStream(streamId, action)
+          return
+        }
+        if (action.kind === 'thinking_started' || action.kind === 'thinking_delta' || action.kind === 'thinking_completed') {
+          commitThinkingActionToStream(streamId, action)
           return
         }
         if (action.kind === 'error') {
@@ -2625,6 +2686,18 @@ function appendAssistantChunkToStream(streamId: string, chunk: string) {
   streamRenderScheduler.enqueue(streamId, chunk)
 }
 
+function commitThinkingActionToStream(streamId: string, action: Extract<AgentUiAction, { kind: 'thinking_started' | 'thinking_delta' | 'thinking_completed' }>) {
+  const meta = activeStreamMeta.value[streamId]
+  const msg = meta && sessionMessages.value.find((item) => item.id === meta.assistantMessageId)
+  if (!msg || msg.role !== 'assistant') return
+  if (!msg.uiState) msg.uiState = createAssistantUiState()
+  const state = msg.uiState
+  const thinking = state.segments.filter((s): s is UiThinkingSegment => s.kind === 'thinking')
+  const segment = mergeThinkingAction(thinking, action)
+  if (segment && !state.segments.includes(segment)) state.segments.push(segment)
+  scheduleChatAutoScroll()
+}
+
 function commitAgentToolActionToStream(
   streamId: string,
   action: Extract<AgentUiAction, { kind: 'tool_started' | 'tool_finished' }>,
@@ -2649,6 +2722,7 @@ function commitAgentToolActionToStream(
     toolSelectHintShown.value = true
     state.segments.push({
       kind: 'tool_request',
+      segmentId: action.callId ? `agent-tool-${action.callId}` : undefined,
       rawLabel: `[选择工具] ${action.label}`,
       toolName: action.label,
       callId: action.callId,
@@ -2669,15 +2743,24 @@ function commitAgentToolActionToStream(
       )
     const label = request?.toolName || action.label
     const failed = action.status !== 'succeeded'
-    state.segments.push({
+    const completed: UiToolExecutedSimpleToolSegment = {
       kind: 'tool_executed_simple_tool',
+      segmentId: request?.segmentId ?? (action.callId ? `agent-tool-${action.callId}` : undefined),
+      callId: action.callId,
+      agentToolName: action.toolName,
+      status: action.status,
       toolTitle: `[工具调用] ${label}${failed ? '（失败）' : ''}`,
       filePath: request?.targetPath || '',
       message: action.outputPreview,
       done: true,
-    })
+    }
+    // 原位更新，执行中的终端不因完成事件丢失展开状态或改变顺序。
+    if (request) state.segments.splice(state.segments.indexOf(request), 1, completed)
+    else state.segments.push(completed)
   }
 
+  // 工具原位替换不改变段数，主动失效旧缓存才能立即显示完成状态。
+  messageRenderCache.delete(msg)
   markFirstVisibleAt(msg)
   scheduleChatAutoScroll()
 }
@@ -3173,11 +3256,10 @@ onBeforeUnmount(() => {
     <section class="main-content" :class="{ 'main-content--single': !appearanceStore.previewExpanded }">
       <div class="chat-panel">
         <div
+          v-if="generatedFiles.length > 0"
           class="stream-file-slot"
-          :class="{ 'stream-file-slot--empty': generatedFiles.length === 0 }"
-          :aria-hidden="generatedFiles.length === 0"
         >
-          <div v-if="generatedFiles.length > 0" class="generated-files-bar">
+          <div class="generated-files-bar">
             <div class="generated-files-left">
               <span class="generated-files-dot" aria-hidden="true" />
               <span class="generated-files-text">已回显 {{ generatedFiles.length }} 个文件（{{ getCodeGenTypeLabel() }}）</span>
@@ -3317,7 +3399,7 @@ onBeforeUnmount(() => {
                     </template>
                     <template v-else>
                       <div
-                        v-if="m.role === 'assistant' && getThinkingStatusText(m)"
+                        v-if="m.role === 'assistant' && getThinkingStatusText(m) && !getMessageUiSegments(m).some(s => s.kind === 'thinking')"
                         class="thinking-summary"
                       >
                         {{ getThinkingStatusText(m) }}
@@ -3372,10 +3454,18 @@ onBeforeUnmount(() => {
                           </div>
                         </div>
                       </div>
-                      <template v-for="(segment, idx) in getMessageUiSegments(m)" :key="segment.segmentId ?? 'seg-' + idx">
+                      <ExecutionProcess v-if="executionSegments(m).length" :active="isStreamActiveForMessage(m)">
+                      <template v-for="{ segment, idx } in executionSegments(m)" :key="segment.segmentId ?? 'seg-' + idx">
+                      <ThinkingStage v-if="segment.kind === 'thinking'" :stage="segment" />
+                      <ExecutionTerminal
+                        v-else-if="(segment.kind === 'tool_request' || segment.kind === 'tool_executed_simple_tool') && segment.agentToolName === 'execute'"
+                        :command="cleanExecutionText(segment.kind === 'tool_request' ? segment.targetPath ?? '' : segment.filePath)"
+                        :output="cleanExecutionText(segment.kind === 'tool_executed_simple_tool' ? segment.message : '')"
+                        :status="terminalStatus(segment, m)"
+                      />
                       <!-- TOOL_REQUEST：结束工具 → ToolExitHint；其它 → list-row + 延迟光影 -->
                       <ToolExitHint
-                        v-if="segment.kind === 'tool_request' && segment.toolName === '结束工具调用'"
+                        v-else-if="segment.kind === 'tool_request' && segment.toolName === '结束工具调用'"
                         :pending="isToolRequestPending(m, idx)"
                       />
                       <ToolRequestHint
@@ -3387,28 +3477,6 @@ onBeforeUnmount(() => {
                         :status-icon-src="getToolRequestStatusView(m, idx)?.iconSrc"
                         :status-icon-motion="getToolRequestStatusView(m, idx)?.motion ?? 'none'"
                       />
-
-                      <!-- 生成失败 / 用户中断 -->
-                      <div
-                        v-else-if="segment.kind === 'generation_status'"
-                        class="gen-status-card"
-                        role="alert"
-                        aria-live="polite"
-                      >
-                        <div class="gen-status-card__icon" aria-hidden="true">
-                          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10" />
-                            <path d="M12 8v5" stroke-linecap="round" />
-                            <circle cx="12" cy="16" r="0.5" fill="currentColor" stroke="none" />
-                          </svg>
-                        </div>
-                        <div class="gen-status-card__body-wrap">
-                          <div class="gen-status-card__title">
-                            {{ segment.variant === 'failed' ? '生成失败' : '生成已中断' }}
-                          </div>
-                          <div class="gen-status-card__message">{{ segment.message }}</div>
-                        </div>
-                      </div>
 
                       <!-- TOOL_EXECUTED：写入文件卡片（可折叠+可复制） -->
                       <div v-else-if="segment.kind === 'tool_executed_write_file'" class="tool-exec-card">
@@ -3436,11 +3504,36 @@ onBeforeUnmount(() => {
                       </div>
 
                       <!-- TOOL_EXECUTED：其它工具简单输出卡片 -->
-                      <div v-else-if="segment.kind === 'tool_executed_simple_tool'" class="tool-exec-card">
+                      <div v-else-if="segment.kind === 'tool_executed_simple_tool'" class="tool-exec-card tool-exec-card--compact">
                         <ToolExecCardHeader
                           :action-label="stripToolCallPrefix(segment.toolTitle)"
                           :target-path="getToolExecHeaderTargetPath(segment.toolTitle, segment.filePath)"
                         />
+                      </div>
+
+                      </template>
+                      </ExecutionProcess>
+                      <template v-for="{ segment, idx } in answerSegments(m)" :key="segment.segmentId ?? 'answer-' + idx">
+                      <!-- 生成失败 / 用户中断 -->
+                      <div
+                        v-if="segment.kind === 'generation_status'"
+                        class="gen-status-card"
+                        role="alert"
+                        aria-live="polite"
+                      >
+                        <div class="gen-status-card__icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M12 8v5" stroke-linecap="round" />
+                            <circle cx="12" cy="16" r="0.5" fill="currentColor" stroke="none" />
+                          </svg>
+                        </div>
+                        <div class="gen-status-card__body-wrap">
+                          <div class="gen-status-card__title">
+                            {{ segment.variant === 'failed' ? '生成失败' : '生成已中断' }}
+                          </div>
+                          <div class="gen-status-card__message">{{ segment.message }}</div>
+                        </div>
                       </div>
 
                       <!-- 普通 markdown：仍保持流式解析与代码块渲染（仅助手消息） -->
@@ -3455,7 +3548,7 @@ onBeforeUnmount(() => {
                           />
                           <!-- 证据：隐藏流式 markdown 会导致“生成计划/生成完毕”等说明文本在生成时不可见。
                                修复：流式阶段也展示文本片段，保证与历史回显一致。 -->
-                          <span v-else class="text-segment" v-html="renderMarkdown(mdSeg.content)" />
+                          <div v-else class="text-segment" v-html="renderMarkdown(mdSeg.content)" />
                         </template>
                       </template>
                       </template>
@@ -4194,7 +4287,7 @@ onBeforeUnmount(() => {
 }
 
 .bubble-content {
-  white-space: pre-wrap;
+  white-space: normal;
   word-break: break-word;
   font-size: 14px;
   display: flex;
@@ -4204,8 +4297,17 @@ onBeforeUnmount(() => {
 
 .text-segment {
   display: block;
-  line-height: 1.6;
+  line-height: 1.55;
 }
+
+.text-segment :deep(p) { margin: 0 0 8px; }
+.text-segment :deep(li) { margin: 4px 0; }
+.text-segment :deep(ul), .text-segment :deep(ol) { margin: 8px 0; padding-left: 24px; }
+.text-segment :deep(h1), .text-segment :deep(h2), .text-segment :deep(h3) { margin: 12px 0 8px; }
+.text-segment :deep(pre) { white-space: pre; overflow-x: auto; }
+.tool-exec-card :deep(.tool-call-badge) { padding: 2px 4px; background: transparent; color: var(--text-secondary, #64748b); font-size: 10px; }
+.tool-exec-card :deep(.tool-exec-action-label) { font-size: 12px; font-weight: 400; }
+
 
 .workflow-steps-shell {
   align-self: stretch;
@@ -4839,4 +4941,5 @@ onBeforeUnmount(() => {
     radial-gradient(circle at 30% 0%, rgba(52, 211, 153, 0.3), rgba(34, 197, 94, 0.2) 40%, rgba(14, 165, 233, 0.2) 100%);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
+.tool-exec-card.tool-exec-card--compact { padding: 4px 6px; border: 0; border-radius: 4px; background: transparent; box-shadow: none; }
 </style>

@@ -1,6 +1,7 @@
 ﻿param(
     [int]$Port = 8124,
-    [int]$TimeoutSeconds = 60
+    [int]$TimeoutSeconds = 60,
+    [string]$LogDirectory = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,7 +28,13 @@ if (-not (Test-Path $backendScript)) {
 
 # Run the backend in a separate PowerShell window so this script can wait for readiness.
 $argumentList = '-NoExit -ExecutionPolicy Bypass -File "' + $backendScript + '"'
-Start-Process -FilePath $shell -ArgumentList $argumentList
+$redirect = @{}
+if ($LogDirectory) {
+    New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
+    $redirect.RedirectStandardOutput = Join-Path $LogDirectory 'backend.stdout.log'
+    $redirect.RedirectStandardError = Join-Path $LogDirectory 'backend.stderr.log'
+}
+Start-Process -FilePath $shell -ArgumentList $argumentList -WindowStyle Hidden @redirect
 
 Write-Host "后端启动中，等待端口 $Port ..." -ForegroundColor Cyan
 $deadline = (Get-Date).AddSeconds($TimeoutSeconds)

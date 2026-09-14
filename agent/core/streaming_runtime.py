@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import sys
 import time
 from typing import Any
@@ -24,6 +25,11 @@ from core.masking import mask
 from core.middleware import RunLimitExceeded, RunLimits, RunLimitTracker
 
 logger = logging.getLogger(__name__)
+
+def _prompt_summary(messages: list[dict]) -> str:
+    text = str((messages[-1] if messages else {}).get("content", "")).strip()
+    text = " ".join(text.split())
+    return f"正在分析：{text[:80]}" if text else "等待本轮需求"
 
 # 工具输出预览的长度上限。太长了会把事件流撑爆，前端也不需要。
 PREVIEW_CHARS = 500
@@ -61,6 +67,13 @@ def run_agent_with_events(
     limits = RunLimits.for_task(task_kind)
     tracker = RunLimitTracker(limits)
     state = _RunState()
+    # 每轮都先建立一个面向用户的阶段，即使模型最终不调用工具也有可见进度。
+    initial_id = f"{emitter._run_id}:thinking:initial"
+    state.current_thinking_id = initial_id
+    state.current_thinking_summary = _prompt_summary(messages)
+    state.request_summary = state.current_thinking_summary
+    emitter.emit(Event.THINKING_STARTED, thinkingId=initial_id,
+                 summary=state.current_thinking_summary, details="本轮需求：" + str((messages[-1] if messages else {}).get("content", ""))[:500], status="running")
     config = {
         "configurable": {"thread_id": thread_id},
         # LangGraph 的 recursion_limit 按 super-step 计，一次模型调用加一次工具调用
@@ -77,8 +90,14 @@ def run_agent_with_events(
     except RunLimitExceeded as exc:
         # 预算是设计好的止损，不是崩溃
         logger.warning("触及运行预算：%s", exc)
+        _complete_thinking(emitter, state, status="failed")
         emitter.error(ErrorCode.RUN_DEADLINE_EXCEEDED, str(exc), retryable=False)
         return state.summary(status="failed")
+    except Exception:
+        _complete_thinking(emitter, state, status="failed")
+        raise
+
+    _complete_thinking(emitter, state)
 
     return state.summary(status="succeeded")
 
@@ -88,9 +107,16 @@ class _RunState:
 
     def __init__(self) -> None:
         self.text = ""
+        self.candidate = ""
+        self.candidate_overflow = False
+        self.published_progress = ""
         self.segment = 0
         self.tool_started_at: dict[str, float] = {}
         self.tool_calls = 0
+        self.current_thinking_id = ""
+        self.current_thinking_summary = ""
+        self.request_summary = ""
+        self.last_observation = ""
         self.model_calls = 0
         self.input_tokens = 0
         self.output_tokens = 0
@@ -124,13 +150,13 @@ async def _drive(agent, messages, config, emitter: Emitter, tracker: RunLimitTra
         if kind == "on_chat_model_stream":
             _on_model_stream(ev, emitter, state)
         elif kind == "on_chat_model_start":
-            _on_model_start(ev, state)
+            _on_model_start(ev, state, emitter)
         elif kind == "on_tool_start":
             _on_tool_start(ev, emitter, tracker, state)
         elif kind == "on_tool_end":
             _on_tool_end(ev, emitter, state)
         elif kind == "on_chat_model_end":
-            _on_model_end(ev, state, overhead)
+            _on_model_end(ev, state, overhead, emitter)
 
     # 整轮结束：把累积的正文作为终稿发一次，前端可以据此纠偏
     if state.text:
@@ -141,20 +167,40 @@ def _on_model_stream(ev: dict, emitter: Emitter, state: _RunState) -> None:
     chunk = (ev.get("data") or {}).get("chunk")
     if chunk is None:
         return
+    tool_chunks = chunk.get("tool_call_chunks") if isinstance(chunk, dict) else getattr(chunk, "tool_call_chunks", None)
+    if tool_chunks:
+        # 工具参数开始输出时，前面的行动说明已可识别；无需等整份文件生成完。
+        _publish_progress(emitter, state)
     content = _chunk_text(chunk)
     if not content:
         # 模型在调工具时会吐出大量空内容块，不要把它们当增量发出去
         return
-    state.text += content
-    emitter.emit(Event.TEXT_DELTA, messageId=state.message_id, content=content, mode="append")
+    # 调用结束后才能知道这段话是否伴随工具操作，不提前公开过程描述。
+    if state.candidate_overflow:
+        return
+    if len(state.candidate) + len(content) <= 65536:
+        state.candidate += content
+    else:
+        state.candidate = "部分内部执行信息已省略"
+        state.candidate_overflow = True
 
 
-def _on_model_start(ev: dict, state: _RunState) -> None:
+def _on_model_start(ev: dict, state: _RunState, emitter: Emitter | None = None) -> None:
     """记下这次请求里「我们自己能数到的」消息 token。
 
     模型调用结束后拿供应商回的真实 input_tokens 减掉它，差额就是固定开销
     （system prompt + 工具 schema）—— 那部分不在 messages 里，但确实占窗口。
     """
+    if emitter is not None and not state.current_thinking_id:
+        state.current_thinking_id = f"{emitter._run_id}:thinking:model:{state.model_calls + 1}"
+        state.current_thinking_summary = state.request_summary
+        if state.last_observation:
+            state.current_thinking_summary = f"正在结合{state.last_observation}继续分析"
+        emitter.emit(Event.THINKING_STARTED, thinkingId=state.current_thinking_id,
+                     summary=state.current_thinking_summary, details=state.last_observation, status="running")
+    state.candidate = ""
+    state.candidate_overflow = False
+    state.published_progress = ""
     from core.compaction import estimate_tokens
 
     data = ev.get("data") or {}
@@ -196,9 +242,18 @@ def _flatten_messages(items) -> list:
     return list(walk(items))
 
 
-def _on_model_end(ev: dict, state: _RunState, overhead=None) -> None:
+def _on_model_end(ev: dict, state: _RunState, overhead=None, emitter: Emitter | None = None) -> None:
     state.model_calls += 1
     output = (ev.get("data") or {}).get("output")
+    tool_calls = getattr(output, "tool_calls", None)
+    if isinstance(output, dict):
+        tool_calls = output.get("tool_calls")
+    if tool_calls and emitter is not None and state.candidate.strip():
+        _publish_progress(emitter, state)
+    if emitter is not None:
+        _complete_thinking(emitter, state)
+    # 工具调用前的说明只用于内部执行；最后一次无工具调用的回答才作为终稿。
+    state.text = "" if tool_calls else state.candidate
     usage = getattr(output, "usage_metadata", None) if output is not None else None
     if isinstance(usage, dict):
         input_tokens = int(usage.get("input_tokens") or 0)
@@ -247,11 +302,31 @@ def _on_tool_end(ev: dict, emitter: Emitter, state: _RunState) -> None:
         Event.TOOL_FINISHED,
         callId=call_id,
         toolName=name,
-        status="succeeded",
+        status="failed" if getattr(output, "status", None) == "error" else "succeeded",
         durationMs=duration_ms,
         outputPreview=mask(text, PREVIEW_CHARS),
         truncated=truncated,
     )
+    args_status = "失败" if getattr(output, "status", None) == "error" else "已返回"
+    state.last_observation = f"{name} 的{args_status}结果"
+
+
+def _publish_progress(emitter: Emitter, state: _RunState) -> None:
+    # 只使用面向用户的行动说明，不读取 reasoning_content 等内部推理字段。
+    progress = state.candidate.strip()
+    if not state.current_thinking_id or not progress or progress == state.published_progress:
+        return
+    state.published_progress = progress
+    state.current_thinking_summary = re.split(r"(?<=[。！？\n])", progress, maxsplit=1)[0].strip()[:80]
+    emitter.emit(Event.THINKING_DELTA, thinkingId=state.current_thinking_id,
+                 summary=state.current_thinking_summary, details=progress[:4000], status="running")
+
+
+def _complete_thinking(emitter: Emitter, state: _RunState, *, status: str = "completed") -> None:
+    if state.current_thinking_id:
+        emitter.emit(Event.THINKING_COMPLETED, thinkingId=state.current_thinking_id,
+                     summary=state.current_thinking_summary, details="", status=status)
+        state.current_thinking_id = ""
 
 
 def _chunk_text(chunk: Any) -> str:

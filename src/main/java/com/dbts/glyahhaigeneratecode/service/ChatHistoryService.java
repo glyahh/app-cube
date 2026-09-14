@@ -37,6 +37,12 @@ public interface ChatHistoryService extends IService<ChatHistory> {
      */
     boolean addChatMessage(Long appId, String message, String messageType, Long userId);
 
+    /** 为已落库的 AI 消息补写动态思考阶段。 */
+    boolean updateThinkingSegments(Long messageId, String thinkingSegments);
+
+    /** 正文和阶段在同一事务中保存，避免只有回答而丢失阶段。 */
+    Long saveAgentMessage(Long appId, Long userId, String message, String thinkingSegments);
+
     /**
      * 添加一条带审查字段与 loopId 的对话消息并返回主键 id
      *
