@@ -2933,9 +2933,10 @@ function handleStop() {
 }
 
 function scrollToBottom(options: { smooth?: boolean } = {}) {
-  chatBottomRef.value?.scrollIntoView({
-    block: 'end',
-    inline: 'nearest',
+  const container = chatMessagesRef.value
+  if (!container) return
+  container.scrollTo({
+    top: container.scrollHeight,
     behavior: options.smooth ? 'smooth' : 'auto',
   })
 }
@@ -3284,7 +3285,10 @@ onBeforeUnmount(() => {
               <div v-for="(m, midx) in displayMessages" :key="m.createTime ? `h-${m.id}` : `s-${m.id}-${midx}`"
                 :class="['chat-bubble', m.role === 'user' ? 'bubble-user' : 'bubble-ai']">
                 <div class="bubble-inner">
-                  <div class="bubble-role">
+                  <div
+                    class="bubble-role"
+                    :class="{ 'bubble-role--shimmer': m.role === 'assistant' && isStreamActiveForMessage(m) }"
+                  >
                     {{ m.role === 'user' ? '我' : '应用助手' }}
                   </div>
                   <template v-if="m.role === 'user'">
@@ -3585,12 +3589,25 @@ onBeforeUnmount(() => {
               </template>
             </AAlert>
           </div>
-          <AInput.TextArea v-model:value="inputMessage" placeholder="描述你想生成的网页，例如：一个用于展示我技术博客的个人站点……" :rows="3"
-            :disabled="isReadOnly" :class="['chat-input', { 'chat-input-readonly': isReadOnly }]"
-            @press-enter.prevent="handleManualSend" />
+          <AInput.TextArea
+            v-model:value="inputMessage"
+            placeholder="描述你想生成的网页，例如：一个用于展示我技术博客的个人站点……"
+            :rows="3"
+            :disabled="isReadOnly || streaming"
+            :class="['chat-input', { 'chat-input-readonly': isReadOnly || streaming }]"
+            @press-enter.prevent="handleManualSend"
+          />
           <div class="chat-input-actions">
             <div class="chat-input-hint">
-              支持多轮对话微调页面效果
+              <div v-show="streaming" class="vibing-status-pill" :class="{ 'vibing-status-pill--active': streaming }">
+                <span class="vibing-tag">vibing<span class="vibing-tilde">&nbsp;</span></span>
+                <div class="vibing-dots">
+                  <span class="vibing-dot dot-emerald" :class="{ 'anim-vibe-1': streaming }" title="工作区上下文" />
+                  <span class="vibing-dot dot-sky" :class="{ 'anim-vibe-2': streaming }" title="代码索引与读取" />
+                  <span class="vibing-dot dot-purple" :class="{ 'anim-vibe-3': streaming }" title="单文件补丁修改" />
+                  <span class="vibing-dot dot-rose" :class="{ 'anim-vibe-4': streaming }" title="落盘差异校验" />
+                </div>
+              </div>
             </div>
             <div class="chat-input-buttons">
               <button v-if="showScrollToBottom" type="button" class="scroll-bottom-btn"
@@ -4288,6 +4305,37 @@ onBeforeUnmount(() => {
   margin-bottom: 4px;
 }
 
+/* Codex 风格流光文字波动动效 (顺着文字从左到右滑过) */
+@keyframes codex-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.bubble-role--shimmer {
+  opacity: 1 !important;
+  background: linear-gradient(
+    90deg,
+    var(--text-base, #1f1f1f) 0%,
+    var(--text-base, #1f1f1f) 20%,
+    #1677ff 45%,
+    #06b6d4 55%,
+    #1677ff 65%,
+    var(--text-base, #1f1f1f) 80%,
+    var(--text-base, #1f1f1f) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: codex-shimmer 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  display: inline-block;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
 .bubble-content {
   white-space: normal;
   word-break: break-word;
@@ -4620,6 +4668,107 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--text-secondary, #6b7280);
 }
+
+/* vibing~ 高级微胶囊状态条 */
+.vibing-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 9px 3px 8px;
+  border-radius: 20px;
+  background: rgba(245, 247, 250, 0.85);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+  user-select: none;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vibing-status-pill:hover {
+  background: rgba(240, 243, 248, 0.95);
+  border-color: rgba(203, 213, 225, 0.9);
+}
+
+.vibing-status-pill--active {
+  background: linear-gradient(135deg, rgba(240, 245, 255, 0.9) 0%, rgba(245, 243, 255, 0.9) 100%);
+  border-color: rgba(199, 210, 254, 0.7);
+  box-shadow: 0 1px 6px rgba(99, 102, 241, 0.08);
+}
+
+.vibing-tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  line-height: 1;
+  background: linear-gradient(135deg, #4f46e5 0%, #1677ff 50%, #06b6d4 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-flex;
+  align-items: center;
+}
+
+.vibing-status-pill--active .vibing-tag {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 45%, #ec4899 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.vibing-tilde {
+  display: inline-block;
+  margin-left: 0.5px;
+  transform-origin: center;
+}
+
+.vibing-status-pill--active .vibing-tilde {
+  animation: vibe-tilde-wave 1.6s ease-in-out infinite;
+}
+
+@keyframes vibe-tilde-wave {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-1px) rotate(8deg); }
+}
+
+.vibing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3.5px;
+}
+
+.vibing-dot {
+  display: inline-block;
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 2px;
+  transition: all 0.22s ease;
+  opacity: 0.85;
+}
+
+.dot-emerald { background: linear-gradient(135deg, #10b981, #059669); }
+.dot-sky     { background: linear-gradient(135deg, #0ea5e9, #0284c7); }
+.dot-purple  { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
+.dot-rose    { background: linear-gradient(135deg, #f43f5e, #e11d48); }
+
+@keyframes vibe-dot-pulse-1 {
+  0%, 100% { transform: scale(0.9); opacity: 0.45; }
+  50% { transform: scale(1.2); opacity: 1; filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.5)); }
+}
+@keyframes vibe-dot-pulse-2 {
+  0%, 100% { transform: scale(0.9); opacity: 0.45; }
+  50% { transform: scale(1.2); opacity: 1; filter: drop-shadow(0 0 4px rgba(14, 165, 233, 0.5)); }
+}
+@keyframes vibe-dot-pulse-3 {
+  0%, 100% { transform: scale(0.9); opacity: 0.45; }
+  50% { transform: scale(1.2); opacity: 1; filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.5)); }
+}
+@keyframes vibe-dot-pulse-4 {
+  0%, 100% { transform: scale(0.9); opacity: 0.45; }
+  50% { transform: scale(1.2); opacity: 1; filter: drop-shadow(0 0 4px rgba(244, 63, 94, 0.5)); }
+}
+
+.anim-vibe-1 { animation: vibe-dot-pulse-1 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+.anim-vibe-2 { animation: vibe-dot-pulse-2 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.25s; }
+.anim-vibe-3 { animation: vibe-dot-pulse-3 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.5s; }
+.anim-vibe-4 { animation: vibe-dot-pulse-4 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.75s; }
 
 .chat-input-buttons {
   display: flex;

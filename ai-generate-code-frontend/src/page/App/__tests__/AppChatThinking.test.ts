@@ -30,10 +30,17 @@ vi.mock('@/api/chatHistoryController', () => ({
   chatHistoryRoundCountAppIdUsingGet: vi.fn().mockResolvedValue({ data: { code: 0, data: 1 } }),
 }))
 vi.mock('@/stores/UserLogin', () => ({ UserLoginStore: () => ({ userLogin: { id: '7' } }) }))
-vi.mock('@/stores/appearance', () => ({ useAppearanceStore: () => ({ workflowEnabled: false }) }))
+vi.mock('@/stores/appearance', () => ({ useAppearanceStore: () => ({ workflowEnabled: false, smoothScroll: true }) }))
 vi.mock('@/stores/executionPreference', () => ({ useExecutionPreference: () => mocks.preference }))
 vi.mock('@/utils/agentStreamTransport', () => ({ openAgentStream: mocks.stream }))
 vi.mock('@/utils/projectFilesEcho', () => ({ loadProjectFilesEchoFromDisk: vi.fn().mockResolvedValue([]), filterLockFiles: (items: unknown) => items }))
+
+if (typeof HTMLElement !== 'undefined' && !HTMLElement.prototype.scrollTo) {
+  HTMLElement.prototype.scrollTo = () => {}
+}
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {}
+}
 
 const mountPage = () => shallowMount(AppChatView, {
   global: { renderStubDefaultSlot: true, stubs: { ThinkingStage: false, ExecutionProcess: false, ExecutionTerminal: false } },
@@ -202,5 +209,191 @@ describe('AppChatView thinking pipeline', () => {
     expect(terminal.text()).toContain('已结束（未收到结果）')
     expect(terminal.text()).toContain('sleep 10')
     wrapper.unmount()
+  })
+
+  describe('chat container scrolling during thinking', () => {
+    let originalIntersectionObserver: unknown
+    let observerCallback: ((entries: Array<{ isIntersecting: boolean }>) => void) | null = null
+
+    beforeEach(() => {
+      if (!Element.prototype.scrollIntoView) {
+        Element.prototype.scrollIntoView = () => {}
+      }
+      if (!HTMLElement.prototype.scrollTo) {
+        HTMLElement.prototype.scrollTo = () => {}
+      }
+      originalIntersectionObserver = (globalThis as unknown as { IntersectionObserver?: unknown }).IntersectionObserver
+      observerCallback = null
+      class MockIntersectionObserver {
+        constructor(cb: (entries: Array<{ isIntersecting: boolean }>) => void) {
+          observerCallback = cb
+        }
+        observe = vi.fn()
+        unobserve = vi.fn()
+        disconnect = vi.fn()
+      }
+      ;(globalThis as unknown as { IntersectionObserver: unknown }).IntersectionObserver = MockIntersectionObserver
+    })
+
+    const restoreObserver = () => {
+      if (originalIntersectionObserver !== undefined) {
+        ;(globalThis as unknown as { IntersectionObserver: unknown }).IntersectionObserver = originalIntersectionObserver
+      } else {
+        delete (globalThis as unknown as { IntersectionObserver?: unknown }).IntersectionObserver
+      }
+    }
+
+    const waitForAutoScroll = async () => {
+      await nextTick()
+      await new Promise((r) => setTimeout(r, 50))
+      await nextTick()
+      await flushPromises()
+    }
+
+    it('thinking events only scroll chat container with behavior auto and never scrollIntoView or window', async () => {
+      const scrollIntoViewSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
+      const windowScrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+
+      const wrapper = mountPage()
+      await flushPromises()
+
+      const container = wrapper.get('.chat-messages').element as HTMLElement
+      Object.defineProperty(container, 'scrollHeight', { value: 2400, configurable: true, writable: true })
+      const containerScrollToSpy = vi.spyOn(container, 'scrollTo').mockImplementation(() => {})
+
+      await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage('开始思考测试')
+      const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
+
+      // 1. 思考开始
+      handlers.onEvent('thinking.started', { thinkingId: 'think:1', summary: '开始构思', details: '分析结构' })
+      await waitForAutoScroll()
+      expect(containerScrollToSpy).toHaveBeenCalledWith({ top: 2400, behavior: 'auto' })
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled()
+      expect(windowScrollToSpy).not.toHaveBeenCalled()
+
+      containerScrollToSpy.mockClear()
+      scrollIntoViewSpy.mockClear()
+      windowScrollToSpy.mockClear()
+
+      // 2. 思考更新
+      handlers.onEvent('thinking.delta', { thinkingId: 'think:1', summary: '正在思考', details: '调整布局' })
+      await waitForAutoScroll()
+      expect(containerScrollToSpy).toHaveBeenCalledWith({ top: 2400, behavior: 'auto' })
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled()
+      expect(windowScrollToSpy).not.toHaveBeenCalled()
+
+      containerScrollToSpy.mockClear()
+      scrollIntoViewSpy.mockClear()
+      windowScrollToSpy.mockClear()
+
+      // 3. 思考结束
+      handlers.onEvent('thinking.completed', { thinkingId: 'think:1', details: '构思完成' })
+      await waitForAutoScroll()
+      expect(containerScrollToSpy).toHaveBeenCalledWith({ top: 2400, behavior: 'auto' })
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled()
+      expect(windowScrollToSpy).not.toHaveBeenCalled()
+
+      scrollIntoViewSpy.mockRestore()
+      windowScrollToSpy.mockRestore()
+      restoreObserver()
+      wrapper.unmount()
+    })
+
+    it('does not auto scroll when bottom has left the viewport', async () => {
+      const scrollIntoViewSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
+      const windowScrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+
+      const wrapper = mountPage()
+      await flushPromises()
+
+      const container = wrapper.get('.chat-messages').element as HTMLElement
+      Object.defineProperty(container, 'scrollHeight', { value: 2400, configurable: true, writable: true })
+      const containerScrollToSpy = vi.spyOn(container, 'scrollTo').mockImplementation(() => {})
+
+      await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage('上翻测试')
+      const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
+
+      // 先触发一次以初始化 observer
+      handlers.onEvent('thinking.started', { thinkingId: 'think:2', summary: '初始化', details: '' })
+      await waitForAutoScroll()
+      containerScrollToSpy.mockClear()
+
+      // 模拟底部离开可视区域
+      expect(observerCallback).not.toBeNull()
+      observerCallback!([{ isIntersecting: false }])
+      await nextTick()
+
+      // 再次产生思考输出
+      handlers.onEvent('thinking.delta', { thinkingId: 'think:2', summary: '继续思考', details: '新内容' })
+      await waitForAutoScroll()
+
+      expect(containerScrollToSpy).not.toHaveBeenCalled()
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled()
+      expect(windowScrollToSpy).not.toHaveBeenCalled()
+
+      scrollIntoViewSpy.mockRestore()
+      windowScrollToSpy.mockRestore()
+      restoreObserver()
+      wrapper.unmount()
+    })
+
+    it('clicking scroll-to-bottom button resumes auto-scroll and uses smooth behavior', async () => {
+      const scrollIntoViewSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
+      const windowScrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+
+      const wrapper = mountPage()
+      await flushPromises()
+
+      const container = wrapper.get('.chat-messages').element as HTMLElement
+      Object.defineProperty(container, 'scrollHeight', { value: 3000, configurable: true, writable: true })
+      const containerScrollToSpy = vi.spyOn(container, 'scrollTo').mockImplementation(() => {})
+
+      await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage('回到底部测试')
+      const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
+
+      // 产生消息并模拟底部离开可视区域
+      handlers.onEvent('thinking.started', { thinkingId: 'think:3', summary: '思考中', details: '' })
+      await waitForAutoScroll()
+      observerCallback!([{ isIntersecting: false }])
+      await nextTick()
+      containerScrollToSpy.mockClear()
+
+      // 此时“回到底部”按钮应该可见
+      const scrollBottomBtn = wrapper.find('.scroll-bottom-btn')
+      expect(scrollBottomBtn.exists()).toBe(true)
+
+      // 点击“回到底部”按钮
+      await scrollBottomBtn.trigger('click')
+      await waitForAutoScroll()
+
+      expect(containerScrollToSpy).toHaveBeenCalledWith({ top: 3000, behavior: 'smooth' })
+      expect(scrollIntoViewSpy).not.toHaveBeenCalled()
+      expect(windowScrollToSpy).not.toHaveBeenCalled()
+
+      scrollIntoViewSpy.mockRestore()
+      windowScrollToSpy.mockRestore()
+      restoreObserver()
+      wrapper.unmount()
+    })
+
+    it('does not throw when scrollToBottom is invoked without mounted container', () => {
+      const vm = {
+        scrollToBottom: (AppChatView as unknown as { setup: () => { scrollToBottom: (opts?: { smooth?: boolean }) => void } })
+      }
+      const wrapper = mountPage()
+      const comp = wrapper.vm as unknown as {
+        chatMessagesRef: { value: HTMLElement | null }
+        scrollToBottom: (opts?: { smooth?: boolean }) => void
+      }
+      comp.chatMessagesRef.value = null
+
+      expect(() => {
+        comp.scrollToBottom()
+        comp.scrollToBottom({ smooth: true })
+      }).not.toThrow()
+
+      restoreObserver()
+      wrapper.unmount()
+    })
   })
 })
