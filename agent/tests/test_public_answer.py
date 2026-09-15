@@ -84,3 +84,34 @@ def test_public_progress_arrives_when_tool_arguments_start_not_after_large_file_
     assert event == Event.THINKING_DELTA
     assert emitter.emit.call_args.kwargs["summary"] == "正在构思星空校徽。"
     assert emitter.emit.call_args.kwargs["details"] == text
+
+
+def test_on_tool_error_emits_failed_finished():
+    """on_tool_error 补发 tool.finished(status=failed)，清理计时状态。"""
+    from core.streaming_runtime import _on_tool_start, _on_tool_error
+    from core.events import Emitter
+    import io, json
+    out = io.StringIO()
+    emitter = Emitter(out, "run")
+    state = _RunState()
+
+    # 1. 先触发 tool_start
+    start_event = {"run_id": "err-1", "name": "execute", "data": {"input": {"command": "bad cmd"}}}
+    _on_tool_start(start_event, emitter, Mock(), state)
+    assert "err-1" in state.tool_started_at
+
+    # 2. 触发 tool_error
+    error_event = {"run_id": "err-1", "name": "execute", "data": {"error": ValueError("command failed")}}
+    _on_tool_error(error_event, emitter, state)
+
+    # 3. 计时状态已清理
+    assert "err-1" not in state.tool_started_at
+
+    # 4. 验证事件
+    events = [json.loads(line) for line in out.getvalue().splitlines()]
+    assert [e["event"] for e in events] == ["tool.started", "tool.finished"]
+    finished = events[1]
+    assert finished["callId"] == "err-1"
+    assert finished["status"] == "failed"
+    assert finished["toolName"] == "execute"
+    assert "command failed" in finished["outputPreview"]

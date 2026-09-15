@@ -16,6 +16,11 @@ foreach ($key in @('ALIYUN_OSS_ENDPOINT','ALIYUN_OSS_ACCESS_KEY_ID','ALIYUN_OSS_
 if ($envText -notmatch '(?m)^\s*POSTGRES_PASSWORD\s*=\s*[^\r\n#\s]+\s*(?:#.*)?$') {
     throw '本地 .env 的 POSTGRES_PASSWORD 为空或缺失。请填写 PostgreSQL 用户 glyahh_biz 的密码后重新运行。'
 }
+# 使用 Agent 自己的配置加载逻辑检查执行依赖，避免后端启动成功但生成必然失败。
+$agentPython = Join-Path $ProjectRoot 'agent\.venv\Scripts\python.exe'
+if (-not (Test-Path $agentPython)) { throw '未找到 Agent Python 虚拟环境，请先安装 Agent 依赖。' }
+& $agentPython (Join-Path $ProjectRoot 'agent\sandbox_startup.py')
+if ($LASTEXITCODE -ne 0) { throw '执行环境未就绪，已停止启动后端。请检查上方 Docker 错误。' }
 Write-Host "使用 JDK：$env:JAVA_HOME" -ForegroundColor Cyan
 Push-Location $ProjectRoot
 try { & .\mvnw.cmd spring-boot:run }

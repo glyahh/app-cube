@@ -155,6 +155,8 @@ async def _drive(agent, messages, config, emitter: Emitter, tracker: RunLimitTra
             _on_tool_start(ev, emitter, tracker, state)
         elif kind == "on_tool_end":
             _on_tool_end(ev, emitter, state)
+        elif kind == "on_tool_error":
+            _on_tool_error(ev, emitter, state)
         elif kind == "on_chat_model_end":
             _on_model_end(ev, state, overhead, emitter)
 
@@ -309,6 +311,29 @@ def _on_tool_end(ev: dict, emitter: Emitter, state: _RunState) -> None:
     )
     args_status = "失败" if getattr(output, "status", None) == "error" else "已返回"
     state.last_observation = f"{name} 的{args_status}结果"
+
+
+def _on_tool_error(ev: dict, emitter: Emitter, state: _RunState) -> None:
+    """框架层异常（绕过 ToolErrorMiddleware）时补发 tool.finished。"""
+    call_id = str(ev.get("run_id") or "")
+    name = str(ev.get("name") or "unknown")
+    error = (ev.get("data") or {}).get("error")
+
+    started = state.tool_started_at.pop(call_id, None)
+    duration_ms = int((time.monotonic() - started) * 1000) if started else 0
+
+    error_text = mask(str(error)[:600], PREVIEW_CHARS) if error else ""
+
+    emitter.emit(
+        Event.TOOL_FINISHED,
+        callId=call_id,
+        toolName=name,
+        status="failed",
+        durationMs=duration_ms,
+        outputPreview=error_text,
+        truncated=False,
+    )
+    state.last_observation = f"{name} 的失败结果"
 
 
 def _publish_progress(emitter: Emitter, state: _RunState) -> None:

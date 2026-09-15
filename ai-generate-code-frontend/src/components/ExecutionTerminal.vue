@@ -8,6 +8,8 @@ defineProps<{ command: string; output: string; status: string }>()
     <div class="execution-terminal__body">
       <pre v-if="command" class="execution-terminal__command">{{ command }}</pre>
       <pre v-if="output" class="execution-terminal__output">{{ output }}</pre>
+      <span v-else-if="status === '失败'">执行失败，无可显示的错误详情</span>
+      <span v-else-if="status === '成功'">执行成功，无输出</span>
       <span v-else>暂无可显示的输出</span>
     </div>
   </details>

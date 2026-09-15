@@ -32,18 +32,43 @@ class UserFacingOutputHandlerTest {
         assertEquals("游戏支持 WASD 和 HTML", UserFacingOutputHandler.sanitize("游戏支持 WASD 和 HTML"));
     }
 
-    @Test void removesRawToolArgumentsAndMapsFailure() {
+    @Test void forwardsExecutePreviewButStillProtectsSecrets() {
         AgentEvent raw = event("tool.finished", "internal");
         var frame = (com.fasterxml.jackson.databind.node.ObjectNode) raw.frame();
-        frame.put("toolName", "execute").put("status", "failed").put("command", "env")
-                .put("outputPreview", "docker sandbox").put("workspace", "secret");
+        frame.put("toolName", "execute").put("status", "succeeded")
+                .put("inputPreview", "{\"command\":\"node --version\"}")
+                .put("outputPreview", "v22.0.0")
+                .put("workspace", "secret");
         AgentEvent safe = UserFacingOutputHandler.apply(Flux.just(raw)).blockFirst();
         assertNotNull(safe);
-        assertEquals("failed", safe.status());
-        assertEquals("正在检查结果", safe.frame().path("label").asText());
-        assertFalse(safe.frame().has("command"));
-        assertFalse(safe.frame().has("outputPreview"));
+        assertEquals("succeeded", safe.status());
+        // 普通命令和输出可通过
+        assertTrue(safe.frame().path("inputPreview").asText("").contains("node --version"));
+        assertTrue(safe.frame().path("outputPreview").asText("").contains("v22.0.0"));
+        // 密钥、内部路径、堆栈仍受保护
         assertFalse(safe.frame().has("workspace"));
+        assertFalse(safe.frame().has("command"));
+    }
+
+    @Test void executeWithSensitiveContentIsProtected() {
+        AgentEvent raw = event("tool.finished", "internal");
+        var frame = (com.fasterxml.jackson.databind.node.ObjectNode) raw.frame();
+        frame.put("toolName", "execute").put("status", "succeeded")
+                .put("outputPreview", "C:\\Users\\admin\\secret docker sandbox");
+        AgentEvent safe = UserFacingOutputHandler.apply(Flux.just(raw)).blockFirst();
+        assertNotNull(safe);
+        // 含敏感关键词的输出被 sanitize 替换，清洗后全空则不写入字段
+        assertFalse(safe.frame().path("outputPreview").asText("").contains("docker"));
+    }
+
+    @Test void nonExecuteToolStillHidesPreview() {
+        AgentEvent raw = event("tool.finished", "internal");
+        var frame = (com.fasterxml.jackson.databind.node.ObjectNode) raw.frame();
+        frame.put("toolName", "write_file").put("status", "succeeded")
+                .put("outputPreview", "file content");
+        AgentEvent safe = UserFacingOutputHandler.apply(Flux.just(raw)).blockFirst();
+        assertNotNull(safe);
+        assertFalse(safe.frame().has("outputPreview"));
     }
 
     @Test void forwardsThinkingEventsAsIndependentSegments() {

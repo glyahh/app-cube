@@ -90,6 +90,12 @@ public final class UserFacingOutputHandler {
                         copy(in, out, "callId", "durationMs");
                         if (AgentEvent.TOOL_FINISHED.equals(event.event()))
                             out.put("status", "succeeded".equals(in.path("status").asText()) ? "succeeded" : "failed");
+                        // 仅 execute 安全转发预览，其余工具不暴露参数和输出
+                        if ("execute".equals(tool)) {
+                            safePreview(in, out, "inputPreview");
+                            if (AgentEvent.TOOL_FINISHED.equals(event.event()))
+                                safePreview(in, out, "outputPreview");
+                        }
                     }
                     case AgentEvent.STATUS, AgentEvent.STEP, AgentEvent.TODO_DELTA -> {
                         String dedupKey = event.event() + ":" + in.path("status").asText("") + ":" + in.path("message").asText("");
@@ -155,6 +161,14 @@ public final class UserFacingOutputHandler {
     private static AgentEvent wrap(ObjectNode node) {
         return new AgentEvent(node.path("runId").asText(), node.path("seq").asInt(),
                 node.path("ts").asLong(), node.path("event").asText(), node);
+    }
+
+    /** 经 sanitize 清洗后转发预览字段；清洗后为空则不写入。 */
+    private static void safePreview(JsonNode in, ObjectNode out, String field) {
+        String raw = in.path(field).asText("");
+        if (raw.isEmpty()) return;
+        String safe = sanitize(raw);
+        if (safe != null && !safe.isBlank()) out.put(field, safe);
     }
 
     private static String toolLabel(String tool) {

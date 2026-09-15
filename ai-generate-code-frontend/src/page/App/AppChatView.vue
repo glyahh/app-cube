@@ -109,9 +109,11 @@ function displaySegments(m: ChatMessage) {
     } else if (source.kind === 'markdown') {
       segment = { ...source, content: clean(source.content) }
     } else if (source.kind === 'tool_request') {
-      segment = { ...source, toolName: clean(source.toolName), targetPath: clean(source.targetPath ?? '') }
+      const isExec = source.agentToolName === 'execute'
+      segment = { ...source, toolName: clean(source.toolName), targetPath: cleanExecutionText(source.targetPath ?? '', active, isExec) }
     } else if (source.kind === 'tool_executed_simple_tool') {
-      segment = { ...source, toolTitle: clean(source.toolTitle), filePath: clean(source.filePath), message: clean(source.message) }
+      const isExec = source.agentToolName === 'execute'
+      segment = { ...source, toolTitle: clean(source.toolTitle), filePath: cleanExecutionText(source.filePath, active, isExec), message: cleanExecutionText(source.message, active, isExec) }
     } else if (source.kind === 'tool_executed_write_file') {
       segment = { ...source, filePath: clean(source.filePath), content: clean(source.content) }
     } else if (source.kind === 'tool_executed_modify_file') {
@@ -3459,8 +3461,8 @@ onBeforeUnmount(() => {
                       <ThinkingStage v-if="segment.kind === 'thinking'" :stage="segment" />
                       <ExecutionTerminal
                         v-else-if="(segment.kind === 'tool_request' || segment.kind === 'tool_executed_simple_tool') && segment.agentToolName === 'execute'"
-                        :command="cleanExecutionText(segment.kind === 'tool_request' ? segment.targetPath ?? '' : segment.filePath)"
-                        :output="cleanExecutionText(segment.kind === 'tool_executed_simple_tool' ? segment.message : '')"
+                        :command="cleanExecutionText(segment.kind === 'tool_request' ? segment.targetPath ?? '' : segment.filePath, false, true)"
+                        :output="cleanExecutionText(segment.kind === 'tool_executed_simple_tool' ? segment.message : '', false, true)"
                         :status="terminalStatus(segment, m)"
                       />
                       <!-- TOOL_REQUEST：结束工具 → ToolExitHint；其它 → list-row + 延迟光影 -->
