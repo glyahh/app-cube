@@ -337,6 +337,13 @@ public class RuntimeSpecResolver {
                     "受管进程数超过上限 " + props.getMaxProcesses());
         }
 
+        // 构建命令与启动命令一样交给 shell 执行，同样必须校验元字符
+        if (spec.getBuildCommand() != null && !spec.getBuildCommand().isBlank()) {
+            if (SHELL_METACHARACTERS.matcher(spec.getBuildCommand()).find()) {
+                throw new MyException(ErrorCode.OPERATION_ERROR, "构建命令含不允许的字符");
+            }
+        }
+
         for (RuntimeSpec.ManagedProcess process : spec.getProcesses()) {
             if (process.getCommand() == null || process.getCommand().isBlank()) {
                 throw new MyException(ErrorCode.OPERATION_ERROR, "进程 " + process.getName() + " 缺少启动命令");

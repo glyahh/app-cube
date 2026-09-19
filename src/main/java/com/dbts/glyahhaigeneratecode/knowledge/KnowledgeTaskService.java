@@ -30,6 +30,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 import reactor.core.Disposable;
 import reactor.core.scheduler.Schedulers;
 
@@ -74,6 +75,7 @@ public class KnowledgeTaskService {
     private final WorkspaceProperties workspaceProperties;
     private final ObjectMapper objectMapper;
     private final AppMapper appMapper;
+    private final TransactionTemplate transactionTemplate;
 
     public static final String STATUS_PENDING = "PENDING";
     public static final String STATUS_RUNNING = "RUNNING";
@@ -220,27 +222,39 @@ public class KnowledgeTaskService {
             return;
         }
 
-        // 落新知识前先清掉这个应用上一轮的：文档表没有唯一键，不清就会一轮一轮往上叠
-        // （实测 4 篇变 8 篇），而节点表有唯一键会去重、数量不变 ——
-        // 结果是图谱说 22 个节点、文档列表说 8 篇，两边讲的不是同一件事。
-        clearKnowledge(task.getAppId());
+        // 清空与落库在同一事务中完成，防止写入异常导致历史知识被清空且不可回滚
+        int[] counts;
+        try {
+            counts = transactionTemplate.execute(status -> {
+                clearKnowledge(task.getAppId());
 
-        JSONObject parsed = extractJson(text);
-        int docCount = 0;
-        int nodeCount = 0;
-        int edgeCount = 0;
+                JSONObject parsed = extractJson(text);
+                int docCount = 0;
+                int nodeCount = 0;
+                int edgeCount = 0;
 
-        if (parsed != null) {
-            docCount = persistDocs(task, snapshot, parsed);
-            nodeCount = persistNodes(task, snapshot, parsed);
-            edgeCount = persistEdges(task, snapshot, parsed);
+                if (parsed != null) {
+                    docCount = persistDocs(task, snapshot, parsed);
+                    nodeCount = persistNodes(task, snapshot, parsed);
+                    edgeCount = persistEdges(task, snapshot, parsed);
+                }
+
+                if (docCount == 0) {
+                    // 解析失败或没有 docs：把原文存成一篇文档，保证任务产出不为空
+                    saveDoc(task, snapshot, "项目知识（原始分析）", text);
+                    docCount = 1;
+                }
+                return new int[]{docCount, nodeCount, edgeCount};
+            });
+        } catch (Exception e) {
+            log.error("知识任务 {} 持久化失败", task.getId(), e);
+            finish(task.getId(), STATUS_FAILED, "知识持久化失败: " + abbreviate(e.getMessage(), 300));
+            return;
         }
 
-        if (docCount == 0) {
-            // 解析失败或没有 docs：把原文存成一篇文档，保证任务产出不为空
-            saveDoc(task, snapshot, "项目知识（原始分析）", text);
-            docCount = 1;
-        }
+        int docCount = counts != null ? counts[0] : 0;
+        int nodeCount = counts != null ? counts[1] : 0;
+        int edgeCount = counts != null ? counts[2] : 0;
 
         updateProgress(task.getId(), 100, "完成");
         finish(task.getId(), STATUS_SUCCEEDED, null);

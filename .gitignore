@@ -118,15 +118,11 @@ __pycache__/
 # 仅提交样例：/.env.example
 
 ### Local Bug Notes (DO NOT COMMIT) ###
-bugs/
+/docs/archive/bugs/
 .worktrees/
 /src/main/resources/application-local-a.yml
 /src/main/resources/application-local-b.yml
-/src/test/java/com/dbts/glyahhaigeneratecode/core/rag/CodeChunkRetrievalServiceFormatTest.java
-/docs/interview/Java全栈面试问答-简历职责对照版.md
-/src/test/java/com/dbts/glyahhaigeneratecode/core/rag/ConversationMemoryInjectOrderTest.java
-/src/test/java/com/dbts/glyahhaigeneratecode/core/rag/CodeChunkIndexServiceDegradeTest.java
-/src/test/java/com/dbts/glyahhaigeneratecode/service/impl/ChatToGenCodeImplMonitorContextTest.java
+/docs/archive/interview/Java全栈面试问答-简历职责对照版.md
 
 # Local env backups (never commit)
 /.env.*

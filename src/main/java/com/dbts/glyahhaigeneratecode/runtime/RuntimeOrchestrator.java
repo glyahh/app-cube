@@ -11,6 +11,7 @@ import com.dbts.glyahhaigeneratecode.model.VO.RuntimeStatusVO;
 import com.mybatisflex.core.query.QueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Files;
@@ -51,6 +52,23 @@ public class RuntimeOrchestrator {
     public static final String STATUS_FAILED = "FAILED";
     public static final String STATUS_UNKNOWN = "UNKNOWN";
 
+    /** 启动互斥锁条带数，避免同一应用并发启动竞争。 */
+    private static final int START_LOCK_STRIPES = 64;
+    private static final Object[] START_LOCKS = createStartLocks();
+
+    private static Object[] createStartLocks() {
+        Object[] locks = new Object[START_LOCK_STRIPES];
+        for (int i = 0; i < locks.length; i++) {
+            locks[i] = new Object();
+        }
+        return locks;
+    }
+
+    private static Object startLockFor(Long appId) {
+        int idx = Math.floorMod(appId == null ? 0 : appId.hashCode(), START_LOCK_STRIPES);
+        return START_LOCKS[idx];
+    }
+
     /**
      * 启动一次运行。
      *
@@ -59,90 +77,97 @@ public class RuntimeOrchestrator {
      * @param workspaceDir 产物目录（已由调用方按 appId 解析好）
      */
     public RuntimeStatusVO start(Long appId, Long userId, Path workspaceDir) {
-        // 1. 已有活着的运行就不重复拉起 —— 重复点击「运行」不该创建第二个进程
-        AppRuntime existing = activeRun(appId);
-        if (existing != null) {
-            String status = runtimeManager.containerStatus(existing.getContainerName());
-            if ("running".equals(status) || "created".equals(status)) {
-                log.info("应用 {} 已有运行中的容器 {}，复用", appId, existing.getContainerName());
-                return toVO(existing, workspaceDir);
+        synchronized (startLockFor(appId)) {
+            // 1. 已有活着的运行就不重复拉起 —— 重复点击「运行」不该创建第二个进程
+            AppRuntime existing = activeRun(appId);
+            if (existing != null) {
+                String status = runtimeManager.containerStatus(existing.getContainerName());
+                if ("running".equals(status) || "created".equals(status)) {
+                    log.info("应用 {} 已有运行中的容器 {}，复用", appId, existing.getContainerName());
+                    return toVO(existing, workspaceDir);
+                }
+                // 记录说活着但容器已死：先把它按失败收尾，再走新启动
+                closeRun(existing.getId(), STATUS_FAILED, "运行容器已不存在", null);
             }
-            // 记录说活着但容器已死：先把它按失败收尾，再走新启动
-            closeRun(existing.getId(), STATUS_FAILED, "运行容器已不存在", null);
-        }
 
-        // 2. 推断运行规格并校验（不校验就执行等于把工作区里的字符串当命令跑）
-        //    工作区不存在时先在这里挡下：resolve 对不存在的目录会直接返回 UNSUPPORTED 就结束，
-        //    根本没走 validate，于是容器照样被拉起来，里面跑的却是一条空命令 ——
-        //    退出码 127 最终被报成「应用启动失败」，用户按提示去翻日志，日志里什么线索都没有。
-        ThrowUtils.throwIf(workspaceDir == null || !Files.isDirectory(workspaceDir),
-                ErrorCode.OPERATION_ERROR, "应用还没有生成产物，先让助手生成一次再运行");
-        RuntimeSpec spec = specResolver.resolve(workspaceDir);
+            // 2. 推断运行规格并校验（不校验就执行等于把工作区里的字符串当命令跑）
+            //    工作区不存在时先在这里挡下：resolve 对不存在的目录会直接返回 UNSUPPORTED 就结束，
+            //    根本没走 validate，于是容器照样被拉起来，里面跑的却是一条空命令 ——
+            //    退出码 127 最终被报成「应用启动失败」，用户按提示去翻日志，日志里什么线索都没有。
+            ThrowUtils.throwIf(workspaceDir == null || !Files.isDirectory(workspaceDir),
+                    ErrorCode.OPERATION_ERROR, "应用还没有生成产物，先让助手生成一次再运行");
+            RuntimeSpec spec = specResolver.resolve(workspaceDir);
 
-        // 3. 分配启动编号并建日志目录
-        int runNo = nextRunNo(appId);
-        logService.prepareRunDir(appId, runNo);
-        logService.pruneOldRuns(appId);
+            // 3. 分配启动编号并建日志目录
+            int runNo = nextRunNo(appId);
+            logService.prepareRunDir(appId, runNo);
+            logService.pruneOldRuns(appId);
 
-        // 4. 落一条 STARTING 记录
-        AppRuntime record = AppRuntime.builder()
-                .appId(appId)
-                .userId(userId)
-                .runNo(runNo)
-                .status(STATUS_STARTING)
-                .containerName(runtimeManager.containerName(appId))
-                .specJson(toSpecJson(spec))
-                .sourceVersion(versioner.version(workspaceDir))
-                .startedAt(LocalDateTime.now())
-                .lastHeartbeatAt(LocalDateTime.now())
-                .createTime(LocalDateTime.now())
-                .updateTime(LocalDateTime.now())
-                .isDelete(0)
-                .build();
-        appRuntimeMapper.insertSelective(record);
+            // 4. 落一条 STARTING 记录
+            AppRuntime record = AppRuntime.builder()
+                    .appId(appId)
+                    .userId(userId)
+                    .runNo(runNo)
+                    .status(STATUS_STARTING)
+                    .containerName(runtimeManager.containerName(appId))
+                    .specJson(toSpecJson(spec))
+                    .sourceVersion(versioner.version(workspaceDir))
+                    .startedAt(LocalDateTime.now())
+                    .lastHeartbeatAt(LocalDateTime.now())
+                    .createTime(LocalDateTime.now())
+                    .updateTime(LocalDateTime.now())
+                    .isDelete(0)
+                    .build();
+            try {
+                appRuntimeMapper.insertSelective(record);
+            } catch (DuplicateKeyException e) {
+                log.warn("应用 {} 启动记录并发插入冲突: {}", appId, e.getMessage());
+                throw new MyException(ErrorCode.OPERATION_ERROR, "应用正在启动或已有运行记录，请勿重复操作");
+            }
 
-        // 5. 起容器
-        try {
-            RuntimeManager.StartResult result = runtimeManager.start(
-                    appId, workspaceDir, logService.runLogDir(appId, runNo), spec, spec.getPrimaryPort());
+            // 5. 起容器
+            try {
+                RuntimeManager.StartResult result = runtimeManager.start(
+                        appId, workspaceDir, logService.runLogDir(appId, runNo), spec, spec.getPrimaryPort());
 
-            record.setContainerId(result.containerId());
-            record.setGatewayPort(result.hostPort());
+                record.setContainerId(result.containerId());
+                record.setGatewayPort(result.hostPort());
 
-            // 6. 等入口就绪；仍在构建时保持 STARTING，不能把容器存活当成服务可用。
-            boolean ready = runtimeManager.awaitReady(
-                    record.getContainerName(), result.hostPort(), runtimeProperties.getReadinessTimeout());
+                // 6. 等入口就绪；仍在构建时保持 STARTING，不能把容器存活当成服务可用。
+                boolean ready = runtimeManager.awaitReady(
+                        record.getContainerName(), result.hostPort(), runtimeProperties.getReadinessTimeout());
 
-            String containerStatus = runtimeManager.containerStatus(record.getContainerName());
-            if (!"running".equals(containerStatus) && !"created".equals(containerStatus)) {
-                Integer exitCode = runtimeManager.containerExitCode(record.getContainerName());
-                record.setExitCode(exitCode);
-                record.setErrorMessage(ready ? null : "进程启动后立即退出");
-                record.setStatus(STATUS_FAILED);
-                record.setStoppedAt(LocalDateTime.now());
+                String containerStatus = runtimeManager.containerStatus(record.getContainerName());
+                if (!"running".equals(containerStatus) && !"created".equals(containerStatus)) {
+                    Integer exitCode = runtimeManager.containerExitCode(record.getContainerName());
+                    record.setExitCode(exitCode);
+                    record.setErrorMessage(ready ? null : "进程启动后立即退出");
+                    record.setStatus(STATUS_FAILED);
+                    record.setStoppedAt(LocalDateTime.now());
+                    updateRecord(record);
+                    recordIncidentIfAbnormal(record, exitCode);
+                    logService.trimIfOversized(appId, runNo);
+                    throw new MyException(ErrorCode.OPERATION_ERROR,
+                            "应用启动失败（退出码 " + (exitCode == null ? "未知" : exitCode) + "），请查看运行日志");
+                }
+
+                record.setStatus(ready ? STATUS_RUNNING : STATUS_STARTING);
+                record.setLastHeartbeatAt(LocalDateTime.now());
                 updateRecord(record);
-                recordIncidentIfAbnormal(record, exitCode);
+                log.info("应用 {} 第 {} 次运行已启动，容器={} 端口={}",
+                        appId, runNo, record.getContainerName(), result.hostPort());
+                return toVO(record, workspaceDir);
+            } catch (MyException e) {
+                if (STATUS_STARTING.equals(record.getStatus())) {
+                    record.setStatus(STATUS_FAILED);
+                    record.setErrorMessage(e.getMessage());
+                    record.setStoppedAt(LocalDateTime.now());
+                    updateRecord(record);
+                }
+                // 启动失败也要把日志裁掉，避免半截日志占着配额
                 logService.trimIfOversized(appId, runNo);
-                throw new MyException(ErrorCode.OPERATION_ERROR,
-                        "应用启动失败（退出码 " + (exitCode == null ? "未知" : exitCode) + "），请查看运行日志");
+                throw e;
             }
-
-            record.setStatus(ready ? STATUS_RUNNING : STATUS_STARTING);
-            record.setLastHeartbeatAt(LocalDateTime.now());
-            updateRecord(record);
-            log.info("应用 {} 第 {} 次运行已启动，容器={} 端口={}",
-                    appId, runNo, record.getContainerName(), result.hostPort());
-            return toVO(record, workspaceDir);
-        } catch (MyException e) {
-            if (STATUS_STARTING.equals(record.getStatus())) {
-                record.setStatus(STATUS_FAILED);
-                record.setErrorMessage(e.getMessage());
-                record.setStoppedAt(LocalDateTime.now());
-                updateRecord(record);
-            }
-            // 启动失败也要把日志裁掉，避免半截日志占着配额
-            logService.trimIfOversized(appId, runNo);
-            throw e;
         }
     }
 

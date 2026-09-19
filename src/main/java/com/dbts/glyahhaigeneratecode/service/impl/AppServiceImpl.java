@@ -832,9 +832,12 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         return workspace;
     }
 
-    /** 判断功能集合里是否包含某项。存的是 JSON 数组文本，这里只做包含判断。 */
-    private static boolean hasDashboardFeature(String raw, String feature) {
-        return raw != null && raw.contains(feature);
+    /** 判断功能集合里是否包含某项。反序列化后精准匹配，避免子串误判。 */
+    private boolean hasDashboardFeature(String raw, String feature) {
+        if (StrUtil.isBlank(raw) || StrUtil.isBlank(feature)) {
+            return false;
+        }
+        return parseDashboardFeatures(raw).contains(feature);
     }
 
     @Override
@@ -941,6 +944,8 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         ThrowUtils.throwIf(request.getContent() == null, ErrorCode.PARAMS_ERROR, "文件内容不能为空");
 
         App app = requireOwnedApp(loginUser, appId);
+        ThrowUtils.throwIf(appServiceSupport.isPlatformInternalPath(request.getPath()),
+                ErrorCode.PARAMS_ERROR, "平台受控目录文件不允许保存修改");
         Path file = resolveWithinWorkspace(app, request.getPath());
         ThrowUtils.throwIf(!Files.isRegularFile(file), ErrorCode.NOT_FOUND_ERROR, "文件不存在");
         ThrowUtils.throwIf(!appServiceSupport.isTextCodeFile(file), ErrorCode.PARAMS_ERROR, "只能保存文本文件");

@@ -183,7 +183,14 @@ public class KnowledgeController {
         App app = appService.getById(appId);
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
         String features = app.getDashboardFeatures();
-        boolean enabled = features != null && features.contains("knowledge");
+        boolean enabled = false;
+        if (cn.hutool.core.util.StrUtil.isNotBlank(features)) {
+            try {
+                enabled = cn.hutool.json.JSONUtil.toList(features, String.class).contains("knowledge");
+            } catch (Exception e) {
+                enabled = false;
+            }
+        }
         ThrowUtils.throwIf(!enabled, ErrorCode.OPERATION_ERROR,
                 "该项目未启用知识图谱，请先在「看板设置」里开启");
     }

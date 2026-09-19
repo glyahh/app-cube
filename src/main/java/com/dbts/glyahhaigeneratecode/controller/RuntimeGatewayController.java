@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -33,9 +34,8 @@ import java.util.Set;
  * <ol>
  *   <li><b>目标不接受客户端输入</b>：目标端口来自该应用当前运行记录的容器映射，
  *       URL 里多出来的路径段只是被转发的资源路径，拼不出别的主机。</li>
- *   <li><b>必须登录且是本人或管理员</b>：否则任何人都能借平台访问别人的应用。</li>
- *   <li><b>不把平台会话带给应用</b>：转发前摘掉 Cookie 头。
- *       生成的应用不该拿到平台的会话凭据，这是 Plan 明确要求的。</li>
+ *   <li><b>Cookie 彻底剥离</b>：平台 Cookie 永远不随请求转发给项目容器。</li>
+ *   <li><b>严格限制代理请求体大小</b>：防止大报文直接撑爆 JVM 堆内存导致 OOM。</li>
  * </ol>
  *
  * <p>QPS 与错误率在这里统计 —— 这是「经过平台项目访问入口的请求」的唯一口径。
@@ -51,6 +51,9 @@ public class RuntimeGatewayController {
     private final RuntimeTrafficStats trafficStats;
     private final AppService appService;
     private final UserService userService;
+
+    /** 单次转发允许的最大请求体：10MB，防止恶意大报文消耗堆内存造成 OOM。 */
+    private static final int MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024;
 
     /** 逐跳首部与被显式替换的首部，不参与转发。 */
     private static final Set<String> BLOCKED_REQUEST_HEADERS = Set.of(
@@ -94,16 +97,38 @@ public class RuntimeGatewayController {
 
         String subPath = extractSubPath(request.getRequestURI(), appId);
         String query = request.getQueryString();
-        String target = "http://127.0.0.1:" + runtime.getGatewayPort() + subPath
-                + (query == null || query.isBlank() ? "" : "?" + query);
+
+        URI targetUri;
+        try {
+            targetUri = new URI("http", null, "127.0.0.1", runtime.getGatewayPort(),
+                    subPath, (query == null || query.isBlank() ? null : query), null);
+        } catch (URISyntaxException | IllegalArgumentException e) {
+            writeError(response, HttpServletResponse.SC_BAD_REQUEST, "请求路径或参数格式不合法");
+            return;
+        }
 
         boolean healthCheck = HEALTH_PATHS.stream().anyMatch(subPath::startsWith);
 
+        // 限制请求体长度，防止超大请求耗尽 JVM 堆内存
+        long contentLength = request.getContentLengthLong();
+        if (contentLength > MAX_REQUEST_BODY_BYTES) {
+            writeError(response, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, "请求体超过 10MB 限制");
+            return;
+        }
+
         try {
-            HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(target))
+            HttpRequest.Builder builder = HttpRequest.newBuilder(targetUri)
                     .timeout(Duration.ofSeconds(30));
 
-            byte[] body = request.getInputStream().readAllBytes();
+            byte[] body;
+            try (InputStream in = request.getInputStream()) {
+                body = in.readNBytes(MAX_REQUEST_BODY_BYTES + 1);
+            }
+            if (body.length > MAX_REQUEST_BODY_BYTES) {
+                writeError(response, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, "请求体超过 10MB 限制");
+                return;
+            }
+
             builder.method(request.getMethod(),
                     body.length == 0
                             ? HttpRequest.BodyPublishers.noBody()
@@ -142,7 +167,7 @@ public class RuntimeGatewayController {
             response.flushBuffer();
         } catch (IOException e) {
             trafficStats.record(appId, 502, healthCheck);
-            log.warn("网关转发失败 appId={} target={}: {}", appId, target, e.getMessage());
+            log.warn("网关转发失败 appId={} target={}: {}", appId, targetUri, e.getMessage());
             if (!response.isCommitted()) {
                 writeError(response, HttpServletResponse.SC_BAD_GATEWAY, "应用暂时无法访问");
             }
