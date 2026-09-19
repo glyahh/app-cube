@@ -7,6 +7,7 @@ import com.dbts.glyahhaigeneratecode.model.enums.CodeGenTypeEnum;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 
 /**
@@ -56,7 +57,11 @@ public class WorkspacePathResolver {
      * @param resourcePath URL 里的剩余路径，如 {@code /index.html}
      */
     public Path resolveOutputResource(String dirName, String resourcePath) {
-        return guardWithin(props.getOutputRoot(), dirName + normalize(resourcePath));
+        // 必须分两段解析：先把 dirName 定位到某一个应用自己的目录，再在它下面解析子路径。
+        // 拼成一个字符串交给同一个根校验是不行的 —— ../ 会带着路径跑到 outputRoot 下
+        // 别的应用目录里（甚至别 人的应用），而 startsWith(outputRoot) 依然成立，校验形同虚设。
+        Path appRoot = guardWithin(props.getOutputRoot(), dirName);
+        return guardWithin(appRoot, normalize(resourcePath));
     }
 
     /**
@@ -66,15 +71,29 @@ public class WorkspacePathResolver {
      * @param resourcePath URL 里的剩余路径
      */
     public Path resolveDeployResource(String deployKey, String resourcePath) {
-        return guardWithin(props.getDeployRoot(), deployKey + normalize(resourcePath));
+        // 同 resolveOutputResource：两段解析，避免 ../ 跨到别的发布目录
+        Path deployDir = guardWithin(props.getDeployRoot(), deployKey);
+        return guardWithin(deployDir, normalize(resourcePath));
     }
 
-    /** 相对资源路径统一以分隔符开头，空串按根处理。 */
+    /**
+     * 把外部传入的相对资源路径规整成可以直接交给 {@link Path#resolve} 的形式。
+     *
+     * <p><b>必须去掉前导分隔符。</b>以前这里是「不以 / 开头就补一个」，因为那时是
+     * {@code dirName + resourcePath} 拼成一个字符串再解析，前导 / 只当分隔符用。
+     * 改成两段解析之后语义就反了：{@code resolve("/sub/a.txt")} 在 Java 里表示
+     * 「从磁盘根开始拼」，结果必然跑出应用目录、被越界校验拦下 —— 正常请求全废。
+     * 空串按目录本身处理。
+     */
     private static String normalize(String resourcePath) {
-        if (resourcePath == null || resourcePath.isEmpty()) {
-            return "/";
+        if (resourcePath == null) {
+            return "";
         }
-        return resourcePath.startsWith("/") ? resourcePath : "/" + resourcePath;
+        String trimmed = resourcePath.trim();
+        while (trimmed.startsWith("/") || trimmed.startsWith("\\")) {
+            trimmed = trimmed.substring(1);
+        }
+        return trimmed;
     }
 
     /**
@@ -85,7 +104,14 @@ public class WorkspacePathResolver {
      */
     private Path guardWithin(Path root, String name) {
         Path rootAbs = root.toAbsolutePath().normalize();
-        Path candidate = rootAbs.resolve(name).normalize();
+        Path candidate;
+        try {
+            candidate = rootAbs.resolve(name).normalize();
+        } catch (InvalidPathException e) {
+            // 冒号、空字节这类字符会让 Path 解析直接抛异常。
+            // 它是调用方传错了参数，不是服务端故障 —— 不能让它冒泡成 500。
+            throw new MyException(ErrorCode.PARAMS_ERROR, "路径不合法");
+        }
         if (!candidate.startsWith(rootAbs)) {
             throw new MyException(ErrorCode.PARAMS_ERROR, "路径越界");
         }

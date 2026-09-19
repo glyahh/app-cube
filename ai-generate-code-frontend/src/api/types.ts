@@ -399,6 +399,12 @@ export type BaseResponsePageUserVO = {
   message?: string;
 };
 
+export type BaseResponsePreference = {
+  code?: number;
+  data?: Preference;
+  message?: string;
+};
+
 export type BaseResponseString = {
   code?: number;
   data?: string;
@@ -786,6 +792,14 @@ export type PageUserVO = {
   optimizeCountQuery?: boolean;
 };
 
+export type Preference = {
+  expandExecutionProcess?: boolean;
+  alertOnStartupFailure?: boolean;
+  alertOnRuntimeFailure?: boolean;
+  autoModelProxyFallback?: boolean;
+  autoNameProject?: boolean;
+};
+
 export type ProjectFileVO = {
   path?: string;
   language?: string;
@@ -821,6 +835,8 @@ export type User = {
   userAvatar?: string;
   userProfile?: string;
   userRole?: string;
+  autoModelProxyFallback?: boolean;
+  autoNameProject?: boolean;
   editTime?: string;
   createTime?: string;
   updateTime?: string;

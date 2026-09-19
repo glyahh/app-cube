@@ -101,8 +101,7 @@ def learn_from_error(model_id: str, message: str) -> int | None:
 
 
 def _probe_models_endpoint(
-    base_url: str, api_key: str, model_id: str, *, use_system_proxy: bool = False,
-    proxy_url: str | None = None,
+    base_url: str, api_key: str, model_id: str, *, proxy_url: str | None = None,
 ) -> int | None:
     """探一次 /v1/models。拿不到就返回 None —— 这是常态，不是错误。"""
     if not base_url:
@@ -115,7 +114,7 @@ def _probe_models_endpoint(
         # 在开了系统代理的机器上探测请求会被截走。
         from core.model import _clients
 
-        sync_client, _ = _clients(use_system_proxy, proxy_url)
+        sync_client, _ = _clients(proxy_url)
         resp = sync_client.get(url, headers=headers, timeout=5.0)
         resp.raise_for_status()
         payload = resp.json()
@@ -141,7 +140,6 @@ def resolve_window(
     api_key: str = "",
     override: int = 0,
     *,
-    use_system_proxy: bool = False,
     proxy_url: str | None = None,
 ) -> WindowResolution:
     """按优先级链解析窗口。结果缓存，同一进程不重复探测。"""
@@ -163,7 +161,6 @@ def resolve_window(
         base_url,
         api_key,
         model_id,
-        use_system_proxy=use_system_proxy,
         proxy_url=proxy_url,
     )
     if probed:

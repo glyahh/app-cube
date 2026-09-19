@@ -20,6 +20,22 @@ async function saveExecutionPreference(value: boolean | string | number) {
   try { await execution.save(value === true) }
   catch { message.error('保存失败，请重试') }
 }
+async function saveStartupFailureAlert(value: boolean | string | number) {
+  try { await execution.saveAlertOnStartupFailure(value === true) }
+  catch { message.error('保存失败，请重试') }
+}
+async function saveRuntimeFailureAlert(value: boolean | string | number) {
+  try { await execution.saveAlertOnRuntimeFailure(value === true) }
+  catch { message.error('保存失败，请重试') }
+}
+async function saveAutoModelProxyFallback(value: boolean | string | number) {
+  try { await execution.saveAutoModelProxyFallback(value === true) }
+  catch { message.error('保存失败，请重试') }
+}
+async function saveAutoNameProject(value: boolean | string | number) {
+  try { await execution.saveAutoNameProject(value === true) }
+  catch { message.error('保存失败，请重试') }
+}
 const collapseMotionDesc = ref(true) // 减少动画说明列表默认折叠
 
 const previewCode = `function hello() {
@@ -78,6 +94,34 @@ function goBack() {
         </div>
         <a-switch :checked="execution.expanded" :loading="execution.saving"
           aria-labelledby="execution-preference-label" @change="saveExecutionPreference" />
+      </div>
+    </section>
+
+    <section class="appearance-section">
+      <div class="section-header">运行与异常提示</div>
+      <div class="appearance-row">
+        <div class="row-label">
+          <span class="row-title" id="startup-failure-alert-label">启动异常时弹窗提示</span>
+          <span class="row-desc">应用启动失败（进程异常退出）时弹出提示，可选择让 AI 诊断修复。默认开启。</span>
+        </div>
+        <a-switch :checked="execution.alertOnStartupFailure" :loading="execution.saving"
+          aria-labelledby="startup-failure-alert-label" @change="saveStartupFailureAlert" />
+      </div>
+      <div class="appearance-row">
+        <div class="row-label">
+          <span class="row-title" id="runtime-failure-alert-label">运行异常时弹窗提示</span>
+          <span class="row-desc">应用运行期间出现未处理异常时弹出提示。默认关闭，避免偶发错误频繁打扰；错误仍会记录在运行日志里。</span>
+        </div>
+        <a-switch :checked="execution.alertOnRuntimeFailure" :loading="execution.saving"
+          aria-labelledby="runtime-failure-alert-label" @change="saveRuntimeFailureAlert" />
+      </div>
+      <div class="appearance-row">
+        <div class="row-label">
+          <span class="row-title" id="model-proxy-fallback-label">代理连接失败时自动直连</span>
+          <span class="row-desc">仅代理无法建立连接时重试当前模型调用；成功后该应用后续固定直连。默认关闭。</span>
+        </div>
+        <a-switch :checked="execution.autoModelProxyFallback" :loading="execution.saving"
+          aria-labelledby="model-proxy-fallback-label" @change="saveAutoModelProxyFallback" />
       </div>
     </section>
     <!-- A. 基础颜色 -->
@@ -226,6 +270,13 @@ function goBack() {
     <!-- D. 生成与聊天偏好 -->
     <section class="appearance-section">
       <div class="section-header">生成与聊天偏好</div>
+      <div class="appearance-row">
+        <div class="row-label"><span id="auto-name-label" class="row-title">自动命名项目</span></div>
+        <div class="row-control">
+          <a-switch :checked="execution.autoNameProject" :loading="execution.saving" :disabled="!execution.ready"
+            aria-labelledby="auto-name-label" @change="saveAutoNameProject" />
+        </div>
+      </div>
 
       <div class="appearance-row">
         <div class="row-label">

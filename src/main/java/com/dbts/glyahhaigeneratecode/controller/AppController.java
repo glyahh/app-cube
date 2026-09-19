@@ -13,7 +13,10 @@ import com.dbts.glyahhaigeneratecode.model.Entity.User;
 import com.dbts.glyahhaigeneratecode.model.VO.ApplyHistoryVO;
 import com.dbts.glyahhaigeneratecode.model.VO.ApplyVO;
 import com.dbts.glyahhaigeneratecode.model.VO.AppVO;
+import com.dbts.glyahhaigeneratecode.model.VO.AppWorkspaceVO;
+import com.dbts.glyahhaigeneratecode.model.VO.ProjectFileContentVO;
 import com.dbts.glyahhaigeneratecode.model.VO.ProjectFileVO;
+import com.dbts.glyahhaigeneratecode.model.VO.ProjectTreeEntryVO;
 import com.dbts.glyahhaigeneratecode.service.AppService;
 import com.dbts.glyahhaigeneratecode.service.UserAppApplyService;
 import com.dbts.glyahhaigeneratecode.service.UserService;
@@ -240,6 +243,105 @@ public class AppController {
                                                               HttpServletRequest request) {
         User loginUser = userService.getUserInSession(request);
         return ResultUtils.success(appService.getProjectFiles(loginUser, appId));
+    }
+
+    /**
+     * 【用户】获取应用工作区描述
+     *
+     * <p>前端据此决定右侧能否预览、静态入口取哪个文件，不再按创建时选的类型猜测。
+     *
+     * @param appId   应用 id
+     * @param request 请求
+     * @return 工作区描述（实际目录名、是否已有产物、静态入口、可用能力及不支持原因）
+     */
+    @GetMapping("/{appId}/workspace")
+    public BaseResponse<AppWorkspaceVO> getAppWorkspace(@PathVariable Long appId,
+                                                        HttpServletRequest request) {
+        User loginUser = userService.getUserInSession(request);
+        return ResultUtils.success(appService.getWorkspace(loginUser, appId));
+    }
+
+    /**
+     * 【用户】修改应用的看板功能开关（监控 / 日志 / 知识图谱）
+     *
+     * @param appId           应用 id
+     * @param featuresRequest 要启用的功能标识；空列表表示全部关闭
+     * @param request         请求
+     * @return 更新后的工作区描述
+     */
+    @PutMapping("/{appId}/dashboard-features")
+    public BaseResponse<AppWorkspaceVO> updateDashboardFeatures(
+            @PathVariable Long appId,
+            @RequestBody DashboardFeaturesRequest featuresRequest,
+            HttpServletRequest request) {
+        User loginUser = userService.getUserInSession(request);
+        return ResultUtils.success(
+                appService.updateDashboardFeatures(loginUser, appId, featuresRequest));
+    }
+
+    /**
+     * 【用户】列出工作区某个目录的直接子项（文件树按需展开）
+     *
+     * @param appId  应用 id
+     * @param path   相对工作区根的目录路径；省略表示根目录
+     * @param request 请求
+     * @return 该目录下的直接子项，目录在前
+     */
+    @GetMapping("/{appId}/files/tree")
+    public BaseResponse<List<ProjectTreeEntryVO>> listProjectTree(@PathVariable Long appId,
+                                                                  @RequestParam(required = false) String path,
+                                                                  HttpServletRequest request) {
+        User loginUser = userService.getUserInSession(request);
+        return ResultUtils.success(appService.listProjectTree(loginUser, appId, path));
+    }
+
+    /**
+     * 【用户】读取工作区内的单个文件
+     *
+     * @param appId  应用 id
+     * @param path   相对工作区根的文件路径
+     * @param request 请求
+     * @return 文件内容与版本标识；二进制文件不返回内容
+     */
+    @GetMapping("/{appId}/files/content")
+    public BaseResponse<ProjectFileContentVO> getProjectFileContent(@PathVariable Long appId,
+                                                                     @RequestParam String path,
+                                                                     HttpServletRequest request) {
+        User loginUser = userService.getUserInSession(request);
+        return ResultUtils.success(appService.getProjectFileContent(loginUser, appId, path));
+    }
+
+    /**
+     * 【用户】保存工作区内的单个文本文件（带内容版本校验）
+     *
+     * @param appId        应用 id
+     * @param saveRequest  路径、新内容与读取时的版本
+     * @param request      请求
+     * @return 保存后的文件内容与新的版本标识
+     */
+    @PostMapping("/{appId}/files/content")
+    public BaseResponse<ProjectFileContentVO> saveProjectFile(@PathVariable Long appId,
+                                                              @RequestBody ProjectFileSaveRequest saveRequest,
+                                                              HttpServletRequest request) {
+        User loginUser = userService.getUserInSession(request);
+        return ResultUtils.success(appService.saveProjectFile(loginUser, appId, saveRequest));
+    }
+
+    /**
+     * 【用户】下载工作区内的单个文件（原样输出字节）
+     *
+     * @param appId   应用 id
+     * @param path    相对工作区根的文件路径
+     * @param request 请求
+     * @param response 响应（写入文件字节）
+     */
+    @GetMapping("/{appId}/files/download")
+    public void downloadProjectFile(@PathVariable Long appId,
+                                    @RequestParam String path,
+                                    HttpServletRequest request,
+                                    HttpServletResponse response) {
+        User loginUser = userService.getUserInSession(request);
+        appService.downloadProjectFile(loginUser, appId, path, response);
     }
 
     /**

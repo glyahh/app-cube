@@ -12,6 +12,8 @@ public enum ErrorCode {
     TOO_MANY_REQUEST(42900, "请求过于频繁"),
     NOT_FOUND_ERROR(40400, "请求数据不存在"),
     FORBIDDEN_ERROR(40300, "禁止访问"),
+    /** 并发写入冲突：客户端持有的版本已不是当前版本。前端据此保留草稿并提示重新读取。 */
+    CONFLICT_ERROR(40900, "资源已被修改"),
     SYSTEM_ERROR(50000, "系统内部异常"),
     OPERATION_ERROR(50001, "操作失败");
 

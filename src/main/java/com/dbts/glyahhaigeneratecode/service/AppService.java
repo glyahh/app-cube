@@ -4,11 +4,16 @@ import com.dbts.glyahhaigeneratecode.model.DTO.AppAddRequest;
 import com.dbts.glyahhaigeneratecode.model.DTO.AppAdminUpdateRequest;
 import com.dbts.glyahhaigeneratecode.model.DTO.AppQueryRequest;
 import com.dbts.glyahhaigeneratecode.model.DTO.AppUpdateRequest;
+import com.dbts.glyahhaigeneratecode.model.DTO.DashboardFeaturesRequest;
+import com.dbts.glyahhaigeneratecode.model.DTO.ProjectFileSaveRequest;
 import com.dbts.glyahhaigeneratecode.model.Entity.User;
 import com.mybatisflex.core.service.IService;
 import com.dbts.glyahhaigeneratecode.model.Entity.App;
 import com.dbts.glyahhaigeneratecode.model.VO.AppVO;
+import com.dbts.glyahhaigeneratecode.model.VO.AppWorkspaceVO;
+import com.dbts.glyahhaigeneratecode.model.VO.ProjectFileContentVO;
 import com.dbts.glyahhaigeneratecode.model.VO.ProjectFileVO;
+import com.dbts.glyahhaigeneratecode.model.VO.ProjectTreeEntryVO;
 import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.servlet.http.HttpServletResponse;
@@ -142,4 +147,49 @@ public interface AppService extends IService<App> {
      * 【用户】获取应用项目文件列表（回显用）
      */
     List<ProjectFileVO> getProjectFiles(User loginUser, Long appId);
+
+    /**
+     * 【用户】获取应用工作区描述（实际产物目录、可预览的静态入口、可用能力）
+     */
+    AppWorkspaceVO getWorkspace(User loginUser, Long appId);
+
+    /**
+     * 【用户】修改应用的看板功能开关，返回更新后的工作区描述
+     */
+    AppWorkspaceVO updateDashboardFeatures(User loginUser, Long appId, DashboardFeaturesRequest request);
+
+    /**
+     * 【用户】解析应用的工作区目录（含归属校验）
+     *
+     * <p>给运行链路用：目录名只能由枚举与 resolver 决定，调用点不许自己拼。
+     *
+     * @param loginUser 当前登录用户
+     * @param appId     应用 id
+     * @return 产物目录绝对路径
+     */
+    java.nio.file.Path resolveWorkspaceDir(User loginUser, Long appId);
+
+    /**
+     * 【用户】列出工作区某个目录下的直接子项（单层，供文件树按需展开）
+     *
+     * @param relativePath 相对工作区根的目录路径；为空表示根目录
+     */
+    List<ProjectTreeEntryVO> listProjectTree(User loginUser, Long appId, String relativePath);
+
+    /**
+     * 【用户】读取工作区内的单个文件
+     *
+     * @param relativePath 相对工作区根的文件路径
+     */
+    ProjectFileContentVO getProjectFileContent(User loginUser, Long appId, String relativePath);
+
+    /**
+     * 【用户】保存工作区内的单个文本文件（带内容版本校验）
+     */
+    ProjectFileContentVO saveProjectFile(User loginUser, Long appId, ProjectFileSaveRequest request);
+
+    /**
+     * 【用户】下载工作区内的单个文件（原样输出字节）
+     */
+    void downloadProjectFile(User loginUser, Long appId, String relativePath, HttpServletResponse response);
 }

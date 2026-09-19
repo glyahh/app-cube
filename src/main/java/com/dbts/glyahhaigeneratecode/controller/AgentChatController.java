@@ -15,7 +15,6 @@ import com.dbts.glyahhaigeneratecode.model.Entity.User;
 import com.dbts.glyahhaigeneratecode.rateLimiter.annotation.RateLimit;
 import com.dbts.glyahhaigeneratecode.rateLimiter.enums.RateLimitType;
 import com.dbts.glyahhaigeneratecode.service.UserService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -52,7 +51,6 @@ public class AgentChatController {
     private final AgentRunPersistence persistence;
     private final AgentProperties agentProperties;
     private final UserService userService;
-    private final ObjectMapper objectMapper;
 
     /**
      * 流式生成。前端用 {@code EventSource} 消费，Cookie 会自动带上。
@@ -77,16 +75,10 @@ public class AgentChatController {
 
         // 归属校验在工厂里，两条传输路径共用 —— 分散写就容易出现某条路漏检
         AgentRunRequest runRequest = requestFactory.build(appId, user.getId(), message, roundId);
-        String frameJson = runRequest.toFrameJson(objectMapper);
 
-        // defer：把借进程推迟到订阅时，保证取消能一路传下去
-        return Flux.defer(() -> {
-                    // 台账在订阅时才落 —— 从没订阅过的请求不该留下「起了头」的记录
-                    persistence.recordRun(runRequest);
-                    return agentRunService.streamForDisplay(appId, frameJson);
-                })
-                // 累积正文并在终态落一次 AI 行。挂在 filter 之前，才看得到 text.message。
-                .transform(events -> persistence.tap(events, runRequest))
+        // 请求在 App 锁内刷新路由后才序列化，排队请求不会携带旧的永久直连状态。
+        return agentRunService.streamForDisplay(appId,
+                        () -> requestFactory.refreshModelRoute(runRequest))
                 // 终止帧是传输层收尾，不转给前端 —— 由末尾补的 done 事件承担这个职责
                 .filter(event -> !event.isEnd())
                 .map(this::toSse)

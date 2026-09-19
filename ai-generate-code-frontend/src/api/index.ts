@@ -3,6 +3,7 @@
 export * from './types';
 
 export * from './userController';
+export * from './userPreferenceController';
 export * from './userPersonalizationController';
 export * from './loopController';
 export * from './chatHistoryController';

@@ -6,6 +6,7 @@ import com.dbts.glyahhaigeneratecode.exception.ThrowUtils;
 import com.dbts.glyahhaigeneratecode.model.Entity.App;
 import com.dbts.glyahhaigeneratecode.model.enums.CodeGenTypeEnum;
 import com.dbts.glyahhaigeneratecode.service.AppService;
+import com.dbts.glyahhaigeneratecode.service.UserService;
 import com.dbts.glyahhaigeneratecode.service.support.WorkspacePathResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -27,6 +28,7 @@ import java.util.UUID;
 public class AgentRunRequestFactory {
 
     private final AppService appService;
+    private final UserService userService;
     private final WorkspacePathResolver pathResolver;
     private final AgentProperties agentProperties;
 
@@ -50,6 +52,7 @@ public class AgentRunRequestFactory {
         ThrowUtils.throwIf(type == null, ErrorCode.PARAMS_ERROR, "应用的生成类型不合法");
 
         Path workspace = pathResolver.outputDir(appId, type);
+        var user = userService.getById(userId);
 
         return AgentRunRequest.builder()
                 .runId(IdUtil.getSnowflakeNextIdStr())
@@ -60,6 +63,8 @@ public class AgentRunRequestFactory {
                 // 构建流时执行 Long.valueOf("")，让本可继续的 Agent 请求直接失败。
                 .roundId(roundId == null ? null : String.valueOf(roundId))
                 .traceId(UUID.randomUUID().toString())
+                .modelRoute(Boolean.TRUE.equals(app.getForceModelDirect()) ? "direct" : "configured")
+                .allowProxyFallback(user != null && Boolean.TRUE.equals(user.getAutoModelProxyFallback()))
                 // 工作区路径由 Java 下发，Python 不做任何自己的拼接
                 .workspaceRoot(workspace.getParent().toString())
                 .workspaceName(workspace.getFileName().toString())
@@ -69,6 +74,21 @@ public class AgentRunRequestFactory {
                 .initPrompt(app.getInitPrompt())
                 .deadlineMs(agentProperties.getRunDeadline().toMillis())
                 .deployKey(app.getDeployKey())
+                .build();
+    }
+
+    /** 拿到应用锁后重读路由状态，避免排队请求携带旧值。 */
+    public AgentRunRequest refreshModelRoute(AgentRunRequest request) {
+        Long appId = Long.valueOf(request.getAppId());
+        Long userId = Long.valueOf(request.getUserId());
+        App app = appService.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        ThrowUtils.throwIf(!Objects.equals(app.getUserId(), userId),
+                ErrorCode.NO_AUTH_ERROR, "只能操作自己的应用");
+        var user = userService.getById(userId);
+        return request.toBuilder()
+                .modelRoute(Boolean.TRUE.equals(app.getForceModelDirect()) ? "direct" : "configured")
+                .allowProxyFallback(user != null && Boolean.TRUE.equals(user.getAutoModelProxyFallback()))
                 .build();
     }
 

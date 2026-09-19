@@ -45,6 +45,7 @@ class Event(str, Enum):
     ARTIFACT_MANIFEST = "artifact.manifest"
     ERROR = "error"
     RUN_COMPLETED = "run.completed"
+    MODEL_ROUTE_FALLBACK = "model.route.fallback"
     # 终止帧。Java 读到它就归还进程；不转成对前端的事件。
     END = "__end__"
 

@@ -118,15 +118,11 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        String frameJson = runRequest.toFrameJson(objectMapper);
         String runId = runRequest.getRunId();
 
-        // 台账在这里落：前面都是同步校验（限流、归属），走到这一步才真的要跑
-        persistence.recordRun(runRequest);
-
-        // 累积正文并在终态落一次 AI 行。挂在 filter 之前，才看得到 text.message。
-        Flux<AgentEvent> events = persistence
-                .tap(agentRunService.streamForDisplay(appId, frameJson), runRequest)
+        // 与 SSE 共用锁内刷新、台账、审计和展示过滤顺序。
+        Flux<AgentEvent> events = agentRunService
+                .streamForDisplay(appId, () -> requestFactory.refreshModelRoute(runRequest))
                 .filter(event -> !event.isEnd());
 
         Disposable subscription = withHeartbeat(events, runId)

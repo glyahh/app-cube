@@ -5,10 +5,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 
 /**
  * 把 Python 子进程的阻塞读取桥接成 Reactor 流。
@@ -25,6 +28,7 @@ public class AgentRunService {
     private final AgentProperties props;
     private final ObjectMapper objectMapper;
     private final AppRunCoordinator coordinator;
+    private final AgentRunPersistence persistence;
 
     /**
      * 跑一次 run，返回事件流。
@@ -49,6 +53,31 @@ public class AgentRunService {
     /** SSE 与 WebSocket 的唯一展示入口，原始流保留内部执行语义。 */
     public Flux<AgentEvent> streamForDisplay(Long appId, String requestJson) {
         return UserFacingOutputHandler.apply(stream(appId, requestJson));
+    }
+
+    /**
+     * 主生成统一入口。请求 supplier 在拿到 App 锁后执行，确保读取最新路由状态。
+     */
+    public Flux<AgentEvent> streamForDisplay(Long appId, Supplier<AgentRunRequest> requestSupplier) {
+        return coordinator.serialize(appId, () -> Flux.defer(() -> {
+                    AgentRunRequest request = requestSupplier.get();
+                    persistence.recordRun(request);
+                    Flux<AgentEvent> audited = persistence.tap(
+                            runOnce(request.toFrameJson(objectMapper)), request);
+                    return UserFacingOutputHandler.apply(audited);
+                }))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * 跑一次 run，但**不进项目的串行队列**。
+     *
+     * <p>知识任务走这条：它只读分析、不写产物目录，不该排在用户的生成请求后面，
+     * 也不该把用户的生成请求堵在后面。代价是并发控制要由调用方自己负责 ——
+     * 这里的调用方用独立信号量把知识任务限到很低。
+     */
+    public Flux<AgentEvent> streamUncoordinated(String requestJson) {
+        return runOnce(requestJson).subscribeOn(Schedulers.boundedElastic());
     }
 
     /** 单次执行：借进程、下发、逐帧读回。锁的持有范围由调用方 {@link #stream} 划定。 */
@@ -76,6 +105,10 @@ public class AgentRunService {
                 // 1. 借进程（池满时这里会等待，超时抛 TOO_MANY_REQUEST）
                 worker = pool.acquire();
                 holder.set(worker);
+                if (cancelled.get()) {
+                    settle(worker, holder, cancelled, false);
+                    return;
+                }
 
                 // 2. 下发请求
                 worker.send(requestJson);
@@ -109,7 +142,9 @@ public class AgentRunService {
             // 紧接着查池会看到它仍在借出中。
             settle(worker, holder, cancelled, cleanFinish);
             sink.complete();
-        });
+        // 墙钟上限不随事件刷新，持续心跳也不能让卡住的任务永久占用进程。
+        }).takeUntilOther(Mono.delay(props.getRunDeadline())
+                .flatMap(ignored -> Mono.error(new TimeoutException("Agent 执行超过时间上限"))));
     }
 
     /**

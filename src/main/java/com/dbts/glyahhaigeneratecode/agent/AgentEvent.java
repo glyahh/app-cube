@@ -38,6 +38,7 @@ public record AgentEvent(String runId, int seq, long ts, String event, JsonNode 
     public static final String ARTIFACT_MANIFEST = "artifact.manifest";
     public static final String ERROR = "error";
     public static final String RUN_COMPLETED = "run.completed";
+    public static final String MODEL_ROUTE_FALLBACK = "model.route.fallback";
 
     /**
      * 解析一行 NDJSON。

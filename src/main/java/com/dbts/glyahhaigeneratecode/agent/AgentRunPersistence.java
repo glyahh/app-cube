@@ -1,6 +1,7 @@
 package com.dbts.glyahhaigeneratecode.agent;
 
 import com.dbts.glyahhaigeneratecode.mapper.AgentRunMapper;
+import com.dbts.glyahhaigeneratecode.mapper.AppMapper;
 import com.dbts.glyahhaigeneratecode.model.Entity.AgentRun;
 import com.dbts.glyahhaigeneratecode.model.enums.ChatHistoryMessageTypeEnum;
 import com.dbts.glyahhaigeneratecode.service.ChatHistoryService;
@@ -9,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.SignalType;
+import reactor.core.publisher.SynchronousSink;
 
 import java.time.LocalDateTime;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -35,6 +37,8 @@ public class AgentRunPersistence {
 
     private final ChatHistoryService chatHistoryService;
     private final AgentRunMapper agentRunMapper;
+    private final AppMapper appMapper;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -97,6 +101,7 @@ public class AgentRunPersistence {
                     .lastEventSeq(0)
                     .reconcileTries(0)
                     .build());
+            eventPublisher.publishEvent(new ProjectTitleRequested(request));
         } catch (Exception e) {
             // 台账写不进去不该拦住生成 —— 它是可观测性，不是业务前置条件
             log.error("落 agent_run 台账失败：runId={}", request.getRunId(), e);
@@ -120,22 +125,40 @@ public class AgentRunPersistence {
             List<Map<String, Object>> thinking = new ArrayList<>();
             AtomicBoolean persisted = new AtomicBoolean(false);
             AtomicBoolean settled = new AtomicBoolean(false);
+            AtomicBoolean usagePersisted = new AtomicBoolean(false);
+            java.util.concurrent.atomic.AtomicReference<com.fasterxml.jackson.databind.JsonNode> usage =
+                    new java.util.concurrent.atomic.AtomicReference<>();
             java.util.concurrent.atomic.AtomicReference<String> outcome = new java.util.concurrent.atomic.AtomicReference<>("FAILED");
 
             return events
-                    .doOnNext(event -> {
+                    .handle((AgentEvent event, SynchronousSink<AgentEvent> sink) -> {
                         accumulate(event, buffer, thinking);
-                        if (AgentEvent.RUN_COMPLETED.equals(event.event()))
+                        if (AgentEvent.RUN_COMPLETED.equals(event.event())) {
                             outcome.set("succeeded".equals(event.status()) ? "SUCCEEDED" : "FAILED");
+                            if (event.frame().path("usage").isObject()) {
+                                usage.set(event.frame().path("usage").deepCopy());
+                            }
+                        }
                         if (AgentEvent.ERROR.equals(event.event())) outcome.set("FAILED");
+                        if (AgentEvent.MODEL_ROUTE_FALLBACK.equals(event.event())
+                                && !recordModelFallback(appId, runId, event)) {
+                            return;
+                        }
+                        sink.next(event);
                     })
                     .doOnComplete(() -> {
                         persistOnce(appId, userId, roundId, buffer, thinking, persisted);
-                        finishRun(runId, outcome.get(), null, null, settled);
+                        persistUsageOnce(runId, usage.get(), usagePersisted);
+                        if (finishRun(runId, outcome.get(), null, null, settled)) {
+                            publishFinished(appId, userId, runId, outcome.get());
+                        }
                     })
                     .doOnError(error -> {
                         persistOnce(appId, userId, roundId, buffer, thinking, persisted);
-                        finishRun(runId, "FAILED", null, error.getMessage(), settled);
+                        persistUsageOnce(runId, usage.get(), usagePersisted);
+                        if (finishRun(runId, "FAILED", null, error.getMessage(), settled)) {
+                            publishFinished(appId, userId, runId, "FAILED");
+                        }
                     })
                     // 取消既不走 onComplete 也不走 onError，只能靠 doFinally 的信号类型区分。
                     // 少这一条的话，前端关页面留下的 run 会永远停在 RUNNING。
@@ -143,17 +166,59 @@ public class AgentRunPersistence {
                         if (signal == SignalType.CANCEL) {
                             thinking.forEach(item -> { if ("running".equals(item.get("status"))) item.put("status", "cancelled"); });
                             persistOnce(appId, userId, roundId, buffer, thinking, persisted);
-                            finishRun(runId, "CANCELLED", null, "客户端取消", settled);
+                            persistUsageOnce(runId, usage.get(), usagePersisted);
+                            if (finishRun(runId, "CANCELLED", null, "客户端取消", settled)) {
+                                publishFinished(appId, userId, runId, "CANCELLED");
+                            }
                         }
                     });
         });
     }
 
-    /** 收口台账终态。正常、异常、取消三条路都可能触发，只写一次。 */
-    private void finishRun(String runId, String status, String errorCode, String errorMessage,
-                           AtomicBoolean settled) {
-        if (!settled.compareAndSet(false, true)) {
+    /** 落审计并用数据库 CAS 决定这次事件是否有资格提示用户。 */
+    private boolean recordModelFallback(Long appId, String runId, AgentEvent event) {
+        try {
+            var route = new java.util.LinkedHashMap<String, Object>();
+            route.put("from", event.frame().path("fromRoute").asText("proxy"));
+            route.put("to", event.frame().path("toRoute").asText("direct"));
+            route.put("reason", event.frame().path("reason").asText("connect_error"));
+            route.put("at", event.ts());
+            String json = objectMapper.writeValueAsString(Map.of("modelRoute", route));
+            if (agentRunMapper.mergeUsageJson(Long.valueOf(runId), json) != 1) {
+                log.warn("模型路由审计未写入：runId={}", runId);
+                return false;
+            }
+            return appMapper.forceModelDirectIfNeeded(appId) == 1;
+        } catch (Exception e) {
+            log.error("记录模型自动降级失败：appId={}, runId={}", appId, runId, e);
+            return false;
+        }
+    }
+
+    /** run.completed 的 usage 在展示过滤前落库；所有终止路径最多执行一次。 */
+    private void persistUsageOnce(String runId, com.fasterxml.jackson.databind.JsonNode usage,
+                                  AtomicBoolean persisted) {
+        if (usage == null || !persisted.compareAndSet(false, true)) {
             return;
+        }
+        try {
+            agentRunMapper.mergeUsageJson(Long.valueOf(runId), objectMapper.writeValueAsString(usage));
+        } catch (Exception e) {
+            log.error("写入 agent_run usage 失败：runId={}", runId, e);
+        }
+    }
+
+    /** 收口台账终态。正常、异常、取消三条路都可能触发，只写一次。 */
+    /**
+     * 收尾终态。
+     *
+     * @return 本次调用是否真的完成了结算（CAS 抢到）。抢不到说明别的分支已经处理过，
+     *         此时不该再发完成事件，否则一轮会触发两次下游。
+     */
+    private boolean finishRun(String runId, String status, String errorCode, String errorMessage,
+                              AtomicBoolean settled) {
+        if (!settled.compareAndSet(false, true)) {
+            return false;
         }
         try {
             // runId 就是主键，按主键更新即可。默认忽略 null 字段，
@@ -168,6 +233,17 @@ public class AgentRunPersistence {
             agentRunMapper.update(update);
         } catch (Exception e) {
             log.error("更新 agent_run 终态失败：runId={}, status={}", runId, status, e);
+        }
+        return true;
+    }
+
+    /** 广播本轮结束。订阅方（如知识模块）据此决定要不要跟进。 */
+    private void publishFinished(Long appId, Long userId, String runId, String status) {
+        try {
+            eventPublisher.publishEvent(new AgentRunFinishedEvent(appId, userId, runId, status));
+        } catch (Exception e) {
+            // 订阅方出错不该影响生成结果本身
+            log.warn("发布 run 结束事件失败：runId={}, status={}", runId, status, e);
         }
     }
 

@@ -126,6 +126,12 @@ describe('mapAgentEvent · 收尾与错误', () => {
 })
 
 describe('mapAgentEvent · 未知事件', () => {
+  it('模型路由降级映射为一次性 warning 动作', () => {
+    expect(mapAgentEvent('model.route.fallback', {
+      fromRoute: 'proxy', toRoute: 'direct', reason: 'connect_error',
+    })).toEqual({ kind: 'model_route_fallback' })
+  })
+
   it('心跳与状态等事件被忽略而不是报错', () => {
     for (const name of ['heartbeat', 'status', 'todo.delta', 'artifact.changed', 'run.started']) {
       expect(mapAgentEvent(name, {}).kind).toBe('ignore')

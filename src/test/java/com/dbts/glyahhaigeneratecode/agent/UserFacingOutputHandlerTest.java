@@ -91,4 +91,19 @@ class UserFacingOutputHandlerTest {
         assertEquals(1, result.size());
         assertFalse(result.getFirst().frame().toString().contains("workspace"));
     }
+
+    @Test void fallbackOnlyForwardsFixedPublicFields() {
+        AgentEvent raw = event(AgentEvent.MODEL_ROUTE_FALLBACK, "ignored");
+        var frame = (com.fasterxml.jackson.databind.node.ObjectNode) raw.frame();
+        frame.put("fromRoute", "malicious").put("toRoute", "malicious")
+                .put("reason", "malicious").put("proxyUrl", "http://secret:1234");
+
+        AgentEvent safe = UserFacingOutputHandler.apply(Flux.just(raw)).blockFirst();
+
+        assertNotNull(safe);
+        assertEquals("proxy", safe.frame().path("fromRoute").asText());
+        assertEquals("direct", safe.frame().path("toRoute").asText());
+        assertEquals("connect_error", safe.frame().path("reason").asText());
+        assertFalse(safe.frame().has("proxyUrl"));
+    }
 }

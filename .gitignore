@@ -11,6 +11,7 @@ application-local.yml
 ### Local script secrets (DO NOT COMMIT) ###
 Platform-Utils/script/.env
 Platform-Utils/script/.env.local
+Platform-Utils/script/backup/
 
 ### Model GUI cache (browser profile, cookies) ###
 Platform-Utils/model/.cache/

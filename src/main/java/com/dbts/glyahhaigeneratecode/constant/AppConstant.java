@@ -30,6 +30,12 @@ public interface AppConstant {
     String CODE_DEPLOY_ROOT_DIR = System.getProperty("user.dir") + "/temp/code_deploy";
 
     /**
+     * 应用运行日志根目录。按 {@code {appId}/{runNo}/} 分层，
+     * 与产物目录分开 —— 日志会轮转删除，不能和源码混在一起。
+     */
+    String RUNTIME_LOG_ROOT_DIR = System.getProperty("user.dir") + "/temp/runtime_logs";
+
+    /**
      * 应用部署域名
      */
     String CODE_DEPLOY_HOST = "http://localhost";

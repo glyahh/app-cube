@@ -112,4 +112,16 @@ public class App implements Serializable {
     @Column("is_beta")
     private Integer isBeta;
 
+    /**
+     * 看板功能开关，JSON 数组文本，如 {@code ["metrics","logs"]}。
+     *
+     * <p>null 或空数组表示全不选 —— 新建应用的默认状态。
+     */
+    @Column("dashboard_features")
+    private String dashboardFeatures;
+
+    /** 首次成功降级后，该应用后续模型调用固定直连。 */
+    @Column("force_model_direct")
+    private Boolean forceModelDirect;
+
 }

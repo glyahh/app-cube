@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 def build_agent(*, settings, backend, checkpointer, store, task_kind: str, tools=None,
-                workspace=None, window: int = 0, overhead=None, compaction_out: list | None = None):
+                workspace=None, window: int = 0, overhead=None, compaction_out: list | None = None,
+                route_state=None):
     """按本轮任务类型装配一个可运行的 deep agent。
 
     `tools` 传本项目自带的工具（git_snapshot 等）。框架的
@@ -47,19 +48,18 @@ def build_agent(*, settings, backend, checkpointer, store, task_kind: str, tools
     from core.model import make_main_model, make_summarizer_model, model_connection_options
     from core.model_window import resolve_window
 
-    model = make_main_model(settings.model)
+    model = make_main_model(settings.model, route_state)
 
     # 窗口走动态解析（配置 > /models 探测 > 内置表 > 保守默认），不硬编码。
     # 所有压缩阈值都是它的函数，估错了整条链路会静默失效。
-    window_use_system_proxy, window_proxy_url = model_connection_options(
-        settings.model.base_url, settings.model
+    window_proxy_url = model_connection_options(
+        settings.model, "direct" if route_state and route_state.direct else "configured"
     )
     effective_window = window or resolve_window(
         settings.model.model_id,
         settings.model.base_url,
         settings.model.api_key,
         override=settings.model.context_window_override,
-        use_system_proxy=window_use_system_proxy,
         proxy_url=window_proxy_url,
     ).window
 
@@ -87,7 +87,7 @@ def build_agent(*, settings, backend, checkpointer, store, task_kind: str, tools
     compaction = CompactionMiddleware(
         window=effective_window,
         overhead=estimator,
-        summarize=make_summarizer(make_summarizer_model(settings.model)),
+        summarize=make_summarizer(make_summarizer_model(settings.model, route_state)),
     )
     if compaction_out is not None:
         # 把实例交回调用方，便于把压缩统计挂到终态事件上做观测

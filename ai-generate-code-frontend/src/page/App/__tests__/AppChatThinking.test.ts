@@ -13,12 +13,25 @@ vi.mock('ant-design-vue', async () => {
   return {
     message: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), success: vi.fn(), loading: vi.fn(() => vi.fn()), destroy: vi.fn() },
     Button: shell, Input: shell, Spin: shell, Empty: shell, Modal: shell,
-    Tooltip: shell, Alert: shell, Textarea: shell,
+    Tooltip: shell, Alert: shell, Textarea: shell, Checkbox: shell, CheckboxGroup: shell,
   }
 })
 vi.mock('@/components/loop/AppLoopInjectBar.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/components/CodeBlock.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/components/CollapsibleCodeBlock.vue', () => ({ default: { template: '<div />' } }))
+// shallowMount 会 stub 掉子组件，但父组件会调用它 defineExpose 的方法，stub 需要提供
+vi.mock('@/components/app/ProjectFilesModal.vue', () => ({
+  default: {
+    name: 'ProjectFilesModal',
+    template: '<div />',
+    methods: {
+      hasUnsavedChanges: () => false,
+      save: () => Promise.resolve(true),
+      discardDraft: () => {},
+      promptUnsavedChoice: () => {},
+    },
+  },
+}))
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { id: '1' }, query: {} }),
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -43,7 +56,25 @@ if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
 }
 
 const mountPage = () => shallowMount(AppChatView, {
-  global: { renderStubDefaultSlot: true, stubs: { ThinkingStage: false, ExecutionProcess: false, ExecutionTerminal: false } },
+  global: {
+    renderStubDefaultSlot: true,
+    stubs: {
+      ThinkingStage: false,
+      ExecutionProcess: false,
+      ExecutionTerminal: false,
+      // shallowMount 会把 ProjectFilesModal 替换成空 stub，defineExpose 的方法就没了，
+      // 而父组件在发送消息前会调用它们
+      ProjectFilesModal: {
+        template: '<div />',
+        methods: {
+          hasUnsavedChanges: () => false,
+          save: () => Promise.resolve(true),
+          discardDraft: () => {},
+          promptUnsavedChoice: () => {},
+        },
+      },
+    },
+  },
 })
 
 describe('AppChatView thinking pipeline', () => {
@@ -57,6 +88,24 @@ describe('AppChatView thinking pipeline', () => {
         thinkingSegments: JSON.stringify([{ thinkingId: 'run:1', summary: '构思星空校徽', details: ['采用环绕构图'], status: 'completed' }]) },
     ], totalRow: 2 } } })
     mocks.stream.mockReturnValue({ close: vi.fn(), transport: () => 'websocket' })
+  })
+
+  it('does not guess preview from legacy type and keeps starting runtime stoppable', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    const vm = wrapper.vm as unknown as {
+      workspace: unknown
+      previewUrl: string
+      runtimeStatus: unknown
+      runtimeActive: boolean
+      runtimeRunning: boolean
+    }
+    vm.workspace = null
+    expect(vm.previewUrl).toBe('')
+    vm.runtimeStatus = { status: 'STARTING', running: false }
+    expect(vm.runtimeActive).toBe(true)
+    expect(vm.runtimeRunning).toBe(false)
+    wrapper.unmount()
   })
 
   it('history defaults closed, ignores the old preference and keeps answers outside', async () => {

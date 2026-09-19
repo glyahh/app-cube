@@ -41,6 +41,8 @@ export interface AppearanceSettings {
   toolCardCollapsed: boolean
   previewExpanded: boolean
   smoothScroll: boolean
+  /** 聊天/预览左右分栏比例（0.15~0.85），左侧占比 */
+  splitRatio: number
 }
 
 /** 按分组索引的 key 列表，用于 resetSection */
@@ -48,7 +50,7 @@ export const SECTION_KEYS: Record<string, Array<keyof AppearanceSettings>> = {
   colors: ['colorMode', 'primaryColor'],
   fonts: ['fontSize', 'codeFontSize'],
   density: ['compactMode', 'reducedMotion'],
-  preferences: ['defaultCodeType', 'workflowEnabled', 'codeTheme', 'toolCardCollapsed', 'previewExpanded', 'smoothScroll'],
+  preferences: ['defaultCodeType', 'workflowEnabled', 'codeTheme', 'toolCardCollapsed', 'previewExpanded', 'smoothScroll', 'splitRatio'],
 }
 
 /** 默认值：对齐项目现有代码的初值 */
@@ -65,6 +67,7 @@ const DEFAULTS: AppearanceSettings = {
   toolCardCollapsed: true,
   previewExpanded: true,
   smoothScroll: true,
+  splitRatio: 0.5,
 }
 
 /** 从 localStorage 加载，缺失字段合并默认值 */

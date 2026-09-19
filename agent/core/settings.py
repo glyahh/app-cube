@@ -47,20 +47,16 @@ class ModelSettings:
     summarizer_model_id: str = ""
     summarizer_base_url: str = ""
     summarizer_api_key: str = ""
-    # 模型请求是否读取 HTTP_PROXY 等系统代理。默认 False。
-    # 注意：trust_env 不会绕过 Windows 路由或 TUN；它只控制 httpx 的显式代理配置。
-    use_system_proxy: bool = False
-    # 国内模型的专用本地代理入口。空值表示不启用该出口。
-    domestic_direct_enabled: bool = False
-    domestic_direct_hosts: tuple[str, ...] = ()
-    domestic_direct_proxy: str = ""
+    # 模型出口二选一：关闭时明确直连，开启时统一走指定入口。
+    proxy_enabled: bool = False
+    proxy_url: str = ""
 
 
 @dataclass(frozen=True)
 class Limits:
     """单次 run 的硬约束。超时由 Java 侧兜底，这里只做软约束和早停。"""
 
-    deadline_ms: int = 600_000
+    deadline_ms: int = 1_800_000
     max_model_calls: int = 60
     # 工具输出进入上下文前的单条预算（字符，非 token）
     tool_output_max_chars: int = 2_000
@@ -89,65 +85,24 @@ class Settings:
     postgres_dsn: str
 
 
-def parse_model_hosts(raw: str) -> tuple[str, ...]:
-    """解析精确匹配的模型主机名列表。"""
-    hosts: list[str] = []
-    for item in raw.split(","):
-        host = item.strip().lower().rstrip(".")
-        if not host:
-            continue
-        try:
-            parsed = urlparse(f"//{host}")
-            parsed_host = parsed.hostname
-        except ValueError as exc:
-            raise ValueError(
-                "AGENT_MODEL_DOMESTIC_DIRECT_HOSTS 只能填写逗号分隔的完整主机名"
-            ) from exc
-        if parsed_host != host or any(char in host for char in "/:*?#[\\]"):
-            raise ValueError(
-                "AGENT_MODEL_DOMESTIC_DIRECT_HOSTS 只能填写逗号分隔的完整主机名"
-            )
-        if host not in hosts:
-            hosts.append(host)
-    return tuple(hosts)
-
-
-def validate_domestic_direct_config(
-    enabled: bool, hosts: tuple[str, ...], proxy_url: str,
-) -> None:
-    """校验开启专用出口时必须具备的配置。"""
+def validate_proxy_config(enabled: bool, proxy_url: str) -> None:
+    """开启指定代理时必须提供合法的 http(s) URL。"""
     if not enabled:
         return
-    if not hosts:
-        raise ValueError(
-            "AGENT_MODEL_DOMESTIC_DIRECT_ENABLED=true 时必须配置 "
-            "AGENT_MODEL_DOMESTIC_DIRECT_HOSTS"
-        )
     try:
         parsed = urlparse(proxy_url)
         hostname = parsed.hostname
         parsed.port
     except ValueError as exc:
-        raise ValueError(
-            "AGENT_MODEL_DOMESTIC_DIRECT_PROXY 必须是带主机名的 http(s) URL"
-        ) from exc
+        raise ValueError("AGENT_MODEL_PROXY_URL 必须是带主机名的 http(s) URL") from exc
     if parsed.scheme not in {"http", "https"} or not hostname:
-        raise ValueError(
-            "AGENT_MODEL_DOMESTIC_DIRECT_PROXY 必须是带主机名的 http(s) URL"
-        )
+        raise ValueError("AGENT_MODEL_PROXY_URL 必须是带主机名的 http(s) URL")
 
 
 def load_settings() -> Settings:
-    domestic_direct_enabled = get_env_bool("AGENT_MODEL_DOMESTIC_DIRECT_ENABLED", False)
-    domestic_direct_hosts = (
-        parse_model_hosts(get_env("AGENT_MODEL_DOMESTIC_DIRECT_HOSTS", ""))
-        if domestic_direct_enabled
-        else ()
-    )
-    domestic_direct_proxy = get_env("AGENT_MODEL_DOMESTIC_DIRECT_PROXY", "").strip()
-    validate_domestic_direct_config(
-        domestic_direct_enabled, domestic_direct_hosts, domestic_direct_proxy
-    )
+    proxy_enabled = get_env_bool("AGENT_MODEL_PROXY_ENABLED", False)
+    proxy_url = get_env("AGENT_MODEL_PROXY_URL", "").strip()
+    validate_proxy_config(proxy_enabled, proxy_url)
 
     return Settings(
         model=ModelSettings(
@@ -160,13 +115,11 @@ def load_settings() -> Settings:
             summarizer_model_id=get_env("AGENT_SUMMARIZER_MODEL_ID"),
             summarizer_base_url=get_env("AGENT_SUMMARIZER_BASE_URL"),
             summarizer_api_key=get_env("AGENT_SUMMARIZER_API_KEY"),
-            use_system_proxy=get_env_bool("AGENT_MODEL_USE_SYSTEM_PROXY", False),
-            domestic_direct_enabled=domestic_direct_enabled,
-            domestic_direct_hosts=domestic_direct_hosts,
-            domestic_direct_proxy=domestic_direct_proxy,
+            proxy_enabled=proxy_enabled,
+            proxy_url=proxy_url,
         ),
         limits=Limits(
-            deadline_ms=int(get_env("AGENT_DEADLINE_MS", "600000")),
+            deadline_ms=int(get_env("AGENT_DEADLINE_MS", "1800000")),
             max_model_calls=int(get_env("AGENT_MAX_MODEL_CALLS", "60")),
         ),
         workspace=WorkspaceSettings(

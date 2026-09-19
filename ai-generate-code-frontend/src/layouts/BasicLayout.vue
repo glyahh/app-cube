@@ -55,4 +55,11 @@ import GlobalFooter from '@/components/GlobalFooter.vue'
     min-height: calc(100vh - 56px - 48px);
   }
 }
+/* 聊天工作台独占剩余视口，滚动留在面板内部。 */
+.basic-layout:has(.app-chat-page) { height:100dvh; min-height:0; overflow:hidden; }
+.basic-layout:has(.app-chat-page) .layout-header { flex-shrink:0; }
+.layout-content:has(.app-chat-page) { min-height:0; padding:12px 24px; margin-bottom:48px; overflow:hidden; }
+@media (max-width:768px) {
+  .layout-content:has(.app-chat-page) { padding:8px; }
+}
 </style>

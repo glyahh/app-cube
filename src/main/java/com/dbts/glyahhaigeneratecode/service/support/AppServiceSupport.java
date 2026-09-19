@@ -1,8 +1,13 @@
 package com.dbts.glyahhaigeneratecode.service.support;
 
 import cn.hutool.core.util.RandomUtil;
+import cn.hutool.crypto.digest.DigestUtil;
 import cn.hutool.core.util.StrUtil;
 import com.dbts.glyahhaigeneratecode.config.WorkspaceProperties;
+import com.dbts.glyahhaigeneratecode.config.RuntimeProperties;
+import com.dbts.glyahhaigeneratecode.knowledge.KnowledgeTaskService;
+import com.dbts.glyahhaigeneratecode.runtime.DockerCli;
+import com.dbts.glyahhaigeneratecode.runtime.RuntimeLogService;
 import com.dbts.glyahhaigeneratecode.exception.ErrorCode;
 import com.dbts.glyahhaigeneratecode.exception.MyException;
 import com.dbts.glyahhaigeneratecode.mapper.AppMapper;
@@ -34,6 +39,10 @@ public class AppServiceSupport {
     private final AppMapper appMapper;
     private final WorkspaceProperties workspaceProperties;
     private final WorkspacePathResolver workspacePathResolver;
+    private final DockerCli dockerCli;
+    private final RuntimeProperties runtimeProperties;
+    private final RuntimeLogService runtimeLogService;
+    private final KnowledgeTaskService knowledgeTaskService;
 
     /**
      * 解析应用声明的 codeGenType。
@@ -51,6 +60,40 @@ public class AppServiceSupport {
             }
         }
         return type;
+    }
+
+
+    /**
+     * 停止并删除应用残留的运行资源与知识痕迹。
+     *
+     * <p>删除应用时必须调它：
+     * <ul>
+     *   <li>运行容器不清理会继续占着端口，而用户已经没有入口去停它；</li>
+     *   <li>知识任务不取消会继续跑完，然后写回一堆属于已删除应用的数据。</li>
+     * </ul>
+     */
+    public void removeAppArtifacts(Long appId) {
+        if (appId == null) {
+            return;
+        }
+        try {
+            if (dockerCli.available()) {
+                dockerCli.run(List.of("rm", "-f", "glyahh-rt-" + appId), 60);
+            }
+        } catch (Exception e) {
+            // 容器清理失败不该阻断删除流程，留日志即可
+            log.warn("清理应用运行容器失败, appId={}", appId, e);
+        }
+        try {
+            runtimeLogService.removeAppLogs(appId);
+        } catch (Exception e) {
+            log.warn("清理应用运行日志失败, appId={}", appId, e);
+        }
+        try {
+            knowledgeTaskService.purgeApp(appId);
+        } catch (Exception e) {
+            log.warn("清理应用知识数据失败, appId={}", appId, e);
+        }
     }
 
 
@@ -99,10 +142,17 @@ public class AppServiceSupport {
     }
 
 
+    /** 平台写进工作区的运行时目录：沙箱启动脚本 {@code runner.sh} 就放在这里。 */
+    public static final String PLATFORM_DIR = ".glyahh";
+
+    /** agent 工具输出的溢写目录：属于执行过程的中间产物，不是用户的代码。 */
+    public static final String AGENT_SCRATCH_DIR = ".scratch";
+
+
     /** 需忽略的目录/文件名集合（与前端 SNAPSHOT_IGNORE_DIRS 保持一致） */
     private static final Set<String> IGNORE_DIRS = Set.of(
             "node_modules", ".git", "dist", "target", "temp", "build",
-            "coverage", ".idea", ".vscode"
+            "coverage", ".idea", ".vscode", PLATFORM_DIR, AGENT_SCRATCH_DIR
     );
 
 
@@ -228,6 +278,107 @@ public class AppServiceSupport {
             return false;
         }
         return Files.isRegularFile(sourceDir.resolve("index.html"));
+    }
+
+
+    /**
+     * 识别可直接用静态资源方式打开的入口文件。
+     *
+     * <p>不能只看扩展名是不是 .html：Vite 工程根目录的 index.html 是构建模板
+     * （引用 /src/main.ts），直接打开只会白屏，必须用构建产物 {@code dist/index.html}。
+     * 所以先看 dist，再判断根 index.html 是否属于「需要构建的工程」。
+     *
+     * @param projectRoot 产物目录
+     * @return 相对产物目录的入口路径；没有可用静态入口时返回 null
+     */
+    public String detectStaticEntry(Path projectRoot) {
+        if (projectRoot == null) {
+            return null;
+        }
+        Path distIndex = projectRoot.resolve("dist").resolve("index.html");
+        if (Files.isRegularFile(distIndex)) {
+            return "dist/index.html";
+        }
+        if (!Files.isRegularFile(projectRoot.resolve("index.html"))) {
+            return null;
+        }
+        // 有 package.json 说明这是需要安装依赖/构建的工程，根 index.html 只是源码模板
+        if (Files.isRegularFile(projectRoot.resolve("package.json"))) {
+            return null;
+        }
+        return "index.html";
+    }
+
+
+    /**
+     * 文件树里隐藏的条目名（小写比较）。
+     *
+     * <p>这里放的是**平台与工具自己写进工作区**的东西，不属于用户的代码：
+     * <ul>
+     *   <li>{@code .git} —— 版本控制内部目录，没有展示与编辑价值，且可能有几十万个文件；</li>
+     *   <li>{@code .glyahh} —— 运行沙箱的 {@code runner.sh}，由平台每次启动覆盖写入；</li>
+     *   <li>{@code .scratch} —— agent 工具输出的溢写目录。</li>
+     * </ul>
+     *
+     * <p>注意这与 {@link #IGNORE_DIRS} 不同 —— 那是「文件回显不展示」的清单，
+     * 而文件树要按计划把 node_modules / dist 这类大目录**显示出来但默认折叠**。
+     */
+    private static final Set<String> TREE_HIDDEN_NAMES =
+            Set.of(".git", PLATFORM_DIR, AGENT_SCRATCH_DIR);
+
+
+    /**
+     * 文件树里是否隐藏该条目。
+     *
+     * @param path 工作区下的某个条目
+     * @return 应隐藏返回 true
+     */
+    public boolean isHiddenFromTree(Path path) {
+        if (path == null || path.getFileName() == null) {
+            return true;
+        }
+        return TREE_HIDDEN_NAMES.contains(path.getFileName().toString().toLowerCase());
+    }
+
+
+    /**
+     * 相对路径里是否含有平台内部目录。
+     *
+     * <p>文件树是一层层展开的，看文件名就够；但读文件、下载拿到的是完整相对路径，
+     * 只看最后一段会漏掉 {@code .glyahh/runner.sh} 这种文件名正常的，所以逐段比。
+     *
+     * @param relativePath 工作区内的相对路径
+     * @return 命中平台内部目录返回 true
+     */
+    public boolean isPlatformInternalPath(String relativePath) {
+        if (relativePath == null || relativePath.isEmpty()) {
+            return false;
+        }
+        for (String part : relativePath.replace('\\', '/').split("/")) {
+            if (TREE_HIDDEN_NAMES.contains(part.toLowerCase())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+    /**
+     * 计算文件的内容版本标识，作为保存时的并发校验基准。
+     *
+     * <p>不用 lastModified：同一毫秒内连续两次写入会得到相同的时间戳，
+     * 「保存后立刻再保存」的校验会失效。内容摘要没有这个问题。
+     *
+     * @param file 文本文件
+     * @return 内容摘要的前 16 位十六进制
+     */
+    public String contentVersion(Path file) {
+        try {
+            return DigestUtil.sha256Hex(Files.readString(file)).substring(0, 16);
+        } catch (IOException e) {
+            log.warn("计算文件内容版本失败, path={}", file, e);
+            throw new MyException(ErrorCode.SYSTEM_ERROR, "读取文件内容失败");
+        }
     }
 
 

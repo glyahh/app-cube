@@ -1,0 +1,310 @@
+/* 取自 V6 原型，只作用于工作台与其设置，不改变聊天区主题。 */
+.cosmic-workbench,
+.cosmic-settings {
+  --wb-hover: #ffffff08;
+  --wb-bg: #09090b;
+  --wb-surface: #0f1013;
+  --wb-text: #f1f1f3;
+  --wb-muted: #8b8d96;
+  --wb-line: rgba(255, 255, 255, 0.085);
+  --wb-accent: #8f93ff;
+  color: var(--wb-text);
+  color-scheme: dark;
+  font:
+    13px/1.5 Inter,
+    ui-sans-serif,
+    system-ui,
+    'Segoe UI',
+    sans-serif;
+  letter-spacing: -0.01em;
+  background: var(--wb-bg);
+}
+.cosmic-workbench *,
+.cosmic-settings * {
+  box-sizing: border-box;
+}
+.cosmic-workbench button,
+.cosmic-workbench input,
+.cosmic-workbench textarea,
+.cosmic-settings button {
+  font: inherit;
+}
+.cosmic-workbench :is(button, input, textarea, select):focus-visible,
+.cosmic-settings :is(button, input):focus-visible {
+  outline: 2px solid var(--wb-accent);
+  outline-offset: 3px;
+}
+.cosmic-workbench button:disabled,
+.cosmic-settings button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.wb-eyebrow {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.13em;
+  color: var(--wb-muted);
+  text-transform: uppercase;
+}
+.wb-heading {
+  margin: 5px 0 7px;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.04em;
+  font-weight: 650;
+  color: var(--wb-text);
+}
+.wb-subline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--wb-muted);
+  font-size: 12px;
+}
+.wb-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wb-muted);
+  display: inline-block;
+  flex-shrink: 0;
+}
+.wb-dot.is-live {
+  background: #76b88a;
+  box-shadow: 0 0 0 3px #76b88a12;
+}
+.wb-actions {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.wb-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 11px;
+  border: 1px solid var(--wb-line);
+  border-radius: 9px;
+  background: var(--wb-hover);
+  color: var(--wb-text);
+  cursor: pointer;
+  transition:
+    background 0.16s,
+    border-color 0.16s;
+  white-space: nowrap;
+}
+.wb-button:hover:not(:disabled) {
+  background: var(--wb-hover);
+  border-color: var(--wb-line);
+  color: var(--wb-text);
+}
+.wb-button.is-primary {
+  color: #101014;
+  background: #e8e8ec;
+  border-color: #e8e8ec;
+  font-weight: 600;
+}
+.wb-button.is-primary:hover:not(:disabled) {
+  background: #fff;
+  color: #101014;
+}
+.wb-segments {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--wb-line);
+  border-radius: 10px;
+  background: var(--wb-hover);
+}
+.wb-segments button {
+  border: 0;
+  background: transparent;
+  color: var(--wb-muted);
+  padding: 6px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wb-segments button.is-active {
+  color: var(--wb-text);
+  background: var(--wb-hover);
+}
+.wb-empty {
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  min-height: 220px;
+  text-align: center;
+  padding: 28px;
+  color: var(--wb-muted);
+}
+.wb-empty strong {
+  font-size: 16px;
+  color: var(--wb-text);
+  font-weight: 500;
+}
+.wb-markdown {
+  color: var(--wb-text);
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+}
+.wb-markdown :is(h1, h2, h3, h4) {
+  color: var(--wb-text);
+  margin: 1.5em 0 0.65em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.wb-markdown :is(h1, h2):first-child {
+  margin-top: 0;
+}
+.wb-markdown h1 {
+  font-size: 23px;
+}
+.wb-markdown h2 {
+  font-size: 19px;
+}
+.wb-markdown h3 {
+  font-size: 15px;
+}
+.wb-markdown p {
+  margin: 0.7em 0;
+}
+.wb-markdown strong {
+  color: var(--wb-text);
+}
+.wb-markdown a {
+  color: var(--wb-accent);
+}
+.wb-markdown ul,
+.wb-markdown ol {
+  padding-left: 22px;
+}
+.wb-markdown code {
+  padding: 2px 5px;
+  background: var(--wb-hover);
+  border: 1px solid var(--wb-line);
+  border-radius: 5px;
+  font:
+    12px/1.6 Consolas,
+    monospace;
+  color: var(--wb-accent);
+}
+.wb-markdown pre {
+  overflow: auto;
+  padding: 14px;
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-line);
+  border-radius: 9px;
+}
+.wb-markdown pre code {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--wb-text);
+}
+.wb-markdown table {
+  display: block;
+  width: 100%;
+  overflow: auto;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.wb-markdown th,
+.wb-markdown td {
+  padding: 9px 12px;
+  border: 1px solid var(--wb-line);
+  text-align: left;
+}
+.wb-markdown th {
+  color: var(--wb-text);
+  background: var(--wb-hover);
+}
+.wb-markdown blockquote {
+  margin-left: 0;
+  padding-left: 14px;
+  border-left: 2px solid var(--wb-accent);
+  color: var(--wb-muted);
+}
+.cosmic-workbench {
+  scrollbar-color: #303139 transparent;
+  scrollbar-width: thin;
+}
+.cosmic-settings .ant-modal-content,
+.cosmic-settings .ant-modal-header {
+  background: var(--wb-surface);
+  color: var(--wb-text);
+}
+.cosmic-settings {
+  background: transparent;
+}
+.cosmic-settings .ant-modal-content {
+  border: 1px solid var(--wb-line);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px #0006;
+}
+.cosmic-settings .ant-modal-title,
+.cosmic-settings .ant-modal-close {
+  color: var(--wb-text);
+}
+.cosmic-settings .ant-modal-footer {
+  border-top: 1px solid var(--wb-line);
+  padding-top: 16px;
+}
+.cosmic-settings .ant-checkbox-group {
+  width: 100%;
+  display: grid;
+  gap: 9px;
+}
+.cosmic-settings .ant-checkbox-wrapper {
+  margin: 0;
+  width: 100%;
+  padding: 15px;
+  color: var(--wb-text);
+  border: 1px solid var(--wb-line);
+  border-radius: 10px;
+  background: var(--wb-hover);
+  align-items: flex-start;
+}
+.cosmic-settings .ant-checkbox-wrapper-checked {
+  border-color: #8f93ff66;
+  background: #8f93ff0c;
+}
+.cosmic-settings .ant-checkbox-inner {
+  background: var(--wb-surface);
+  border-color: var(--wb-muted);
+}
+.cosmic-settings .ant-checkbox-checked .ant-checkbox-inner {
+  background: #8f93ff;
+  border-color: #8f93ff;
+}
+.cosmic-settings .feature-caption {
+  display: block;
+  font-size: 12px;
+  color: var(--wb-muted);
+  margin-top: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cosmic-workbench *,
+  .cosmic-settings * {
+    transition: none !important;
+  }
+}
+
+:root:not([data-theme='dark']) :is(.cosmic-workbench, .cosmic-settings) {
+  --wb-bg: #fff;
+  --wb-surface: #f6f7f9;
+  --wb-text: #242733;
+  --wb-muted: #667085;
+  --wb-line: #e2e5eb;
+  --wb-accent: #6266cf;
+  --wb-hover: #10182808;
+  color-scheme: light;
+}
+
+.cosmic-workbench { --wb-warning: #d5b876; }
+:root:not([data-theme='dark']) .cosmic-workbench { --wb-warning: #946200; }
+.cosmic-workbench .kn-alert { color:var(--wb-warning); border-color:color-mix(in srgb, var(--wb-warning) 25%, transparent); }

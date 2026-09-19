@@ -96,6 +96,7 @@ export type AgentUiAction =
     }
   | { kind: 'error'; text: string }
   | { kind: 'done' }
+  | { kind: 'model_route_fallback' }
   | { kind: 'thinking_started'; thinkingId: string; summary: string; details: string; status: string }
   | { kind: 'thinking_delta'; thinkingId: string; summary: string; details: string; status: string }
   | { kind: 'thinking_completed'; thinkingId: string; summary: string; details: string; status: string }
@@ -161,6 +162,9 @@ export function mapAgentEvent(name: string, payload: Record<string, unknown>): A
     case 'run.completed':
       // 终态不在这里收尾 —— 由随后的 done 事件统一处理，避免重复刷新
       return { kind: 'ignore' }
+
+    case 'model.route.fallback':
+      return { kind: 'model_route_fallback' }
 
     case 'done':
       return { kind: 'done' }

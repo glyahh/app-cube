@@ -41,6 +41,12 @@ public class AppAddRequest implements Serializable {
      */
     private List<Long> loopIds;
 
+    /**
+     * 看板功能开关（{@code metrics} 监控 / {@code logs} 日志 / {@code knowledge} 知识图谱）。
+     * 不传或空列表表示全不选。
+     */
+    private List<String> dashboardFeatures;
+
     private static final long serialVersionUID = 1L;
 }
 

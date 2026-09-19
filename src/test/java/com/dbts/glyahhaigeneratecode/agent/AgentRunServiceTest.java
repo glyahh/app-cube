@@ -70,7 +70,8 @@ class AgentRunServiceTest {
         runtimeProps.setReadTimeout(Duration.ofSeconds(30));
 
         pool = new AgentWorkerPool(poolProps, runtimeProps);
-        service = new AgentRunService(pool, runtimeProps, mapper, new AppRunCoordinator());
+        service = new AgentRunService(pool, runtimeProps, mapper, new AppRunCoordinator(),
+                org.mockito.Mockito.mock(AgentRunPersistence.class));
     }
 
     @AfterEach

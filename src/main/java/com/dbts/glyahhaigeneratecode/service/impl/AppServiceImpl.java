@@ -3,17 +3,24 @@ package com.dbts.glyahhaigeneratecode.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
 import com.dbts.glyahhaigeneratecode.constant.AppConstant;
 import com.dbts.glyahhaigeneratecode.core.Builder.vueProjectBuilder;
 import com.dbts.glyahhaigeneratecode.exception.ErrorCode;
 import com.dbts.glyahhaigeneratecode.exception.MyException;
 import com.dbts.glyahhaigeneratecode.exception.ThrowUtils;
 import com.dbts.glyahhaigeneratecode.manage.OssManager;
+import com.dbts.glyahhaigeneratecode.utils.ContentTypeUtils;
 import com.dbts.glyahhaigeneratecode.constant.UserConstant;
 import com.dbts.glyahhaigeneratecode.model.DTO.AppAddRequest;
 import com.dbts.glyahhaigeneratecode.model.DTO.AppAdminUpdateRequest;
+import com.dbts.glyahhaigeneratecode.knowledge.DashboardFeaturesChangedEvent;
 import com.dbts.glyahhaigeneratecode.model.DTO.AppUpdateRequest;
+import com.dbts.glyahhaigeneratecode.model.DTO.DashboardFeaturesRequest;
+import com.dbts.glyahhaigeneratecode.model.DTO.ProjectFileSaveRequest;
+import com.dbts.glyahhaigeneratecode.model.VO.ProjectFileContentVO;
 import com.dbts.glyahhaigeneratecode.model.VO.ProjectFileVO;
+import com.dbts.glyahhaigeneratecode.model.VO.ProjectTreeEntryVO;
 import com.dbts.glyahhaigeneratecode.service.AppLoopService;
 import com.dbts.glyahhaigeneratecode.service.ChatHistoryService;
 import com.dbts.glyahhaigeneratecode.service.ProjectDownloadService;
@@ -29,6 +36,7 @@ import com.dbts.glyahhaigeneratecode.mapper.AppMapper;
 import com.dbts.glyahhaigeneratecode.model.DTO.AppQueryRequest;
 import com.dbts.glyahhaigeneratecode.model.Entity.User;
 import com.dbts.glyahhaigeneratecode.model.VO.AppVO;
+import com.dbts.glyahhaigeneratecode.model.VO.AppWorkspaceVO;
 import com.dbts.glyahhaigeneratecode.model.VO.UserVO;
 import com.dbts.glyahhaigeneratecode.model.enums.CodeGenTypeEnum;
 import com.dbts.glyahhaigeneratecode.service.AppService;
@@ -39,15 +47,22 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
+import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * 应用 服务层实现。
@@ -85,6 +100,22 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Resource
     private WorkspacePathResolver workspacePathResolver;
 
+    /**
+     * 删除应用时清运行痕迹。
+     *
+     * <p>放这里而不是 {@code AppServiceSupport}：那个类是构造器注入，
+     * 再添一个依赖会连带改掉它的构造签名和一堆测试；这里用 {@code @Resource}，加字段无痛。
+     */
+    @Resource
+    private com.dbts.glyahhaigeneratecode.runtime.RuntimeOrchestrator runtimeOrchestrator;
+
+    /** 看板功能变更后广播：知识模块据此为存量项目补生成知识。 */
+    @Resource
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
+    /** 合法的看板功能标识：监控 / 日志 / 知识图谱。 */
+    private static final Set<String> DASHBOARD_FEATURES = Set.of("metrics", "logs", "knowledge");
+
     @Override
     public long createApp (User loginUser, AppAddRequest appAddRequest) {
         App app = new App();
@@ -94,16 +125,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             app.setIsBeta(0);
         }
 
-        // 显式选择优先；Auto 模式不传类型时，根据需求文本选择最稳妥的生成模式。
-        CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(appAddRequest.getCodeGenType());
-        if (codeGenTypeEnum == null && StrUtil.isNotBlank(appAddRequest.getCodeGenType())) {
-            ThrowUtils.throwIf(true, ErrorCode.PARAMS_ERROR, "生成类型不合法");
-        }
-        if (codeGenTypeEnum == null) {
-            codeGenTypeEnum = autoRouteCodeGenType(appAddRequest.getInitPrompt());
-        }
-        ThrowUtils.throwIf(codeGenTypeEnum == null, ErrorCode.PARAMS_ERROR, "请指定生成类型");
-        app.setCodeGenType(codeGenTypeEnum.getValue());
+        // 新项目统一 AUTO：不再让用户预选类型，也不再按需求文本关键词猜。
+        // 请求里若带了 codeGenType 一律不采用（忽略旧格式约束），产物形态交给 agent 决定。
+        app.setCodeGenType(CodeGenTypeEnum.AUTO.getValue());
+        // 看板开关默认全不选；非法标识直接忽略，不因为这个拒绝整个创建请求
+        app.setDashboardFeatures(normalizeDashboardFeatures(appAddRequest.getDashboardFeatures()));
 
         //这里最好使用这个save,不要mapper中的insert,否则id会因为没有声明而被覆盖雪花算法的值,而且其他未声明的字段会报数据库不能非空
         boolean save = this.save(app);
@@ -115,21 +141,6 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         }
 
         return app.getId();
-    }
-
-    /**
-     * Auto 模式的轻量路由。规则优先保证简单需求落到 HTML，复杂交互再升级到 Vue。
-     * 不调用模型，避免创建应用时额外引入一次不稳定的网络请求。
-     */
-    private CodeGenTypeEnum autoRouteCodeGenType(String prompt) {
-        String text = StrUtil.nullToEmpty(prompt).toLowerCase();
-        if (text.matches(".*(vue|react|dashboard|后台|管理系统|登录|注册|购物车|状态管理|多页面|复杂交互|路由|router|组件).*")) {
-            return CodeGenTypeEnum.VUE;
-        }
-        if (text.matches(".*(多个文件|多文件|html、?css|html.*js|css.*js|分离.*样式|分离.*脚本|multi[_ -]?file).*")) {
-            return CodeGenTypeEnum.MULTI_FILE;
-        }
-        return CodeGenTypeEnum.HTML;
     }
 
     @Override
@@ -335,20 +346,23 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 两处一旦不同步，就会出现「生成写 A 目录、部署读 B 目录」，且不一定报错。
         Path sourceDirPath = workspacePathResolver.outputDir(appId, codeGenTypeEnum);
 
-        // 6. 校验路径下的文件是否存在
+        // 6. 校验路径下的文件是否存在。
+        // AUTO 的产物形态由工作区描述判定，不套旧类型「必须有 index.html」的约定。
         if (!Files.isDirectory(sourceDirPath)) {
             throw new MyException(ErrorCode.NOT_FOUND_ERROR, "应用代码产物目录不存在，请先生成代码再部署");
         }
-        Path indexPath = sourceDirPath.resolve("index.html");
-        if (!Files.isRegularFile(indexPath)) {
-            throw new MyException(ErrorCode.NOT_FOUND_ERROR, "应用代码产物缺少 index.html, 请删除再试~");
-        }
-        if (CodeGenTypeEnum.MULTI_FILE.equals(codeGenTypeEnum)) {
-            if (!Files.isRegularFile(sourceDirPath.resolve("style.css"))) {
-                throw new MyException(ErrorCode.NOT_FOUND_ERROR, "应用代码产物缺少 style.css, 请删除再试~");
+        if (codeGenTypeEnum != CodeGenTypeEnum.AUTO) {
+            Path indexPath = sourceDirPath.resolve("index.html");
+            if (!Files.isRegularFile(indexPath)) {
+                throw new MyException(ErrorCode.NOT_FOUND_ERROR, "应用代码产物缺少 index.html, 请删除再试~");
             }
-            if (!Files.isRegularFile(sourceDirPath.resolve("script.js"))) {
-                throw new MyException(ErrorCode.NOT_FOUND_ERROR, "应用代码产物缺少 script.js, 请删除再试~");
+            if (CodeGenTypeEnum.MULTI_FILE.equals(codeGenTypeEnum)) {
+                if (!Files.isRegularFile(sourceDirPath.resolve("style.css"))) {
+                    throw new MyException(ErrorCode.NOT_FOUND_ERROR, "应用代码产物缺少 style.css, 请删除再试~");
+                }
+                if (!Files.isRegularFile(sourceDirPath.resolve("script.js"))) {
+                    throw new MyException(ErrorCode.NOT_FOUND_ERROR, "应用代码产物缺少 script.js, 请删除再试~");
+                }
             }
         }
 
@@ -359,8 +373,17 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         }
 
 
-        // 7. Vue 项目特殊处理：执行npm构建
-        if (codeGenTypeEnum == CodeGenTypeEnum.VUE) {
+        // 7. 按类型决定发布哪一层产物
+        if (codeGenTypeEnum == CodeGenTypeEnum.AUTO) {
+            String staticEntry = appServiceSupport.detectStaticEntry(sourceDirPath);
+            ThrowUtils.throwIf(staticEntry == null, ErrorCode.OPERATION_ERROR,
+                    "当前项目不是纯静态页面（需要安装依赖或常驻服务），暂不支持发布");
+            // 入口在 dist 下时只发布 dist，否则会把源码和依赖一起发出去
+            if (staticEntry.startsWith("dist/")) {
+                sourceDir = sourceDirPath.resolve("dist").toFile();
+            }
+            log.info("AUTO 项目发布静态入口: {} ({})", staticEntry, sourceDirPath);
+        } else if (codeGenTypeEnum == CodeGenTypeEnum.VUE) {
             // Vue 项目需要构建
             boolean buildSuccess = vueProjectBuilder.buildProject(String.valueOf(sourceDirPath));
             ThrowUtils.throwIf(!buildSuccess, ErrorCode.SYSTEM_ERROR, "Vue 项目构建失败，请检查代码和依赖");
@@ -494,6 +517,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         ThrowUtils.throwIf(!loginUser.getId().equals(app.getUserId()) && !loginUser.getUserRole().equals(UserConstant.ADMIN_ROLE), ErrorCode.NO_AUTH_ERROR, "只能修改自己的应用");
 
         app.setAppName(appUpdateRequest.getAppName());
+        app.setEditTime(LocalDateTime.now());
         app.setUpdateTime(LocalDateTime.now());
         boolean result = this.updateById(app);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "更新应用失败");
@@ -518,6 +542,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             log.warn("删除应用对话历史失败, appId={}", appId, e);
         }
         // 清理 code_output 下该应用产物目录
+        // 运行容器与知识任务要在产物目录之前清：容器挂载着那个目录
+        appServiceSupport.removeAppArtifacts(appId);
+        // 容器删完再清台账与内存计数 —— 顺序反了会把还在跑的容器的指标清掉
+        runtimeOrchestrator.purgeApp(appId);
         appServiceSupport.removeCodeOutputDirByAppId(appId);
         return true;
     }
@@ -599,6 +627,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             log.warn("管理员删除应用对话历史失败, appId={}", appId, e);
         }
         // 清理 code_output 下该应用产物目录
+        // 运行容器与知识任务要在产物目录之前清：容器挂载着那个目录
+        appServiceSupport.removeAppArtifacts(appId);
+        // 容器删完再清台账与内存计数 —— 顺序反了会把还在跑的容器的指标清掉
+        runtimeOrchestrator.purgeApp(appId);
         appServiceSupport.removeCodeOutputDirByAppId(appId);
         return true;
     }
@@ -613,6 +645,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
         if (StrUtil.isNotBlank(appAdminUpdateRequest.getAppName())) {
             app.setAppName(appAdminUpdateRequest.getAppName());
+            app.setEditTime(LocalDateTime.now());
         }
         if (StrUtil.isNotBlank(appAdminUpdateRequest.getCover())) {
             app.setCover(appAdminUpdateRequest.getCover());
@@ -679,17 +712,28 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
      * 会出现「生成写 A 目录、读取读 B 目录」而不一定报错的错位。
      */
     private Path resolveOutputDir(App app) {
+        CodeGenTypeEnum type = resolveTypeOrNull(app);
+        ThrowUtils.throwIf(type == null, ErrorCode.PARAMS_ERROR, "应用配置的 codeGenType 无效");
+        return workspacePathResolver.outputDir(app.getId(), type);
+    }
+
+    /**
+     * 解析应用的 codeGenType，无法识别时返回 null 而不抛错。
+     *
+     * <p>给需要「降级成描述」的调用方用：工作区描述拿不到类型时应说明原因，
+     * 而不是把 500 抛给前端。
+     */
+    private CodeGenTypeEnum resolveTypeOrNull(App app) {
         String codeGenType = app.getCodeGenType();
         CodeGenTypeEnum type = CodeGenTypeEnum.getEnumByValue(codeGenType);
         if (type == null && StrUtil.isNotBlank(codeGenType)) {
             try {
                 type = CodeGenTypeEnum.valueOf(codeGenType);
             } catch (IllegalArgumentException ignored) {
-                // 落到下面的统一校验里报错
+                // 交由调用方决定是报错还是降级
             }
         }
-        ThrowUtils.throwIf(type == null, ErrorCode.PARAMS_ERROR, "应用配置的 codeGenType 无效");
-        return workspacePathResolver.outputDir(app.getId(), type);
+        return type;
     }
 
     @Override
@@ -712,6 +756,352 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
         // 遍历目录收集文本代码文件
         return appServiceSupport.collectProjectFiles(projectRoot);
+    }
+
+    @Override
+    public AppWorkspaceVO getWorkspace(User loginUser, Long appId) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
+
+        App app = this.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        ThrowUtils.throwIf(!loginUser.getId().equals(app.getUserId())
+                        && !UserConstant.ADMIN_ROLE.equals(loginUser.getUserRole()),
+                ErrorCode.NO_AUTH_ERROR, "只能查看自己的应用");
+
+        AppWorkspaceVO vo = new AppWorkspaceVO();
+        vo.setAppId(appId);
+        vo.setCodeGenType(app.getCodeGenType());
+        vo.setDashboardFeatures(parseDashboardFeatures(app.getDashboardFeatures()));
+
+        // 类型无法识别时这里不抛错：描述不出来本身就是要给用户看的信息
+        CodeGenTypeEnum type = resolveTypeOrNull(app);
+        if (type == null) {
+            vo.setHasSource(false);
+            vo.setCapabilities(Collections.emptyList());
+            vo.setUnsupportedReason("应用记录的生成类型无法识别，无法定位工作区");
+            return vo;
+        }
+        vo.setWorkspaceDirName(workspacePathResolver.dirName(appId, type));
+
+        Path projectRoot = workspacePathResolver.outputDir(appId, type);
+        if (!Files.isDirectory(projectRoot)) {
+            vo.setHasSource(false);
+            vo.setCapabilities(Collections.emptyList());
+            vo.setUnsupportedReason("工作区尚未生成");
+            return vo;
+        }
+        vo.setHasSource(true);
+
+        String staticEntry = appServiceSupport.detectStaticEntry(projectRoot);
+        vo.setStaticEntry(staticEntry);
+        if (staticEntry == null) {
+            vo.setCapabilities(Collections.emptyList());
+            vo.setUnsupportedReason("未找到可直接打开的静态入口，源码需要安装依赖或构建后才能预览");
+        } else {
+            vo.setCapabilities(List.of("preview"));
+        }
+        return vo;
+    }
+
+    @Override
+    public AppWorkspaceVO updateDashboardFeatures(User loginUser, Long appId, DashboardFeaturesRequest request) {
+        ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "看板设置请求为空");
+
+        App app = requireOwnedApp(loginUser, appId);
+        boolean hadKnowledge = hasDashboardFeature(app.getDashboardFeatures(), "knowledge");
+
+        // 这里必须用 UpdateChain：updateById 会跳过 null 字段，
+        // 「全部关闭」（写 null）会退化成「不改动」，用户关不掉已经开着的功能。
+        boolean updated = UpdateChain.create(this.getMapper())
+                .set("dashboardFeatures", normalizeDashboardFeatures(request.getFeatures()))
+                .set("updateTime", LocalDateTime.now())
+                .eq("id", appId)
+                .update();
+        ThrowUtils.throwIf(!updated, ErrorCode.OPERATION_ERROR, "保存看板设置失败");
+
+        AppWorkspaceVO workspace = getWorkspace(loginUser, appId);
+
+        // 只有「本来是关的、这次打开了」才通知：关闭再打开、或本来就开着，都不该触发补生成。
+        // 存量项目第一次启用时，Plan 要求针对最近一次完成的源码版本先补一份知识。
+        boolean hasKnowledge = workspace.getDashboardFeatures() != null
+                && workspace.getDashboardFeatures().contains("knowledge");
+        if (!hadKnowledge && hasKnowledge) {
+            eventPublisher.publishEvent(new DashboardFeaturesChangedEvent(
+                    appId, loginUser.getId(), workspace.getDashboardFeatures(), true));
+        }
+        return workspace;
+    }
+
+    /** 判断功能集合里是否包含某项。存的是 JSON 数组文本，这里只做包含判断。 */
+    private static boolean hasDashboardFeature(String raw, String feature) {
+        return raw != null && raw.contains(feature);
+    }
+
+    @Override
+    public Path resolveWorkspaceDir(User loginUser, Long appId) {
+        App app = requireOwnedApp(loginUser, appId);
+        return resolveOutputDir(app);
+    }
+
+    /** 过滤出合法的看板功能标识并序列化；全不选时返回 null（库里「未配置」的语义）。 */
+    private static String normalizeDashboardFeatures(List<String> input) {        if (input == null || input.isEmpty()) {
+            return null;
+        }
+        List<String> valid = input.stream().distinct().filter(DASHBOARD_FEATURES::contains).toList();
+        return valid.isEmpty() ? null : JSONUtil.toJsonStr(valid);
+    }
+
+    /**
+     * 解析库里的看板开关。
+     *
+     * <p>这里刻意吞掉解析异常：某一行的脏数据不该让整个工作区描述接口返回 500，
+     * 降级成「全不选」用户还能继续操作。
+     */
+    private List<String> parseDashboardFeatures(String raw) {
+        if (StrUtil.isBlank(raw)) {
+            return Collections.emptyList();
+        }
+        try {
+            return JSONUtil.toList(raw, String.class).stream()
+                    .filter(DASHBOARD_FEATURES::contains)
+                    .toList();
+        } catch (Exception e) {
+            log.warn("解析 dashboard_features 失败, raw={}", raw, e);
+            return Collections.emptyList();
+        }
+    }
+
+    @Override
+    public List<ProjectTreeEntryVO> listProjectTree(User loginUser, Long appId, String relativePath) {
+        App app = requireOwnedApp(loginUser, appId);
+        ThrowUtils.throwIf(appServiceSupport.isPlatformInternalPath(relativePath),
+                ErrorCode.PARAMS_ERROR, "该目录不开放浏览");
+        Path target = resolveWithinWorkspace(app, relativePath);
+        if (!Files.isDirectory(target)) {
+            // 工作区还没生成时根目录本来就不存在 —— 那是「还没有内容」，不是「路径写错了」。
+            // 与 getWorkspace 的降级语义保持一致，返回空列表而不是报错。
+            if (target.equals(resolveOutputDir(app))) {
+                return Collections.emptyList();
+            }
+            throw new MyException(ErrorCode.NOT_FOUND_ERROR, "目录不存在");
+        }
+
+        // 单层列举：文件树按需展开，不能像 collectProjectFiles 那样递归读全文
+        Path root = resolveOutputDir(app);
+        List<ProjectTreeEntryVO> entries = new ArrayList<>();
+        try (Stream<Path> children = Files.list(target)) {
+            children.filter(child -> !appServiceSupport.isHiddenFromTree(child))
+                    .forEach(child -> entries.add(toTreeEntry(child, root)));
+        } catch (IOException e) {
+            throw new MyException(ErrorCode.SYSTEM_ERROR, "读取目录失败");
+        }
+
+        // 目录在前、文件在后，同类按名称 —— 与常见文件树一致
+        entries.sort(Comparator
+                .comparing((ProjectTreeEntryVO entry) -> !"dir".equals(entry.getType()))
+                .thenComparing(ProjectTreeEntryVO::getName, String.CASE_INSENSITIVE_ORDER));
+        return entries;
+    }
+
+    @Override
+    public ProjectFileContentVO getProjectFileContent(User loginUser, Long appId, String relativePath) {
+        App app = requireOwnedApp(loginUser, appId);
+        ThrowUtils.throwIf(appServiceSupport.isPlatformInternalPath(relativePath),
+                ErrorCode.PARAMS_ERROR, "该文件不开放浏览");
+        Path file = resolveWithinWorkspace(app, relativePath);
+        ThrowUtils.throwIf(!Files.isRegularFile(file), ErrorCode.NOT_FOUND_ERROR, "文件不存在");
+
+        ProjectFileContentVO vo = new ProjectFileContentVO();
+        vo.setPath(relativeWorkspacePath(app, file));
+        vo.setUpdatedAt(lastModifiedMillis(file));
+        vo.setSize(fileSize(file));
+
+        boolean isText = appServiceSupport.isTextCodeFile(file);
+        vo.setIsText(isText);
+        if (!isText) {
+            // 二进制文件不返回内容：由前端展示基本信息并提供下载
+            return vo;
+        }
+        try {
+            vo.setContent(Files.readString(file));
+        } catch (IOException e) {
+            // 扩展名在白名单里、内容却不是 UTF-8：降级为不可编辑，而不是把 500 抛给前端
+            vo.setIsText(false);
+            return vo;
+        }
+        vo.setLanguage(appServiceSupport.inferLanguage(vo.getPath()));
+        vo.setVersion(appServiceSupport.contentVersion(file));
+        return vo;
+    }
+
+    @Override
+    public ProjectFileContentVO saveProjectFile(User loginUser, Long appId, ProjectFileSaveRequest request) {
+        ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "保存请求为空");
+        ThrowUtils.throwIf(StrUtil.isBlank(request.getPath()), ErrorCode.PARAMS_ERROR, "文件路径不能为空");
+        ThrowUtils.throwIf(request.getContent() == null, ErrorCode.PARAMS_ERROR, "文件内容不能为空");
+
+        App app = requireOwnedApp(loginUser, appId);
+        Path file = resolveWithinWorkspace(app, request.getPath());
+        ThrowUtils.throwIf(!Files.isRegularFile(file), ErrorCode.NOT_FOUND_ERROR, "文件不存在");
+        ThrowUtils.throwIf(!appServiceSupport.isTextCodeFile(file), ErrorCode.PARAMS_ERROR, "只能保存文本文件");
+
+        // 版本必填：以前省略 baseVersion 就等于把校验整个关掉，
+        // 两个窗口同时保存时后写的会静默盖掉先写的，用户看不到任何冲突提示。
+        ThrowUtils.throwIf(StrUtil.isBlank(request.getBaseVersion()),
+                ErrorCode.PARAMS_ERROR, "缺少文件版本，请重新读取后再保存");
+
+        // 校验与写入必须在同一把锁里完成。
+        // 光让版本必填还不够：两个请求可以先后读到同一个版本、各自都通过校验，
+        // 然后一前一后写下去，后写的静默覆盖先写的（实测 12 并发仍有 2 个成功）。
+        synchronized (saveLockFor(file)) {
+            String currentVersion = appServiceSupport.contentVersion(file);
+            if (!currentVersion.equals(request.getBaseVersion())) {
+                throw new MyException(ErrorCode.CONFLICT_ERROR, "文件已被修改，请重新读取后再保存");
+            }
+            try {
+                Files.writeString(file, request.getContent());
+            } catch (IOException e) {
+                throw new MyException(ErrorCode.SYSTEM_ERROR, "写入文件失败");
+            }
+        }
+        return getProjectFileContent(loginUser, appId, request.getPath());
+    }
+
+    @Override
+    public void downloadProjectFile(User loginUser, Long appId, String relativePath, HttpServletResponse response) {
+        App app = requireOwnedApp(loginUser, appId);
+        ThrowUtils.throwIf(appServiceSupport.isPlatformInternalPath(relativePath),
+                ErrorCode.PARAMS_ERROR, "该文件不开放下载");
+        Path file = resolveWithinWorkspace(app, relativePath);
+        ThrowUtils.throwIf(!Files.isRegularFile(file), ErrorCode.NOT_FOUND_ERROR, "文件不存在");
+
+        String fileName = file.getFileName().toString();
+        // URLEncoder 是给表单编码用的，空格会变成 +，下载下来文件名就成了 with+space.js。
+        // 按 RFC 5987 给两份：filename 用 %20 的降级写法，filename* 给认 UTF-8 的浏览器。
+        String encoded = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
+        response.setContentType(ContentTypeUtils.fromFileName(fileName));
+        response.setHeader("Content-Disposition",
+                "attachment;filename=\"" + encoded + "\";filename*=UTF-8''" + encoded);
+        try {
+            Files.copy(file, response.getOutputStream());
+            response.flushBuffer();
+        } catch (IOException e) {
+            throw new MyException(ErrorCode.SYSTEM_ERROR, "下载文件失败");
+        }
+    }
+
+    /** 保存锁的条带数，理由见 {@link #saveLockFor}。 */
+    private static final int SAVE_LOCK_STRIPES = 64;
+
+    private static final Object[] SAVE_LOCKS = createSaveLocks();
+
+    private static Object[] createSaveLocks() {
+        Object[] locks = new Object[SAVE_LOCK_STRIPES];
+        for (int i = 0; i < locks.length; i++) {
+            locks[i] = new Object();
+        }
+        return locks;
+    }
+
+    /**
+     * 取某个文件的保存锁。
+     *
+     * <p>用固定条带而不是 {@code Map<Path, Lock>}：后者要么随保存过的文件无限增长，
+     * 要么在清理时引入新的竞态。条带锁的代价是极少数无关文件会互相等一等，
+     * 对保存这种低频操作无所谓。
+     *
+     * <p>这是<b>进程内</b>锁，够单实例部署用。多实例时要换成文件锁或分布式锁，
+     * 否则同一个文件仍会被两个 JVM 同时写。
+     */
+    private static Object saveLockFor(Path file) {
+        int idx = Math.floorMod(
+                file.toAbsolutePath().normalize().toString().hashCode(), SAVE_LOCK_STRIPES);
+        return SAVE_LOCKS[idx];
+    }
+
+    /**
+     * 取应用并校验归属（本人或管理员）。
+     *
+     * <p>只给新增的文件类接口用。既有的 getProjectFiles / getWorkspace 里各有一份同类校验，
+     * 这里没有一并合并 —— 那两处的文案已被前端依赖，为消除重复去动它们不划算。
+     */
+    private App requireOwnedApp(User loginUser, Long appId) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
+        App app = this.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        ThrowUtils.throwIf(!loginUser.getId().equals(app.getUserId())
+                        && !UserConstant.ADMIN_ROLE.equals(loginUser.getUserRole()),
+                ErrorCode.NO_AUTH_ERROR, "只能操作自己的应用");
+        return app;
+    }
+
+    /**
+     * 把工作区内的相对路径解析成绝对路径。
+     *
+     * <p>走 {@link WorkspacePathResolver#resolveOutputResource} 而不是自己拼字符串：
+     * 那里用 {@code Path.startsWith} 做越界校验，能挡住 {@code ../} 与绝对路径注入。
+     */
+    private Path resolveWithinWorkspace(App app, String relativePath) {
+        CodeGenTypeEnum type = resolveTypeOrNull(app);
+        ThrowUtils.throwIf(type == null, ErrorCode.PARAMS_ERROR, "应用配置的 codeGenType 无效");
+        String dirName = workspacePathResolver.dirName(app.getId(), type);
+        String sub = StrUtil.isBlank(relativePath) ? "/" : relativePath;
+        Path resolved = workspacePathResolver.resolveOutputResource(dirName, sub);
+
+        // 归一化只挡得住 `..` 这种字面量逃逸。工作区要是被放了指向外部的
+        // 符号链接或目录联接（Windows junction），解析出来的路径仍然在应用目录下，
+        // 但拿它去读写会走到链接指向的地方 —— 所以要按**真实路径**再校一次。
+        //
+        // toRealPath 要求路径存在，所以只在存在时校验：不存在时本来就什么也读不到，
+        // 写路径也会先撞上 isRegularFile 检查。
+        try {
+            if (Files.exists(resolved)) {
+                Path appRoot = workspacePathResolver.outputDir(app.getId(), type);
+                if (!resolved.toRealPath().startsWith(appRoot.toRealPath())) {
+                    throw new MyException(ErrorCode.PARAMS_ERROR, "路径越界");
+                }
+            }
+        } catch (IOException e) {
+            throw new MyException(ErrorCode.SYSTEM_ERROR, "解析路径失败");
+        }
+        return resolved;
+    }
+
+    /** 工作区内的相对路径，统一用 {@code /} 分隔。 */
+    private String relativeWorkspacePath(App app, Path file) {
+        Path root = resolveOutputDir(app);
+        return root.relativize(file).toString().replace('\\', '/');
+    }
+
+    private ProjectTreeEntryVO toTreeEntry(Path child, Path root) {
+        ProjectTreeEntryVO entry = new ProjectTreeEntryVO();
+        entry.setName(child.getFileName().toString());
+        entry.setPath(root.relativize(child).toString().replace('\\', '/'));
+        entry.setUpdatedAt(lastModifiedMillis(child));
+
+        boolean isDir = Files.isDirectory(child);
+        entry.setType(isDir ? "dir" : "file");
+        if (!isDir) {
+            entry.setSize(fileSize(child));
+            entry.setIsText(appServiceSupport.isTextCodeFile(child));
+        }
+        return entry;
+    }
+
+    private static Long fileSize(Path file) {
+        try {
+            return Files.size(file);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private static Long lastModifiedMillis(Path file) {
+        try {
+            return Files.getLastModifiedTime(file).toMillis();
+        } catch (IOException e) {
+            return null;
+        }
     }
 
 }

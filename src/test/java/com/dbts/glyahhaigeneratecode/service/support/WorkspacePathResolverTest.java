@@ -38,12 +38,14 @@ class WorkspacePathResolverTest {
     }
 
     @Test
-    @DisplayName("目录名：VUE 走 vue_project_ 前缀，其余用枚举 value")
+    @DisplayName("目录名：VUE 走 vue_project_、AUTO 走 project_ 前缀，其余用枚举 value")
     void dirNameUsesCorrectPrefix() {
         assertEquals("html_123", resolver.dirName(123L, CodeGenTypeEnum.HTML));
         assertEquals("multi_file_123", resolver.dirName(123L, CodeGenTypeEnum.MULTI_FILE));
         // VUE 的产物目录一直是 vue_project_，与枚举 value("vue") 不一致，是历史约定
         assertEquals("vue_project_123", resolver.dirName(123L, CodeGenTypeEnum.VUE));
+        // AUTO 的目录名与语言无关，不再编码「是哪一种生成模式」
+        assertEquals("project_123", resolver.dirName(123L, CodeGenTypeEnum.AUTO));
     }
 
     @Test

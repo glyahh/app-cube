@@ -23,7 +23,6 @@ import {
   appOpenApiDeleteUsingPost,
 } from '@/api/appController'
 import { UserLoginStore } from '@/stores/UserLogin'
-import { CodeGenTypeEnum } from '@/utils/CodeGenTypeEnum'
 import { normalizeDeployUrl } from '@/utils/deployUrl'
 import AppGenPipelineBadge from '@/components/app/AppGenPipelineBadge.vue'
 import { isAppWorkflowBetaFromApp, syncGenModeStorageForApp } from '@/utils/appGenPipeline'
@@ -36,14 +35,7 @@ const userLoginStore = UserLoginStore()
 const prompt = ref('')
 const creating = ref(false)
 
-const codeTypePickerOpen = ref(false)
 const appearanceStore = useAppearanceStore()
-const selectedCodeType = ref<string>(
-  appearanceStore.defaultCodeType === 'auto'
-    ? CodeGenTypeEnum.MULTI_FILE
-    : appearanceStore.defaultCodeType as string,
-)
-const autoCodeTypeEnabled = ref(appearanceStore.defaultCodeType === 'auto')
 const workflowBetaEnabled = ref(appearanceStore.workflowEnabled)
 const workflowBetaTooltip = '该功能处于测试状态，可能不稳定'
 
@@ -73,38 +65,6 @@ function handleWorkflowToggle() {
   workflowBetaEnabled.value = !workflowBetaEnabled.value
 }
 const workflowAdvantageTips = ['逻辑更严谨', '图片更贴切', '代码质量检测']
-
-const CODE_TYPE_CHOICES: Array<{
-  label: string
-  value: CodeGenTypeEnum
-  tip: string
-  accent: 'html' | 'multi_file' | 'vue_project'
-}> = [
-  {
-    label: 'HTML',
-    value: CodeGenTypeEnum.HTML,
-    tip: '适合：单文件静态页面、简单落地页、无需构建流程的轻量作品',
-    accent: 'html',
-  },
-  {
-    label: '多文件',
-    value: CodeGenTypeEnum.MULTI_FILE,
-    tip: '适合：需要清晰目录结构的原生 HTML/CSS/JS 多文件项目（多个页面/模块化交互）',
-    accent: 'multi_file',
-  },
-  {
-    label: 'Vue',
-    value: CodeGenTypeEnum.VUE_PROJECT,
-    tip: '适合：SPA/组件化/路由与状态管理的项目（需要更丰富页面结构）',
-    accent: 'vue_project',
-  },
-]
-
-const selectedCodeTypeLabel = computed(
-  () => (autoCodeTypeEnabled.value
-    ? 'Auto'
-    : CODE_TYPE_CHOICES.find((x) => x.value === selectedCodeType.value)?.label ?? '多文件'),
-)
 
 const deployModalVisible = ref(false)
 const deployUrl = ref('')
@@ -301,7 +261,6 @@ async function handleCreateApp() {
       body: {
         appName: buildAppNameFromPrompt(content),
         initPrompt: content,
-        codeGenType: autoCodeTypeEnabled.value ? undefined : selectedCodeType.value,
         isBeta: workflowBetaEnabled.value ? 1 : 0,
         // TODO: openapi2ts 生成后移除 as any，loopIds 字段由后端 AppAddRequest 提供
         loopIds: selectedLoopId.value ? [selectedLoopId.value] : undefined,
@@ -314,8 +273,6 @@ async function handleCreateApp() {
       const query: Record<string, string> = {
         autoSend: 'true',
         genMode: workflowBetaEnabled.value ? 'workflow' : 'legacy',
-        // 兼容参数：当前约束由后端按 app.codeGenType 控制
-        codeTypeChoice: selectedCodeTypeLabel.value,
       }
       // 如果勾选了 Loop，传递 loopId 到聊天页
       if (selectedLoopId.value) {
@@ -341,25 +298,6 @@ function handleQuickPrompt(item: { label: string; value: string }) {
   if (creating.value) return
   // 只填充文案，不直接创建应用，交由用户点击“开始生成”
   prompt.value = item.value
-}
-
-function toggleCodeTypePicker() {
-  if (creating.value) return
-  codeTypePickerOpen.value = !codeTypePickerOpen.value
-}
-
-function selectCodeType(value: CodeGenTypeEnum) {
-  if (creating.value) return
-  selectedCodeType.value = value
-  autoCodeTypeEnabled.value = false
-  codeTypePickerOpen.value = false
-}
-
-function handleAutoSelectCodeType() {
-  if (creating.value) return
-  autoCodeTypeEnabled.value = true
-  codeTypePickerOpen.value = false
-  message.success('已切换为 Auto，将自动选择代码类型')
 }
 
 /** 将关键字解析为 id 或 appName 查询参数 */
@@ -681,49 +619,6 @@ onMounted(() => {
                     </span>
                   </button>
                 </ATooltip>
-                <div class="code-type-picker-wrap">
-                  <button
-                    type="button"
-                    class="code-type-picker-btn"
-                    :aria-expanded="codeTypePickerOpen"
-                    @click="toggleCodeTypePicker"
-                  >
-                    <span class="code-type-picker-btn-label">代码类型</span>
-                    <span class="code-type-picker-btn-value">{{ selectedCodeTypeLabel }}</span>
-                    <span class="code-type-picker-btn-caret">▾</span>
-                  </button>
-                  <div v-show="codeTypePickerOpen" class="code-type-options">
-                    <div class="code-type-auto-head">
-                      <button
-                        type="button"
-                        class="code-type-auto-btn"
-                        :class="{ 'is-active': autoCodeTypeEnabled }"
-                        @click="handleAutoSelectCodeType"
-                      >
-                        <span class="code-type-auto-btn__dot" aria-hidden="true" />
-                        <span class="code-type-auto-btn__text">auto</span>
-                      </button>
-                    </div>
-                    <ATooltip
-                      v-for="c in CODE_TYPE_CHOICES"
-                      :key="c.value"
-                      :title="c.tip"
-                      placement="right"
-                    >
-                      <button
-                        type="button"
-                        class="code-type-option-btn"
-                        :class="[
-                          `code-type-option-btn--${c.accent}`,
-                          !autoCodeTypeEnabled && selectedCodeType === c.value ? 'is-selected' : '',
-                        ]"
-                        @click="selectCodeType(c.value)"
-                      >
-                        {{ c.label }}
-                      </button>
-                    </ATooltip>
-                  </div>
-                </div>
                 <AButton type="primary" shape="round" :loading="creating" @click="handleCreateApp">
                   开始生成
                 </AButton>

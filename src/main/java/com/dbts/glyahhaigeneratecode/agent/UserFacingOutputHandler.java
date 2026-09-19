@@ -124,6 +124,11 @@ public final class UserFacingOutputHandler {
                         out.put("status", "succeeded".equals(event.status()) ? "succeeded" : "failed");
                         copy(in, out, "durationMs");
                     }
+                    case AgentEvent.MODEL_ROUTE_FALLBACK -> {
+                        out.put("fromRoute", "proxy");
+                        out.put("toRoute", "direct");
+                        out.put("reason", "connect_error");
+                    }
                     case AgentEvent.RUN_STARTED, AgentEvent.HEARTBEAT, AgentEvent.END -> { }
                     case AgentEvent.ARTIFACT_CHANGED, AgentEvent.ARTIFACT_MANIFEST -> {
                         // 作品通过已有的授权文件接口读取，不转发执行层路径或原始清单。

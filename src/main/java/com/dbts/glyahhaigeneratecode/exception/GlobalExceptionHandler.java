@@ -7,10 +7,12 @@ import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.io.IOException;
 import java.util.Map;
@@ -37,6 +39,24 @@ public class GlobalExceptionHandler {
             "/chat/generate/stream",
     };
 
+    /**
+     * 路径变量 / 查询参数类型不对，或必填参数缺失。
+     *
+     * <p>例如 {@code /app/abc/workspace} 里的 appId 不是数字、{@code /files/content}
+     * 没带 path。这些是调用方传错了参数，不是服务端故障 —— 不单独接住的话
+     * 会落到 RuntimeException 分支变成「系统错误」，用户看到 500
+     * 却完全不知道是自己地址写错了。
+     */
+    @ExceptionHandler({MethodArgumentTypeMismatchException.class,
+            MissingServletRequestParameterException.class})
+    public BaseResponse<?> badRequestHandler(Exception e) {
+        log.warn("请求参数不合法: {}", e.getMessage());
+        String name = e instanceof MethodArgumentTypeMismatchException mismatch
+                ? mismatch.getName()
+                : ((MissingServletRequestParameterException) e).getParameterName();
+        return ResultUtils.error(ErrorCode.PARAMS_ERROR.getCode(), "参数 " + name + " 格式不正确或缺失");
+    }
+
     @ExceptionHandler(MyException.class)
     public BaseResponse<?> businessExceptionHandler(MyException e) {
         log.error("BusinessException", e);
@@ -44,8 +64,12 @@ public class GlobalExceptionHandler {
         if (handleSseError(e.getCode(), e.getMessage())) {
             return null;
         }
-        // 对于普通请求，返回标准 JSON 响应
-        return ResultUtils.error(e.getCode(), com.dbts.glyahhaigeneratecode.agent.UserFacingOutputHandler.sanitize(e.getMessage()));
+        // 业务异常的消息是开发者手写给用户看的（「只能查看自己的应用」这类），
+        // 原样返回。以前它要过一遍 UserFacingOutputHandler.sanitize，
+        // 那条规则会把含「容器」「工作区」或十六进制 id 的消息整句替换成
+        // 「部分内部执行信息已省略」—— 用户看不到自己哪里做错了。
+        // 真正需要兜底的是未捕获异常，那里本来就不透传消息。
+        return ResultUtils.error(e.getCode(), e.getMessage());
     }
 
     @ExceptionHandler(RuntimeException.class)

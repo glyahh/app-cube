@@ -11,6 +11,8 @@ import {
   Tooltip as ATooltip,
   Alert as AAlert,
   Textarea as ATextarea,
+  Checkbox as ACheckbox,
+  CheckboxGroup as ACheckboxGroup,
 } from 'ant-design-vue'
 import type { AppVO, ChatHistory } from '@/api'
 import { appGetVoUsingGet, appApplyUsingPost } from '@/api/appController'
@@ -20,6 +22,7 @@ import {
   chatHistoryRoundCountAppIdUsingGet,
 } from '@/api/chatHistoryController'
 import { UserLoginStore } from '@/stores/UserLogin'
+import { useExecutionPreference } from '@/stores/executionPreference'
 import { useAppearanceStore } from '@/stores/appearance'
 import {
   parseMarkdownWithCode,
@@ -42,7 +45,40 @@ import {
   extractToolWriteFileBlocksFromText,
 } from '@/utils/toolOutputAdapters/toolOutputBlockParsers'
 import { loadProjectFilesEchoFromDisk, filterLockFiles } from '@/utils/projectFilesEcho'
+import {
+  loadAppWorkspace,
+  updateDashboardFeatures,
+  type AppWorkspaceInfo,
+} from '@/utils/appWorkspace'
+import {
+  buildRuntimePreviewUrl,
+  dismissIncident,
+  loadOpenIncidents,
+  loadRuntimeStatus,
+  prepareIncidentRepair,
+  sendRuntimeHeartbeat,
+  startRuntime,
+  stopRuntime,
+  type RuntimeIncident,
+  type RuntimeStatus,
+} from '@/utils/appRuntimeApi'
+import {
+  calculateSplitRatioWithOffset,
+  clampRatio,
+  computeGridColumns,
+  isChatHidden,
+  isPreviewHidden,
+  isSplitterVisible,
+  isLeftRestoreTriggerVisible,
+  isRightRestoreTriggerVisible,
+  SPLITTER_TRACK,
+} from '@/utils/splitPane'
 import CodeBlock from '@/components/CodeBlock.vue'
+import ProjectFilesModal from '@/components/app/ProjectFilesModal.vue'
+import RuntimeMetricsPanel from '@/components/app/RuntimeMetricsPanel.vue'
+import RuntimeLogsPanel from '@/components/app/RuntimeLogsPanel.vue'
+import KnowledgePanel from '@/components/app/KnowledgePanel.vue'
+import '@/components/app/workbench.css'
 import ToolExitHint from '@/components/ToolExitHint.vue'
 import ToolRequestHint from '@/components/ToolRequestHint.vue'
 import ToolExecCardHeader from '@/components/ToolExecCardHeader.vue'
@@ -395,6 +431,13 @@ const streaming = computed(() => Object.keys(activeStreamMeta.value).length > 0)
 let nextMessageId = 1
 
 const hasGenerated = ref(false)
+
+/**
+ * 服务端对实际产物的描述（真实目录名、可预览的静态入口）。
+ *
+ * 为 null 表示还没拿到或接口失败，此时预览退回按 codeGenType 推断的旧行为。
+ */
+const workspace = ref<AppWorkspaceInfo | null>(null)
 /** 当前会话新产生的消息（不含历史） */
 const sessionMessages = ref<ChatMessage[]>([])
 /** 历史消息（由 loadedHistoryRecords 预处理而来，避免渲染期重复 map+parse） */
@@ -581,13 +624,183 @@ const displayMessages = computed(() => {
   })
 })
 
-/** 是否应展示网站：仅在已生成过静态页面时展示，避免首次对话未生成完成就挂载 iframe 导致白屏 */
+/** 是否应展示网站：仅在确有可打开的静态入口时展示，避免指向不存在的文件导致白屏 */
 const shouldShowWebsite = computed(() => {
+  // 运行中一定有可访问的入口（容器端口），不受静态入口判定影响
+  if (runtimeRunning.value && runtimeStatus.value?.gatewayPort) return true
+  // 服务端描述就绪时以它为准：没有静态入口就不挂 iframe
+  if (workspace.value) return !!workspace.value.staticEntry
+  // 描述尚未返回或接口失败时退回原判断
   // Vue 项目：以静态入口探测为准 + 显示托底刷新按钮，避免仅依赖 hasGeneratedCode 导致刷新后误判“未生成”
   if (isVueProject.value) return hasGenerated.value || !!appInfo.value?.hasGeneratedCode
   return !!appInfo.value?.hasGeneratedCode || hasGenerated.value
 })
 const iframeKey = ref(0)
+
+/** 「项目文件」窗口实例：用来在 AI 改码前处理未保存草稿 */
+const projectFilesModalRef = ref<InstanceType<typeof ProjectFilesModal> | null>(null)
+
+/* ========== 聊天 / 预览分栏 ========== */
+
+/** 左侧占比。拖拽过程中只改这个本地 ref，松手才写入偏好 */
+const splitRatio = ref(appearanceStore.splitRatio)
+
+/** 放大某一侧后另一侧隐藏；none 表示按比例分栏 */
+const focusedSide = ref<'none' | 'chat' | 'preview'>('none')
+
+const mainContentRef = ref<HTMLElement | null>(null)
+const draggingSplitter = ref(false)
+
+/**
+ * 窄屏下布局由 media query 接管，而行内样式优先级更高会盖掉它 ——
+ * 所以窄屏时干脆不下发 grid-template-columns。
+ */
+const isNarrowScreen = ref(false)
+const narrowScreenQuery = window.matchMedia('(max-width: 992px)')
+function syncNarrowScreen() {
+  isNarrowScreen.value = narrowScreenQuery.matches
+  // 窄屏下重置为 none，避免从宽屏单栏切到窄屏后丢失一侧面板且无入口恢复
+  if (isNarrowScreen.value && focusedSide.value !== 'none') {
+    focusedSide.value = 'none'
+  }
+}
+syncNarrowScreen()
+narrowScreenQuery.addEventListener('change', syncNarrowScreen)
+
+const splitLayout = computed(() => ({
+  narrow: isNarrowScreen.value,
+  previewExpanded: appearanceStore.previewExpanded,
+  focusedSide: focusedSide.value,
+  ratio: splitRatio.value,
+}))
+
+const splitterVisible = computed(() => isSplitterVisible(splitLayout.value))
+const gridColumns = computed(() => computeGridColumns(splitLayout.value))
+const chatHidden = computed(() => isChatHidden(focusedSide.value, isNarrowScreen.value))
+const previewHidden = computed(() =>
+  isPreviewHidden(
+    appearanceStore.previewExpanded,
+    focusedSide.value,
+    isNarrowScreen.value,
+  ),
+)
+const leftRestoreVisible = computed(() =>
+  isLeftRestoreTriggerVisible(
+    isNarrowScreen.value,
+    focusedSide.value,
+    appearanceStore.previewExpanded,
+  ),
+)
+const rightRestoreVisible = computed(() =>
+  isRightRestoreTriggerVisible(
+    isNarrowScreen.value,
+    appearanceStore.previewExpanded,
+    focusedSide.value,
+  ),
+)
+
+function toggleFocusSide(side: 'chat' | 'preview') {
+  focusedSide.value = focusedSide.value === side ? 'none' : side
+}
+
+function restoreSplitView() {
+  focusedSide.value = 'none'
+  appearanceStore.previewExpanded = true
+}
+
+/** 处于单侧放大时，按 Escape 键可快速退回双栏并存布局 */
+function handleSplitPaneKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && !document.fullscreenElement && focusedSide.value !== 'none') {
+    restoreSplitView()
+  }
+}
+
+let cachedContainerRect: { left: number; width: number } | null = null
+let grabOffset = 0
+let splitterRafId: number | null = null
+let pendingClientX = 0
+
+function updateRatioFromClientX(clientX: number) {
+  if (!cachedContainerRect) return
+  splitRatio.value = calculateSplitRatioWithOffset(
+    clientX,
+    cachedContainerRect,
+    grabOffset,
+    SPLITTER_TRACK,
+  )
+}
+
+function onSplitterMove(event: MouseEvent) {
+  if (!draggingSplitter.value) return
+  pendingClientX = event.clientX
+  if (splitterRafId === null) {
+    splitterRafId = requestAnimationFrame(() => {
+      splitterRafId = null
+      if (draggingSplitter.value) {
+        updateRatioFromClientX(pendingClientX)
+      }
+    })
+  }
+}
+
+function stopSplitterDrag() {
+  window.removeEventListener('mousemove', onSplitterMove)
+  window.removeEventListener('mouseup', stopSplitterDrag)
+  if (splitterRafId !== null) {
+    cancelAnimationFrame(splitterRafId)
+    splitterRafId = null
+  }
+  if (typeof document !== 'undefined') {
+    document.body.classList.remove('is-splitter-resizing')
+  }
+  if (!draggingSplitter.value) return
+  if (cachedContainerRect) {
+    updateRatioFromClientX(pendingClientX)
+  }
+  draggingSplitter.value = false
+  cachedContainerRect = null
+  // 松手才落盘：拖拽过程中每帧写 localStorage 会明显卡顿
+  appearanceStore.splitRatio = splitRatio.value
+}
+
+function startSplitterDrag(event: MouseEvent) {
+  if (event.button !== 0) return
+  const el = mainContentRef.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  if (rect.width <= 0) return
+
+  cachedContainerRect = { left: rect.left, width: rect.width }
+  const availableWidth = rect.width - SPLITTER_TRACK
+  const currentCenterX = rect.left + splitRatio.value * availableWidth + SPLITTER_TRACK / 2
+  // 计算抓取偏离中心的相对量并限制在轨道范围内，避免拖拽启动时跳变
+  const rawOffset = event.clientX - currentCenterX
+  const halfTrack = SPLITTER_TRACK / 2
+  grabOffset = Math.max(-halfTrack, Math.min(halfTrack, rawOffset))
+
+  draggingSplitter.value = true
+  focusedSide.value = 'none'
+  pendingClientX = event.clientX
+
+  // 关键：鼠标按下瞬间立即更新位置，让点击与微移瞬间获得即时跟手反馈
+  updateRatioFromClientX(event.clientX)
+
+  if (typeof document !== 'undefined') {
+    document.body.classList.add('is-splitter-resizing')
+  }
+  window.addEventListener('mousemove', onSplitterMove, { passive: true })
+  window.addEventListener('mouseup', stopSplitterDrag)
+  event.preventDefault()
+}
+
+/** 双击分割线快速恢复 50:50 等分 */
+function handleSplitterDblClick() {
+  splitRatio.value = 0.5
+  appearanceStore.splitRatio = 0.5
+  focusedSide.value = 'none'
+}
+
+
 const chatMessagesRef = ref<HTMLElement | null>(null)
 const chatBottomRef = ref<HTMLElement | null>(null)
 const shouldAutoScroll = ref(appearanceStore.smoothScroll)
@@ -767,6 +980,29 @@ const exportingChat = ref(false)
 const downloadingProject = ref(false)
 
 /** 当前应用对话轮数（用户一问 + AI 一答为一轮），仅创建者/管理员展示 */
+let titlePollTimer: ReturnType<typeof setTimeout> | undefined
+let titlePollVersion = 0
+function pollFirstProjectTitle() {
+  if ((roundCount.value ?? 0) > 0 || executionPreference.autoNameProject === false) return
+  const id = appId.value
+  if (!id) return
+  const original = appInfo.value?.appName
+  const version = ++titlePollVersion
+  let tries = 0
+  const poll = async () => {
+    try {
+      const res = await appGetVoUsingGet({ params: { id } })
+      if (version !== titlePollVersion || appId.value !== id) return
+      const name = res.data?.data?.appName
+      if (name && name !== original && appInfo.value) { appInfo.value.appName = name; return }
+    } catch { /* 命名失败不影响生成。 */ }
+    if (version === titlePollVersion && ++tries < 24) titlePollTimer = setTimeout(poll, 3000)
+  }
+  clearTimeout(titlePollTimer)
+  titlePollTimer = setTimeout(poll, 3000)
+}
+onBeforeUnmount(() => { titlePollVersion++; clearTimeout(titlePollTimer) })
+
 const roundCount = ref<number | null>(null)
 const loadingRoundCount = ref(false)
 
@@ -988,14 +1224,299 @@ async function handleApplyFeaturedConfirm() {
   }
 }
 
+/**
+ * 拉取服务端工作区描述。
+ *
+ * 失败时保持 workspace 为 null，预览退回旧行为 —— 描述接口出问题不该让预览彻底不可用。
+ */
+async function refreshWorkspace() {
+  if (!appId.value) return
+  try {
+    workspace.value = await loadAppWorkspace({ appId: appId.value, apiBaseUrl: API_BASE_URL })
+  } catch {
+    workspace.value = null
+  }
+}
+
+/* ========== 看板功能开关 ========== */
+
+const DASHBOARD_FEATURE_OPTIONS = [
+  { value: 'metrics', label: '运行监控', description: '查看 CPU、内存与平台入口流量的真实采样。' },
+  { value: 'logs', label: '运行日志', description: '实时查看进程输出，筛选并下载诊断日志。' },
+  { value: 'knowledge', label: '项目知识', description: '探索源码图谱、阅读项目文档，进行只读问答。' },
+] as const
+
+const dashboardModalOpen = ref(false)
+const dashboardDraft = ref<string[]>([])
+const savingDashboard = ref(false)
+
+function openDashboardSettings() {
+  dashboardDraft.value = [...(workspace.value?.dashboardFeatures ?? [])]
+  dashboardModalOpen.value = true
+}
+
+async function saveDashboardSettings() {
+  if (!appId.value) return
+  savingDashboard.value = true
+  try {
+    // 接口回的就是更新后的整份描述，直接替换，省一次读取
+    workspace.value = await updateDashboardFeatures({
+      appId: appId.value,
+      features: dashboardDraft.value,
+      apiBaseUrl: API_BASE_URL,
+    })
+    dashboardModalOpen.value = false
+    message.success('看板设置已保存')
+  } catch (e) {
+    message.error((e as Error).message || '保存看板设置失败')
+  } finally {
+    savingDashboard.value = false
+  }
+}
+
+/* ========== 运行状态 ========== */
+
+const fullscreenBody = ref<HTMLElement | null>(null)
+const previewFullscreen = ref(false)
+const fullscreenHint = ref(false)
+let fullscreenHintTimer: ReturnType<typeof setTimeout> | undefined
+function syncFullscreen() {
+  previewFullscreen.value = document.fullscreenElement === fullscreenBody.value
+  if (!previewFullscreen.value) fullscreenHint.value = false
+}
+async function enterPreviewFullscreen() {
+  try {
+    await fullscreenBody.value?.requestFullscreen()
+    fullscreenHint.value = true
+    clearTimeout(fullscreenHintTimer)
+    fullscreenHintTimer = setTimeout(() => { fullscreenHint.value = false }, 4500)
+  } catch { message.error('无法进入全屏') }
+}
+function exitPreviewFullscreen() {
+  if (document.fullscreenElement) void document.exitFullscreen()
+}
+onMounted(() => document.addEventListener('fullscreenchange', syncFullscreen))
+onBeforeUnmount(() => {
+  clearTimeout(fullscreenHintTimer)
+  document.removeEventListener('fullscreenchange', syncFullscreen)
+  if (document.fullscreenElement === fullscreenBody.value) exitPreviewFullscreen()
+})
+
+const runtimeStatus = ref<RuntimeStatus | null>(null)
+const startingRuntime = ref(false)
+const stoppingRuntime = ref(false)
+/** 右侧面板当前页签 */
+const runtimePanelTab = ref<'preview' | 'metrics' | 'logs' | 'knowledge'>('preview')
+
+const runtimeRunning = computed(() => runtimeStatus.value?.running === true)
+/** 运行版本落后：改了代码但没重新运行 */
+const runtimeStale = computed(() => runtimeStatus.value?.stale === true)
+const runtimeActive = computed(() => {
+  const status = runtimeStatus.value?.status
+  return status === 'STARTING' || status === 'RUNNING' || runtimeRunning.value
+})
+
+const dashboardFeatureSet = computed(() => new Set(workspace.value?.dashboardFeatures ?? []))
+const showMetricsPanel = computed(() => dashboardFeatureSet.value.has('metrics'))
+const showLogsPanel = computed(() => dashboardFeatureSet.value.has('logs'))
+
+/**
+ * 右侧页签：预览必在（有前端就该能看），监控 / 日志 / 知识按用户勾选的看板功能出现。
+ * 一个都不用勾时只剩预览，此时不显示页签栏。
+ */
+const runtimeTabs = computed(() => {
+  const tabs: Array<{ key: 'preview' | 'metrics' | 'logs' | 'knowledge'; label: string }> = [
+    { key: 'preview', label: '预览' },
+  ]
+  if (showMetricsPanel.value) tabs.push({ key: 'metrics', label: '监控' })
+  if (showLogsPanel.value) tabs.push({ key: 'logs', label: '日志' })
+  if (dashboardFeatureSet.value.has('knowledge')) tabs.push({ key: 'knowledge', label: '知识' })
+  return tabs
+})
+
+async function refreshRuntimeStatus() {
+  if (!appId.value) return
+  try {
+    runtimeStatus.value = await loadRuntimeStatus({ appId: appId.value, apiBaseUrl: API_BASE_URL })
+  } catch {
+    // 状态拿不到就当没在运行，不阻断页面其他部分
+    runtimeStatus.value = null
+  }
+  void refreshIncidents()
+}
+
+/* ========== 运行异常提示 ========== */
+const executionPreference = useExecutionPreference()
+const openIncidents = ref<RuntimeIncident[]>([])
+const incidentModalOpen = ref(false)
+const repairingIncident = ref(false)
+
+/**
+ * 按用户的两个全局开关过滤。
+ *
+ * 开关语义（Plan 明确）：启动异常默认开、运行异常默认关 ——
+ * 运行期的偶发错误太吵，默认不打扰；但记录照留，日志里查得到。
+ */
+const visibleIncidents = computed(() =>
+  openIncidents.value.filter((item) =>
+    item.kind === 'STARTUP_FAILURE'
+      ? executionPreference.alertOnStartupFailure
+      : executionPreference.alertOnRuntimeFailure,
+  ),
+)
+
+const incidentTitle = computed(() =>
+  visibleIncidents.value.some((item) => item.kind === 'STARTUP_FAILURE')
+    ? '应用启动失败'
+    : '应用运行异常',
+)
+
+const incidentDetail = computed(() => visibleIncidents.value[0]?.detail ?? '')
+
+async function refreshIncidents() {
+  if (!appId.value) return
+  try {
+    openIncidents.value = await loadOpenIncidents({ appId: appId.value, apiBaseUrl: API_BASE_URL })
+  } catch {
+    openIncidents.value = []
+  }
+  // 只在确有该提示的问题时才弹；用户关掉后状态变 DISMISSED，下次拉取不会再进来
+  incidentModalOpen.value = visibleIncidents.value.length > 0
+}
+
+async function handleDismissIncident() {
+  if (!appId.value) return
+  const list = visibleIncidents.value
+  incidentModalOpen.value = false
+  openIncidents.value = []
+  // 关掉弹窗只是不再打扰，服务端的记录保留
+  await Promise.all(
+    list.map((item) =>
+      dismissIncident({ appId: appId.value!, incidentId: item.id, apiBaseUrl: API_BASE_URL }).catch(() => false),
+    ),
+  )
+}
+
+async function handleRepairIncident() {
+  const target = visibleIncidents.value[0]
+  if (!target || !appId.value || repairingIncident.value) return
+  repairingIncident.value = true
+  try {
+    const prompt = await prepareIncidentRepair({
+      appId: appId.value,
+      incidentId: target.id,
+      apiBaseUrl: API_BASE_URL,
+    })
+    incidentModalOpen.value = false
+    openIncidents.value = []
+    message.info('已把问题交给 AI 诊断，修复过程会出现在下面的对话里')
+    // 走用户发消息那条路：修复在原对话里可见，也自然受项目写锁串行保护
+    await sendMessage(prompt)
+  } catch (e) {
+    message.error((e as Error).message || '发起修复失败')
+  } finally {
+    repairingIncident.value = false
+  }
+}
+
+/**
+ * 知识图谱里点「打开源码」：打开项目文件窗口并定位到那个文件。
+ *
+ * sourceRef 形如 {@code src/main.js:42}，行号不是文件路径的一部分，要去掉。
+ */
+async function handleOpenSourceFromGraph(sourceRef: string) {
+  if (!sourceRef) return
+  const path = sourceRef.replace(/:\d+(-\d+)?$/, '').trim()
+  if (!path) return
+
+  filesModalOpen.value = true
+  await nextTick()
+  const opened = await projectFilesModalRef.value?.openFileByPath(path)
+  if (opened === false) {
+    // 有未保存草稿时不会静默覆盖，由用户自己决定
+    message.info('已打开项目文件窗口，请先处理未保存的修改')
+  }
+}
+
+async function handleStartRuntime() {
+  if (!appId.value || startingRuntime.value) return
+  startingRuntime.value = true
+  try {
+    runtimeStatus.value = await startRuntime({ appId: appId.value, apiBaseUrl: API_BASE_URL })
+    message.success('应用已启动')
+    // 启动后切到预览，用户能立刻看到结果
+    runtimePanelTab.value = 'preview'
+    // 运行版本落后时明确提示：改过的代码不会自动生效
+    if (runtimeStatus.value?.stale) {
+      message.warning('当前运行的仍是上次启动时的代码，改动要重新运行才生效')
+    }
+  } catch (e) {
+    message.error((e as Error).message || '启动失败')
+    await refreshRuntimeStatus()
+  } finally {
+    startingRuntime.value = false
+  }
+}
+
+async function handleStopRuntime() {
+  if (!appId.value || stoppingRuntime.value) return
+  stoppingRuntime.value = true
+  try {
+    await stopRuntime({ appId: appId.value, apiBaseUrl: API_BASE_URL })
+    message.success('应用已停止')
+  } catch (e) {
+    message.error((e as Error).message || '停止失败')
+  } finally {
+    stoppingRuntime.value = false
+    await refreshRuntimeStatus()
+  }
+}
+
+/**
+ * 心跳定时器。
+ *
+ * 页面在查看该应用时定期上报，服务端据此判断「还有人在看」——
+ * 最后一个页面离开后保留一段时间再自动停止。刷新、多标签都不会误停。
+ */
+let runtimeHeartbeatTimer: number | null = null
+
+function startRuntimeHeartbeat() {
+  stopRuntimeHeartbeat()
+  runtimeHeartbeatTimer = window.setInterval(() => {
+    if (appId.value && runtimeRunning.value) {
+      void sendRuntimeHeartbeat({ appId: appId.value, apiBaseUrl: API_BASE_URL })
+    }
+  }, 30000)
+}
+
+function stopRuntimeHeartbeat() {
+  if (runtimeHeartbeatTimer != null) {
+    window.clearInterval(runtimeHeartbeatTimer)
+    runtimeHeartbeatTimer = null
+  }
+}
+
 const previewUrl = computed(() => {
   if (!appInfo.value || !appId.value) return ''
-  const codeGenType = normalizeCodeGenType(appInfo.value.codeGenType)
+
+  // 运行中：指向容器映射出来的宿主端口。
+  // 这个地址与平台页面不同源，生成的应用因此拿不到平台会话凭据 —— 预览用隔离来源。
+  if (runtimeRunning.value && runtimeStatus.value?.gatewayPort) {
+    return `${buildRuntimePreviewUrl(runtimeStatus.value.gatewayPort)}?v=${iframeKey.value}`
+  }
+
   const base = PREVIEW_BASE_URL.replace(/\/$/, '')
   // 使用版本号避免浏览器缓存旧内容；同时配合 iframeKey 触发刷新
-  const entry = getPreviewEntryPath(codeGenType)
-  const entryPart = entry ? `/${entry}` : '/'
-  return `${base}/${codeGenType}_${appId.value}${entryPart}?v=${iframeKey.value}`
+
+  // 描述就绪时，目录名与入口都以实际产物为准
+  if (workspace.value) {
+    const entry = workspace.value.staticEntry
+    if (!entry) return ''
+    return `${base}/${workspace.value.workspaceDirName}/${entry}?v=${iframeKey.value}`
+  }
+
+  // 描述不可用（尚未返回或接口失败）时不再根据旧类型猜测入口
+  return ''
 })
 
 const isAppDeployed = computed(() => {
@@ -1038,11 +1559,20 @@ function stopPreviewProbing() {
 
 async function probePreviewReady(): Promise<boolean> {
   if (!appInfo.value || !appId.value) return false
-  const codeGenType = normalizeCodeGenType(appInfo.value.codeGenType)
   const base = PREVIEW_BASE_URL.replace(/\/$/, '')
-  const entry = getPreviewEntryPath(codeGenType)
-  const entryPart = entry ? `/${entry}` : '/index.html'
-  const url = `${base}/${codeGenType}_${appId.value}${entryPart}?probe=${Date.now()}`
+
+  let url: string
+  if (workspace.value) {
+    // 描述就绪：只探测真实存在的入口，没有入口就不算 ready
+    const entry = workspace.value.staticEntry
+    if (!entry) return false
+    url = `${base}/${workspace.value.workspaceDirName}/${entry}?probe=${Date.now()}`
+  } else {
+    const codeGenType = normalizeCodeGenType(appInfo.value.codeGenType)
+    const entry = getPreviewEntryPath(codeGenType)
+    const entryPart = entry ? `/${entry}` : '/index.html'
+    url = `${base}/${codeGenType}_${appId.value}${entryPart}?probe=${Date.now()}`
+  }
   try {
     const res = await fetch(url, { method: 'GET', credentials: 'include', cache: 'no-store' as RequestCache })
     if (!res.ok) return false
@@ -2366,6 +2896,10 @@ function getCodeGenTypeLabel(): string {
 async function refreshProjectFilesEchoFromDisk() {
   if (!appId.value || !appInfo.value) return
 
+  // 一并刷新工作区描述与运行状态：预览入口与运行按钮都依赖它们
+  void refreshWorkspace()
+  void refreshRuntimeStatus()
+
   // 所有生成类型统一走磁盘项目快照，不再按类型区分回显来源
   if (!hasGenerated.value && !appInfo.value?.hasGeneratedCode) {
     rebuildGeneratedFilesFromHistory()
@@ -2833,6 +3367,15 @@ async function sendMessage(text?: string) {
     return
   }
 
+  // AI 即将写入项目文件：有未保存草稿时先让用户处理，不能静默覆盖。
+  // 打开项目文件窗口并显示里面的「保存 / 放弃 / 取消」确认条，
+  // 处理完由用户重新发送 —— 发送动作在这里中断。
+  if (projectFilesModalRef.value?.hasUnsavedChanges()) {
+    projectFilesModalRef.value.promptUnsavedChoice()
+    message.warning('请先处理项目文件里的未保存修改，再发送消息')
+    return
+  }
+
   if (!userLoginStore.userLogin?.id) {
     message.warning('请先登录')
     router.push({
@@ -2899,6 +3442,7 @@ async function sendMessage(text?: string) {
 
   inputMessage.value = ''
   sending.value = true
+  pollFirstProjectTitle()
 
    // 首次生成时给出“分析代码 ing~”提示，告诉用户正在分析并决定生成格式
   if (!hasGenerated.value && !appInfo.value?.hasGeneratedCode && !analyzingHintCloser.value) {
@@ -3119,14 +3663,23 @@ onMounted(() => {
   syncGenMode()
   void loadAppInfo()
   startWorkflowSlowHintTicker()
+  // 页面在看着这个应用期间持续上报心跳，服务端据此决定何时空闲停止
+  startRuntimeHeartbeat()
   // 首次进入页面先做一次清理，避免历史会话遗留覆盖层影响当前预览滚动。
   cleanupVisualEditorArtifacts()
   observeChatBottom()
+  window.addEventListener('keydown', handleSplitPaneKeydown)
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleSplitPaneKeydown)
   stopWorkflowSlowHintTicker()
   stopPreviewProbing()
+  // 分栏相关的监听要成对摘掉，否则组件卸载后拖拽仍会改到已失效的状态
+  stopSplitterDrag()
+  narrowScreenQuery.removeEventListener('change', syncNarrowScreen)
+  // 心跳停了，服务端会在保留时长后自动停止运行
+  stopRuntimeHeartbeat()
   exitVisualEditMode()
   // 页面卸载时关闭所有 SSE，避免后台连接泄露
   stopStream()
@@ -3142,54 +3695,73 @@ onBeforeUnmount(() => {
   chatBottomObserver?.disconnect()
   chatBottomObserver = null
 })
+
+defineExpose({
+  workspace,
+  previewUrl,
+  runtimeStatus,
+  runtimeActive,
+  runtimeRunning,
+})
 </script>
 
 <template>
   <main class="app-chat-page">
-    <a-modal v-model:open="filesModalOpen" title="生成文件回显" :footer="null" width="1180px">
-      <div class="files-modal">
-        <div class="files-list">
-          <div class="files-list-title">文件（{{ generatedFiles.length }}）</div>
-          <div v-if="generatedFiles.length === 0" class="files-empty">
-            <AEmpty description="暂无可回显的文件（等待工具写入文件输出）" />
-          </div>
-          <button
-            v-for="f in generatedFiles"
-            :key="f.path"
-            type="button"
-            :class="['file-item', { active: f.path === activeFilePath }]"
-            @click="activeFilePath = f.path"
-          >
-            <div class="file-path-row">
-              <span class="file-path" :class="getFileNameColorClass(f.path)">{{ f.path }}</span>
-              <span v-if="isCoreFile(f.path)" class="file-core-badge">核心代码</span>
-            </div>
-            <span class="file-meta">{{ formatFileTime(f.updatedAt) }}</span>
-          </button>
-        </div>
-        <div class="files-viewer">
-          <div v-if="!activeFile" class="files-viewer-empty">
-            <AEmpty description="请选择左侧文件查看内容" />
-          </div>
-          <div v-else class="files-viewer-inner">
-            <div class="files-viewer-header">
-              <div class="files-viewer-path">{{ activeFile.path }}</div>
-              <div class="files-viewer-actions">
-                <a-button
-                  size="small"
-                  class="ghost-btn"
-                  @click="copyToClipboard(activeFile.content)"
-                >
-                  复制内容
-                </a-button>
-              </div>
-            </div>
-            <div class="files-viewer-code">
-              <CodeBlock :code="activeFile.content" :language="activeFile.language || 'txt'" :is-streaming="false" />
-            </div>
-          </div>
-        </div>
-      </div>
+    <ProjectFilesModal
+      ref="projectFilesModalRef"
+      v-model:open="filesModalOpen"
+      :app-id="appId ?? ''"
+      :api-base-url="API_BASE_URL"
+      :read-only="isReadOnly"
+      :generating="streaming"
+    />
+
+    <a-modal
+      v-model:open="dashboardModalOpen"
+      title="看板设置"
+      wrap-class-name="cosmic-settings"
+      :confirm-loading="savingDashboard"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="saveDashboardSettings"
+    >
+      <p class="dashboard-settings-hint">
+        开启后可在右侧工作区查看对应内容。默认全部关闭，随时可以改。
+      </p>
+      <ACheckboxGroup v-model:value="dashboardDraft">
+        <ACheckbox v-for="opt in DASHBOARD_FEATURE_OPTIONS" :key="opt.value" :value="opt.value">
+          {{ opt.label }}
+          <span class="feature-caption">{{ opt.description }}</span>
+        </ACheckbox>
+      </ACheckboxGroup>
+      <template #footer>
+        <button type="button" class="wb-button" :disabled="savingDashboard" @click="dashboardModalOpen = false">取消</button>
+        <button type="button" class="wb-button is-primary" :disabled="savingDashboard" @click="saveDashboardSettings">{{ savingDashboard ? '保存中…' : '保存设置' }}</button>
+      </template>
+    </a-modal>
+
+    <!-- 运行异常提示：关闭只是不再打扰，记录仍保留在服务端 -->
+    <a-modal
+      v-model:open="incidentModalOpen"
+      :title="incidentTitle"
+      :mask-closable="false"
+      ok-text="让 AI 修复"
+      cancel-text="稍后处理"
+      :confirm-loading="repairingIncident"
+      @ok="handleRepairIncident"
+      @cancel="handleDismissIncident"
+    >
+      <p class="incident-summary">
+        {{ visibleIncidents[0]?.summary || '应用运行出现问题' }}
+      </p>
+      <details v-if="incidentDetail" class="incident-detail">
+        <summary>查看诊断信息（已脱敏）</summary>
+        <pre class="incident-detail-body">{{ incidentDetail }}</pre>
+      </details>
+      <p class="incident-hint">
+        选择「让 AI 修复」后，问题会作为一条消息发到当前对话里，由 AI 分析并修改代码；
+        修好后不会自动重启应用，需要你再次点击运行来验证。
+      </p>
     </a-modal>
 
     <a-modal v-model:open="applyFeaturedModalVisible" title="申请成为精选应用" :confirm-loading="false" ok-text="申请"
@@ -3243,12 +3815,30 @@ onBeforeUnmount(() => {
         >
           编辑应用
         </a-button>
+        <ATooltip
+          :title="runtimeRunning
+            ? (runtimeStale ? '当前运行的仍是上次启动时的代码，重新运行才会生效' : '停止常驻进程')
+            : '在受控沙箱中启动常驻进程'"
+        >
+          <a-button
+            v-if="!isReadOnly"
+            class="ghost-btn"
+            :type="runtimeRunning ? 'default' : 'primary'"
+            :loading="startingRuntime || stoppingRuntime"
+            @click="runtimeRunning ? handleStopRuntime() : handleStartRuntime()"
+          >
+            {{ runtimeRunning ? '运行中' : '运行' }}
+          </a-button>
+        </ATooltip>
         <a-button
           v-if="!isReadOnly && generatedFiles.length > 0"
           class="ghost-btn"
           @click="showGeneratedFilesModal"
         >
-          查看项目回显
+          项目文件
+        </a-button>
+        <a-button v-if="!isReadOnly" class="ghost-btn" @click="openDashboardSettings">
+          看板设置
         </a-button>
         <a-button v-if="canApplyFeatured" class="ghost-btn" type="primary" @click="openApplyFeatured">
           我要成为精选
@@ -3256,8 +3846,38 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <section class="main-content" :class="{ 'main-content--single': !appearanceStore.previewExpanded }">
-      <div class="chat-panel">
+    <section
+      ref="mainContentRef"
+      class="main-content"
+      :class="{
+        'main-content--single': !appearanceStore.previewExpanded,
+        'is-splitter-dragging': draggingSplitter,
+      }"
+      :style="gridColumns ? { gridTemplateColumns: gridColumns } : undefined"
+    >
+      <!-- 左边缘恢复双栏小箭头：只显示预览区时展示在屏幕左侧 -->
+      <Transition name="edge-restore-left">
+        <ATooltip
+          v-if="leftRestoreVisible"
+          title="展开聊天区（恢复双栏，或按 Esc）"
+          placement="right"
+        >
+          <button
+            type="button"
+            class="edge-restore-trigger edge-restore-trigger--left"
+            aria-label="展开聊天区（恢复双栏，或按 Esc）"
+            @click="restoreSplitView"
+          >
+            <span class="edge-restore-arrow" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </span>
+          </button>
+        </ATooltip>
+      </Transition>
+
+      <div v-show="!chatHidden" class="chat-panel">
         <div
           v-if="generatedFiles.length > 0"
           class="stream-file-slot"
@@ -3265,9 +3885,9 @@ onBeforeUnmount(() => {
           <div class="generated-files-bar">
             <div class="generated-files-left">
               <span class="generated-files-dot" aria-hidden="true" />
-              <span class="generated-files-text">已回显 {{ generatedFiles.length }} 个文件（{{ getCodeGenTypeLabel() }}）</span>
+              <span class="generated-files-text">已回显 {{ generatedFiles.length }} 个文件</span>
             </div>
-            <a-button size="small" class="ghost-btn" @click="showGeneratedFilesModal">查看回显</a-button>
+            <a-button size="small" class="ghost-btn" @click="showGeneratedFilesModal">查看文件</a-button>
           </div>
         </div>
         <div ref="chatMessagesRef" class="chat-messages">
@@ -3634,17 +4254,66 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="appearanceStore.previewExpanded" class="preview-panel">
+      <div
+        v-if="splitterVisible"
+        class="main-splitter"
+        :class="{ 'is-dragging': draggingSplitter }"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整聊天与预览的宽度"
+        @mousedown="startSplitterDrag"
+        @dblclick="handleSplitterDblClick"
+      >
+        <button
+          type="button"
+          class="splitter-btn"
+          title="放大预览区"
+          aria-label="放大预览区"
+          @mousedown.stop
+          @click="toggleFocusSide('preview')"
+        >▶</button>
+        <button
+          type="button"
+          class="splitter-btn"
+          title="恢复等分"
+          aria-label="恢复等分"
+          @mousedown.stop
+          @click="focusedSide = 'none'"
+        >⛶</button>
+        <button
+          type="button"
+          class="splitter-btn"
+          title="放大聊天区"
+          aria-label="放大聊天区"
+          @mousedown.stop
+          @click="toggleFocusSide('chat')"
+        >◀</button>
+      </div>
+
+      <div
+        v-if="appearanceStore.previewExpanded"
+        v-show="!previewHidden"
+        class="preview-panel cosmic-workbench"
+      >
         <div class="preview-header">
-          <div class="preview-header-left">
-            <div class="preview-title">
-              生成的网站预览
-            </div>
-            <div class="preview-subtitle">
-              对话生成完成后自动刷新
-            </div>
-          </div>
+        <!-- 页签按「实际能力 + 用户勾选的看板功能」决定，纯后端且全不选时右侧留空 -->
+        <div v-if="runtimeTabs.length > 1" class="preview-tabs">
+          <button
+            v-for="tab in runtimeTabs"
+            :key="tab.key"
+            type="button"
+            class="preview-tab"
+            :class="{ 'is-active': runtimePanelTab === tab.key }"
+            :aria-pressed="runtimePanelTab === tab.key"
+            @click="runtimePanelTab = tab.key"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
           <div class="preview-header-right">
+            <button type="button" class="wb-button" @click="enterPreviewFullscreen">全屏</button>
+            <button type="button" class="wb-button" :aria-label="focusedSide === 'preview' ? '恢复双栏' : '放大工作台'" @click="toggleFocusSide('preview')">{{ focusedSide === 'preview' ? '恢复双栏' : '⛶ 放大' }}</button>
             <div v-if="isAppDeployed" class="deploy-url-pill">
               <span class="deploy-url-label">部署的访问网址</span>
               <ATooltip :title="deployedAccessUrl">
@@ -3679,20 +4348,73 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="preview-body">
-          <div v-if="!shouldShowWebsite" class="preview-empty">
-            <AEmpty description="AI 未生成内容，请先完成至少一轮对话" />
+        <div ref="fullscreenBody" class="preview-body" :class="{ 'is-fullscreen': previewFullscreen }">
+          <div v-if="previewFullscreen" class="fullscreen-exit-zone">
+            <button type="button" class="wb-button" aria-label="退出全屏" @click="exitPreviewFullscreen">返回</button>
           </div>
-          <iframe
-            v-else
-            ref="previewIframeRef"
-            :key="iframeKey"
-            class="preview-iframe"
-            :src="previewUrl"
-            @load="handlePreviewIframeLoad"
+          <div v-if="previewFullscreen && fullscreenHint" class="fullscreen-hint" role="status">按 Esc 或移到左上角返回</div>
+          <!-- 监控 -->
+          <RuntimeMetricsPanel
+            v-if="runtimePanelTab === 'metrics' && showMetricsPanel"
+            :app-id="appId ?? ''"
+            :api-base-url="API_BASE_URL"
+            :running="runtimeRunning"
           />
+
+          <!-- 日志 -->
+          <RuntimeLogsPanel
+            v-else-if="runtimePanelTab === 'logs' && showLogsPanel"
+            :app-id="appId ?? ''"
+            :api-base-url="API_BASE_URL"
+            :running="runtimeRunning"
+          />
+
+          <!-- 知识：文档 / 图谱 / 只读问答 -->
+          <KnowledgePanel
+            v-else-if="runtimePanelTab === 'knowledge' && dashboardFeatureSet.has('knowledge')"
+            :app-id="appId ?? ''"
+            :api-base-url="API_BASE_URL"
+            @open-source="handleOpenSourceFromGraph"
+          />
+
+          <!-- 预览 -->
+          <template v-else>
+            <div v-if="!shouldShowWebsite" class="preview-empty">
+              <AEmpty :description="runtimeRunning ? '应用已启动，等待端口就绪' : 'AI 未生成内容，请先完成至少一轮对话'" />
+            </div>
+            <iframe
+              v-else
+              ref="previewIframeRef"
+              :key="iframeKey"
+              class="preview-iframe"
+              :src="previewUrl"
+              @load="handlePreviewIframeLoad"
+            />
+          </template>
         </div>
       </div>
+
+      <!-- 右边缘恢复双栏小箭头：只显示聊天区时展示在屏幕右侧 -->
+      <Transition name="edge-restore-right">
+        <ATooltip
+          v-if="rightRestoreVisible"
+          title="展开预览区（恢复双栏，或按 Esc）"
+          placement="left"
+        >
+          <button
+            type="button"
+            class="edge-restore-trigger edge-restore-trigger--right"
+            aria-label="展开预览区（恢复双栏，或按 Esc）"
+            @click="restoreSplitView"
+          >
+            <span class="edge-restore-arrow" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </span>
+          </button>
+        </ATooltip>
+      </Transition>
     </section>
   </main>
 </template>
@@ -3702,10 +4424,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  /* 按要求向底部再扩展，增加可视高度 */
-  height: calc(100vh - 64px - 48px + 110px);
-  min-height: calc(100vh - 64px - 48px + 110px);
-  max-height: calc(100vh - 64px - 48px + 110px);
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -3785,13 +4505,292 @@ onBeforeUnmount(() => {
 }
 
 .main-content {
+  height: auto;
+  flex: 1;
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.1fr);
-  gap: 16px;
+  /* 间隔由中间那 16px 的分隔线列提供；再用 gap 会叠成两倍 */
+  gap: 0;
   flex: 1;
   min-height: 0;
   align-items: stretch;
   overflow: hidden;
+}
+
+/* 全局拖拽保护：无论光标滑到屏幕何处，保持 col-resize 与禁止文字选中 */
+body.is-splitter-resizing,
+body.is-splitter-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+/* 拖拽中整块禁止选中文字，且 iframe 必须禁用 pointer-events，否则鼠标滑入 iframe 会丢失 mousemove/mouseup 导致拖拽假死 */
+.main-content.is-splitter-dragging {
+  user-select: none;
+}
+
+.main-content.is-splitter-dragging iframe,
+.main-content.is-splitter-dragging .preview-iframe {
+  pointer-events: none !important;
+}
+
+.main-splitter {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+/* 隐形扩展可抓取热区，左右向外扩展，方便鼠标快速捕获与点击 */
+.main-splitter::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+  z-index: 0;
+}
+
+.main-splitter::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.12);
+  transition: background 160ms ease, width 160ms ease, margin-left 160ms ease, opacity 160ms ease;
+}
+
+.main-splitter:hover::before,
+.main-splitter.is-dragging::before {
+  width: 4px;
+  margin-left: -2px;
+  background: var(--color-primary, #1677ff);
+  opacity: 0.9;
+}
+
+.splitter-btn {
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1;
+  color: #64748b;
+  background: var(--bg-card, #fff);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+
+.splitter-btn:hover {
+  color: var(--color-primary, #1677ff);
+  border-color: var(--color-primary, #1677ff);
+}
+
+/* 单侧展开时贴在屏幕边缘的恢复双栏小箭头按钮 */
+.edge-restore-trigger {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 60px;
+  padding: 0;
+  background: var(--bg-card, #ffffff);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  color: #64748b;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+  transition: width 180ms ease, background 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  user-select: none;
+}
+
+.edge-restore-trigger:focus-visible {
+  outline: 2px solid var(--color-primary, #1677ff);
+  outline-offset: 2px;
+}
+
+.edge-restore-trigger--left {
+  left: 0;
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+}
+
+.edge-restore-trigger--right {
+  right: 0;
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+}
+
+.edge-restore-trigger:hover {
+  width: 30px;
+  color: var(--color-primary, #1677ff);
+  border-color: var(--color-primary, #1677ff);
+  background: var(--bg-card, #ffffff);
+  box-shadow: 0 4px 14px rgba(22, 119, 255, 0.2);
+}
+
+.edge-restore-trigger--left:hover {
+  transform: translateY(-50%) translateX(2px);
+}
+
+.edge-restore-trigger--right:hover {
+  transform: translateY(-50%) translateX(-2px);
+}
+
+.edge-restore-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* 边缘小箭头淡入淡出与微位移动效 */
+.edge-restore-left-enter-active,
+.edge-restore-left-leave-active,
+.edge-restore-right-enter-active,
+.edge-restore-right-leave-active {
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.edge-restore-left-enter-from,
+.edge-restore-left-leave-to {
+  opacity: 0;
+  transform: translateY(-50%) translateX(-12px);
+}
+
+.edge-restore-right-enter-from,
+.edge-restore-right-leave-to {
+  opacity: 0;
+  transform: translateY(-50%) translateX(12px);
+}
+
+[data-theme="dark"] .edge-restore-trigger {
+  background: var(--bg-card, #1e293b);
+  border-color: rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="dark"] .edge-restore-trigger:hover {
+  color: var(--color-primary, #38bdf8);
+  border-color: var(--color-primary, #38bdf8);
+  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.25);
+}
+
+.dashboard-settings-hint {
+  margin: 0 0 12px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 运行状态标记：运行中 / 运行版本落后 */
+.runtime-status-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #0f766e;
+  background: #f0fdfa;
+  border: 1px solid #99f6e4;
+}
+
+.runtime-status-pill.is-stale {
+  color: #b45309;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+/* 运行异常弹窗 */
+.incident-summary {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #cf1322;
+  word-break: break-all;
+}
+
+.incident-detail summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.incident-detail-body {
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border-radius: 6px;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.incident-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #8c8c8c;
+  line-height: 1.6;
+}
+
+.preview-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px 8px;
+  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 8px;
+}
+
+.preview-tab {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.preview-tab:hover {
+  color: var(--color-primary, #1677ff);
+  background: #f5f8ff;
+}
+
+.preview-tab.is-active {
+  color: var(--color-primary, #1677ff);
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  font-weight: 600;
 }
 
 .chat-panel,
@@ -5002,6 +6001,8 @@ onBeforeUnmount(() => {
 @media (max-width: 992px) {
   .main-content {
     grid-template-columns: minmax(0, 1fr);
+    /* 窄屏是上下堆叠，恢复面板间距 */
+    gap: 16px;
     flex: 1;
     min-height: 0;
     overflow: hidden;
@@ -5093,4 +6094,34 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 .tool-exec-card.tool-exec-card--compact { padding: 4px 6px; border: 0; border-radius: 4px; background: transparent; box-shadow: none; }
+
+/* 工具栏放在内容框上方，颜色复用用户主题。 */
+.preview-panel.cosmic-workbench { padding:0; background:transparent; border:0; border-radius:0; box-shadow:none; overflow:hidden; }
+.cosmic-workbench .preview-header { padding:0 0 8px; margin:0; min-height:40px; gap:8px; flex-wrap:wrap; }
+.cosmic-workbench .preview-header-right { margin-left:auto; flex-wrap:wrap; }
+.cosmic-workbench .preview-tabs { padding:0; margin:0; gap:5px; border:0; flex-shrink:0; }
+.cosmic-workbench .preview-tab { color:var(--wb-muted); border:1px solid transparent; border-radius:8px; padding:6px 13px; background:none; font-size:12px; }
+.cosmic-workbench .preview-tab.is-active { color:var(--wb-text); background:var(--wb-surface); border-color:var(--wb-line); }
+.cosmic-workbench .preview-body { border:1px solid var(--wb-line); border-radius:14px; background:var(--wb-bg); min-height:0; padding:0; overflow:hidden; flex-direction:column; align-items:stretch; justify-content:flex-start; }
+.cosmic-workbench .preview-body > :deep(section) { width:100%; flex:1; min-width:0; }
+.cosmic-workbench .preview-refresh-btn, .cosmic-workbench .deploy-url-pill { box-shadow:none; border:1px solid var(--wb-line); border-radius:8px; background:var(--wb-surface); color:var(--wb-text); }
+.cosmic-workbench .preview-empty { background:var(--wb-bg); }
+.cosmic-workbench .preview-empty :deep(.ant-empty-description), .cosmic-workbench .deploy-url-label { color:var(--wb-muted); }
+@media (max-width: 1100px) {
+  .top-bar { flex-wrap:wrap; gap:12px; }
+  .top-actions { flex-wrap:wrap; }
+  .app-title-wrap { min-width:0; }
+  .round-count-text { white-space:nowrap; }
+}
+@media (max-width: 992px) {
+  .main-content { display:flex; flex-direction:column; }
+  .chat-panel, .preview-panel.cosmic-workbench { flex:1; height:auto; min-height:0; }
+  .top-bar { padding:8px; }
+  .top-actions { gap:4px; }
+}
+.preview-body:fullscreen { width:100vw; height:100dvh; border:0; border-radius:0; position:relative; background:var(--wb-bg); }
+.fullscreen-exit-zone { position:absolute; top:0; left:0; width:110px; height:66px; z-index:50; display:flex; align-items:center; padding:12px; }
+.fullscreen-exit-zone button { opacity:0; pointer-events:none; background:var(--wb-surface); }
+.fullscreen-exit-zone:hover button, .fullscreen-exit-zone:focus-within button { opacity:1; pointer-events:auto; }
+.fullscreen-hint { position:absolute; top:16px; left:50%; transform:translateX(-50%); z-index:51; padding:9px 16px; border:1px solid var(--wb-line); border-radius:10px; background:var(--wb-surface); color:var(--wb-text); white-space:nowrap; }
 </style>

@@ -40,6 +40,8 @@ NDJSON，一行一帧。`\n` 是天然分帧符，不需要 SSE 的 `event:` / `
   "userId": "1876432091234567700",
   "roundId": "1876432091234567999",
   "traceId": "3f2b1c8a-...",
+  "modelRoute": "configured",
+  "allowProxyFallback": false,
   "workspace": {
     "root": "D:/.../temp/code_output",
     "name": "vue_project_1876432091234567800",
@@ -102,6 +104,7 @@ checkpoint 为准**。
 | `artifact.manifest` | `fileCount, totalBytes, topPaths, truncated` | ✅ |
 | `error` | `code, message, retryable` | ✅ |
 | `run.completed` | `status: succeeded\|failed\|cancelled, summary, usage` | ✅ |
+| `model.route.fallback` | `fromRoute, toRoute, reason` | ✅，CAS 后仅首次转前端 |
 | `__end__` | `{}`（终止帧，**不转成对前端的事件**） | ❌ |
 
 **AI 消息只在 `run.completed` / `error` 时写一次**（`round_id` 上唯一索引做幂等）。
@@ -195,14 +198,18 @@ Windows 默认编码会让中文乱码。
 `UNEXPECTED_EOF_WHILE_READING`，而 LangChain 把它压平成一句
 `Connection error.` —— 从错误信息完全看不出跟代理有关。
 
-所以 `core/model.py` 显式构造 httpx 客户端，`trust_env` 由
-`AGENT_MODEL_USE_SYSTEM_PROXY` 决定，**默认 `false`（直连）**。
+所以 `core/model.py` 始终使用 `trust_env=false`。`AGENT_MODEL_PROXY_ENABLED=false`
+表示明确直连；开启时所有模型请求统一走 `AGENT_MODEL_PROXY_URL`。
 
 两个客户端都要给：主模型走 `astream_events`（异步，用 `http_async_client`），
 摘要模型走 `invoke`（同步，用 `http_client`）。少给一边，压缩就会在某类机器上单独失效。
 
 客户端在进程内复用。worker 是常驻的而模型对象每次 run 重建，client 跟着重建会让连接
 一直堆在池里，也白付每轮的 TLS 握手。
+
+主生成请求可携带 `allowProxyFallback=true`。只有代理调用的底层 `ConnectError` 才重试
+当前模型调用；读取/连接超时、HTTP 状态错误均不降级。直连成功后发送
+`model.route.fallback`，Java 用 App 行 CAS 决定是否永久直连和提示用户。
 
 ## 本地验证
 
@@ -226,3 +233,4 @@ cd agent && uv run pytest -q
 |---|---|
 | 2026-09-12 | 初版。子进程 stdio 协议、14 个事件、进程池伸缩策略（3/5/缩容冷却 5 分钟） |
 | 2026-09-12 | 旧链路下线后复验。补第 3 条硬约束「网络出口必须显式」——修 httpx 静默走系统代理导致的 `Connection error.` |
+| 2026-09-19 | 模型出口简化为直连/指定代理二选一；新增按 App 持久化的单调用自动降级。 |

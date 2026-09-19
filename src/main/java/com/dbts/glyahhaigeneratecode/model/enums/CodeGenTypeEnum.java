@@ -8,7 +8,14 @@ public enum CodeGenTypeEnum {
 
     HTML("原生 HTML 模式", "html"),
     MULTI_FILE("原生多文件模式", "multi_file"),
-    VUE("Vue3 项目模式", "vue");
+    VUE("Vue3 项目模式", "vue"),
+    /**
+     * 新项目的统一类型。
+     *
+     * <p>不再让用户预选，也不再按需求文本的关键词猜 —— 产物形态由 agent 按实际需要决定，
+     * 能不能预览/运行由工作区描述按真实产物判定。旧项目各自保留原来的类型值。
+     */
+    AUTO("自动模式", "auto");
 
     private final String text;
     private final String value;
@@ -25,12 +32,17 @@ public enum CodeGenTypeEnum {
      * 与枚举 value 不一致。这是历史遗留（前端还会传 {@code vue_project}，
      * 见 {@link #getEnumByValue} 的归一化），**不要改**，改了会找不到已有产物。
      *
-     * <p>收敛前这个映射散在 BaseTool / AppServiceImpl / VueEditContextBuilder /
-     * ConversationMemoryManifestSupport / CodeGeneratorNode / VueTokenStreamAdapter
-     * 六处硬编码，收敛后统一从这里取。
+     * <p>AUTO 用与语言无关的 {@code project_{appId}}：新项目的产物形态由 agent 决定，
+     * 目录名不该再编码「是哪一种生成模式」。
      */
     public String getDirPrefix() {
-        return this == VUE ? "vue_project" : value;
+        if (this == VUE) {
+            return "vue_project";
+        }
+        if (this == AUTO) {
+            return "project";
+        }
+        return value;
     }
 
     /**

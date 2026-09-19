@@ -76,6 +76,21 @@ public class User implements Serializable {
     @Column("expand_execution_process")
     private Boolean expandExecutionProcess;
 
+    /** 启动异常时是否弹窗提示；默认开（V7 迁移的列默认值）。 */
+    @Column("alert_on_startup_failure")
+    private Boolean alertOnStartupFailure;
+
+    /** 运行期异常时是否弹窗提示；默认关 —— 运行中的偶发错误太多，默认不打扰。 */
+    @Column("alert_on_runtime_failure")
+    private Boolean alertOnRuntimeFailure;
+
+    /** 代理连接失败后是否允许当前模型调用改走直连。 */
+    @Column("auto_model_proxy_fallback")
+    private Boolean autoModelProxyFallback;
+
+    @Column("auto_name_project")
+    private Boolean autoNameProject;
+
     /**
      * 编辑时间
      */

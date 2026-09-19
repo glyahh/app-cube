@@ -21,7 +21,7 @@ import java.util.Map;
  * <p>工作区路径由这里下发，Python 侧不做任何自己的路径拼接。
  */
 @Value
-@Builder
+@Builder(toBuilder = true)
 public class AgentRunRequest {
 
     String runId;
@@ -30,6 +30,11 @@ public class AgentRunRequest {
     String userId;
     String roundId;
     String traceId;
+
+    /** configured 使用 Worker 全局配置；direct 强制本轮直连。 */
+    String modelRoute;
+    /** 只允许主生成链路按账号偏好触发自动降级。 */
+    Boolean allowProxyFallback;
 
     /** 产物根目录，绝对路径。 */
     String workspaceRoot;
@@ -42,6 +47,15 @@ public class AgentRunRequest {
 
     String message;
     String initPrompt;
+
+    /**
+     * 任务类型，对应 Python 侧的 TaskKind：{@code coding}（默认，可写）/
+     * {@code analysis} / {@code qa}（只读）。
+     *
+     * <p>知识生成走 analysis、知识问答走 qa —— 两者都不该改代码。
+     * 只读的强制在 Python 执行侧做，这里只负责把意图传过去。
+     */
+    String taskKind;
 
     /** 冷启动时灌入的历史尾部。有 checkpoint 时 Python 会忽略它。 */
     @Singular("historyItem")
@@ -63,6 +77,8 @@ public class AgentRunRequest {
         frame.put("userId", userId);
         frame.put("roundId", roundId);
         frame.put("traceId", traceId);
+        frame.put("modelRoute", "direct".equals(modelRoute) ? "direct" : "configured");
+        frame.put("allowProxyFallback", Boolean.TRUE.equals(allowProxyFallback));
 
         Map<String, Object> workspace = new LinkedHashMap<>();
         workspace.put("root", workspaceRoot);
@@ -76,10 +92,14 @@ public class AgentRunRequest {
         input.put("initPrompt", initPrompt == null ? "" : initPrompt);
         input.put("historyTail", historyTail == null ? List.of() : historyTail);
         input.put("historyTailTruncated", false);
+        // Python 侧 _classify 读这个字段；不带时按 coding（可写）处理
+        if (taskKind != null && !taskKind.isBlank()) {
+            input.put("taskKind", taskKind);
+        }
         frame.put("input", input);
 
         Map<String, Object> limits = new LinkedHashMap<>();
-        limits.put("deadlineMs", deadlineMs == null ? 600_000L : deadlineMs);
+        limits.put("deadlineMs", deadlineMs == null ? 1_800_000L : deadlineMs);
         limits.put("maxModelCalls", maxModelCalls == null ? 60 : maxModelCalls);
         frame.put("limits", limits);
 

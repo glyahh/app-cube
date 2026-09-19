@@ -3,6 +3,8 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Button as AButton,
+  Checkbox as ACheckbox,
+  CheckboxGroup as ACheckboxGroup,
   Tag as ATag,
   Textarea as ATextarea,
   Tooltip as ATooltip,
@@ -12,7 +14,6 @@ import { ArrowRightOutlined, CheckOutlined, ThunderboltOutlined } from '@ant-des
 import { appAddUsingPost } from '@/api/appController'
 import { UserLoginStore } from '@/stores/UserLogin'
 import { useAppearanceStore } from '@/stores/appearance'
-import { CodeGenTypeEnum } from '@/utils/CodeGenTypeEnum'
 import LoopPickerTrigger from '@/components/loop/LoopPickerTrigger.vue'
 
 const router = useRouter()
@@ -23,21 +24,10 @@ const appearanceStore = useAppearanceStore()
 const prompt = ref('')
 const creating = ref(false)
 const workflowEnabled = ref(appearanceStore.workflowEnabled)
+/** 看板功能开关，默认全不选；项目内还可以再改 */
+const dashboardFeatures = ref<string[]>([])
 const selectedLoopId = ref('')
-const selectedCodeType = ref<CodeGenTypeEnum>(
-  appearanceStore.defaultCodeType === 'auto'
-    ? CodeGenTypeEnum.MULTI_FILE
-    : (appearanceStore.defaultCodeType as CodeGenTypeEnum),
-)
-const autoCodeType = ref(appearanceStore.defaultCodeType === 'auto')
-
 const isLogin = computed(() => Boolean(userLoginStore.userLogin?.id))
-const codeTypes = [
-  { label: 'Auto', value: 'auto', caption: '让系统按需求自动选择' },
-  { label: 'HTML', value: CodeGenTypeEnum.HTML, caption: '单页与轻量静态站点' },
-  { label: '多文件', value: CodeGenTypeEnum.MULTI_FILE, caption: 'HTML / CSS / JS 项目' },
-  { label: 'Vue', value: CodeGenTypeEnum.VUE_PROJECT, caption: '组件化前端工程' },
-]
 const quickPrompts = [
   { label: '个人博客', value: '做一个个人博客主页，包含文章列表、分类筛选和关于我页面' },
   { label: '记账工具', value: '做一个简洁的记账工具，可以按分类统计每月支出' },
@@ -47,11 +37,6 @@ const quickPrompts = [
 function buildAppNameFromPrompt(text: string): string {
   const firstLine = (text.trim().split('\n')[0] || '').trim()
   return firstLine.slice(0, 18) || '我的生成应用'
-}
-
-function chooseCodeType(value: string) {
-  autoCodeType.value = value === 'auto'
-  if (!autoCodeType.value) selectedCodeType.value = value as CodeGenTypeEnum
 }
 
 function handleLoopChange(info: { id: string } | null) {
@@ -91,8 +76,7 @@ async function handleCreate() {
   const selection = {
     workflowEnabled: workflowEnabled.value,
     loopId: selectedLoopId.value,
-    autoCodeType: autoCodeType.value,
-    codeType: selectedCodeType.value,
+    dashboardFeatures: [...dashboardFeatures.value],
   }
 
   creating.value = true
@@ -101,9 +85,10 @@ async function handleCreate() {
       body: {
         appName: buildAppNameFromPrompt(content),
         initPrompt: content,
-        codeGenType: selection.autoCodeType ? undefined : selection.codeType,
         isBeta: selection.workflowEnabled ? 1 : 0,
         loopIds: selection.loopId ? [selection.loopId] : undefined,
+        dashboardFeatures:
+          selection.dashboardFeatures.length > 0 ? selection.dashboardFeatures : undefined,
       } as any,
     })
     if ((res.data.code === 0 || res.data.code === 20000) && res.data.data) {
@@ -114,7 +99,6 @@ async function handleCreate() {
         query: {
           autoSend: 'true',
           genMode: selection.workflowEnabled ? 'workflow' : 'legacy',
-          codeTypeChoice: selection.autoCodeType ? 'Auto' : selection.codeType,
           ...(selection.loopId ? { loopId: selection.loopId } : {}),
         },
       })
@@ -151,7 +135,14 @@ async function handleCreate() {
         <div class="quick-row"><span class="quick-label">快速开始</span><button v-for="item in quickPrompts" :key="item.label" type="button" class="quick-chip" @click="prompt = item.value">{{ item.label }}</button></div>
 
         <div class="control-row">
-          <div class="control-group" aria-label="代码类型"><span class="control-label">代码类型</span><button v-for="type in codeTypes" :key="type.value" type="button" class="mode-chip" :class="{ active: (type.value === 'auto' && autoCodeType) || (type.value !== 'auto' && !autoCodeType && selectedCodeType === type.value) }" :aria-pressed="(type.value === 'auto' && autoCodeType) || (type.value !== 'auto' && !autoCodeType && selectedCodeType === type.value)" @click="chooseCodeType(type.value)">{{ type.label }}</button></div>
+          <div class="control-group" aria-label="看板功能">
+            <span class="control-label">看板</span>
+            <ACheckboxGroup v-model:value="dashboardFeatures" :disabled="creating">
+              <ACheckbox value="metrics">监控</ACheckbox>
+              <ACheckbox value="logs">日志</ACheckbox>
+              <ACheckbox value="knowledge">知识图谱</ACheckbox>
+            </ACheckboxGroup>
+          </div>
           <div class="control-actions"><LoopPickerTrigger :single-select="true" @single-change="handleLoopChange" /><ATooltip title="选择 Loop 后暂不支持工作流生成" placement="top"><button type="button" class="workflow-chip" :class="{ active: workflowEnabled, disabled: !!selectedLoopId }" :aria-pressed="workflowEnabled" :aria-disabled="!!selectedLoopId" @click="toggleWorkflow"><ThunderboltOutlined /> 工作流 <ATag color="orange" :bordered="false">Beta</ATag></button></ATooltip><AButton type="primary" size="large" class="generate-button" :loading="creating" :disabled="creating" :aria-busy="creating" @click="handleCreate">开始生成<template #icon><ArrowRightOutlined /></template></AButton></div>
         </div>
       </section>

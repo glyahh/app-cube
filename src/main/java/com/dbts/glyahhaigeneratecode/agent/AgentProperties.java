@@ -32,7 +32,7 @@ public class AgentProperties {
      * 单次 run 的硬截止。Python 侧有软截止，这里是兜底 ——
      * Python 卡死时不能让进程池的槽位被永久占住。
      */
-    private Duration runDeadline = Duration.ofMinutes(10);
+    private Duration runDeadline = Duration.ofMinutes(30);
 
     /** 读一帧事件的等待上限。超时说明 Python 卡住，按故障处理。 */
     private Duration readTimeout = Duration.ofSeconds(60);
