@@ -1,3 +1,7 @@
+# 历史计划：Java 会话记忆 V4
+
+> 本文保留原设计记录，不作为当前运行架构或后续开发主线。当前主配置为 PostgreSQL + Redis，生成执行由 Java 接入层与 Python Agent 协作完成。现状、差距与第一阶段验收见 [当前项目状态与开发主线](CURRENT_PROJECT_STATUS.md)，接口见 [Java ↔ Python 契约](AGENT_CONTRACT.md)。下文的 MySQL、LangChain4j 和旧类名按历史上下文理解；“上线”不代表当前版本已验证。
+
 ### 标题
 会话记忆重构 V4（V3 定稿 + E/F/G 上线口径）
 

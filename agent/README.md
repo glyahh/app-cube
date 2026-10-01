@@ -35,8 +35,8 @@ AGENT_MODEL_PROXY_URL=http://127.0.0.1:17897
 ```
 
 关闭开关时明确直连；开启时主模型、摘要模型和窗口探测都走指定入口，且不读取系统代理。
-当前 `17897` 是 Clash/Mihomo 的 DIRECT 出口；切换其他模型时必须确认入口适用。修改后需重启
-后端和 Agent worker，并检查“模型 httpx 客户端”日志确认实际路由。
+示例端口不保证本机当前可用，也不保证其路由为 DIRECT；使用前核对实际代理配置。
+修改后需重启后端和 Agent worker，并检查“模型 httpx 客户端”日志确认实际路由。
 
 ## Docker Session 沙箱（可选）
 
@@ -71,15 +71,18 @@ core/
   runtime.py           任务分类、run 生命周期、请求校验
   settings.py          配置；含 clamp_to_window（阈值折算）
   model_window.py      动态窗口解析（不硬编码窗口）
-prompt.py              系统提示词            ← Phase 1
-server.py              AgentFactory 装配     ← Phase 1
-core/streaming_runtime.py  LangGraph 事件适配 ← Phase 1
-core/compaction.py     四层压缩              ← Phase 2/3
-backends/              local_shell / docker_sandbox ← Phase 3
-retrieval/             Glob/Grep/SearchTrace/Projection ← Phase 2
+prompt.py              系统提示词
+server.py              AgentFactory 装配
+core/streaming_runtime.py  LangGraph 事件适配
+core/compaction.py     四层压缩
+core/persistence.py    PostgreSQL checkpointer / store 与内存降级
+backends/              local_shell / docker_sandbox / 只读及敏感路径防护
+retrieval/             Glob/Grep/SearchTrace/Projection
 ```
 
-带 ← 的是尚未实现的位子，目录按契约先立住。
+这些模块已有源码，不代表本次文档同步完成了运行验收。当前架构、待开发边界及第一阶段验收见 [当前项目状态与开发主线](../docs/CURRENT_PROJECT_STATUS.md)。
+
+生成沙箱和 Java 管理的应用运行容器是两条执行链路。Docker 直接读写挂载的工作区，不等于保护原项目的独立修复副本；桥接网络不阻断出网。导入与修复流程仍需补齐副本、运行基线和验证证据绑定，不应直接在原项目执行未知脚本。
 
 ## 两条不能破的约束
 

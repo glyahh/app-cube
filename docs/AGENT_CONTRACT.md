@@ -22,8 +22,7 @@ Python Agent 运行时（`agent/`）与 Spring Boot 接入层的唯一契约。
 Python **不做 web 层**。REST 归 Spring Boot。这样省掉 FastAPI、uvicorn、端口、
 CORS、JWT、心跳看门狗、熔断器一整套，而且取消直接变成杀进程。
 
-Python **必须常驻**：实测 `import langgraph` 5.35 秒、`import deepagents` 7.11 秒，
-每次 run 起新进程会让首屏卡死。
+Python worker 常驻以摊薄导入与持久化初始化开销。历史测量中的导入耗时不作为当前版本的性能承诺；启动状态需以实际日志验证。
 
 ## 传输协议
 
@@ -44,10 +43,9 @@ NDJSON，一行一帧。`\n` 是天然分帧符，不需要 SSE 的 `event:` / `
   "allowProxyFallback": false,
   "workspace": {
     "root": "D:/.../temp/code_output",
-    "name": "vue_project_1876432091234567800",
-    "codeGenType": "vue_project",
-    "mode": "create",
-    "ignore": ["node_modules", ".git", "dist"]
+    "name": "project_1876432091234567800",
+    "codeGenType": "project",
+    "mode": "create"
   },
   "input": {
     "message": "用户原话",
@@ -55,8 +53,7 @@ NDJSON，一行一帧。`\n` 是天然分帧符，不需要 SSE 的 `event:` / `
     "historyTail": [{"role": "user", "content": "…"}],
     "historyTailTruncated": false
   },
-  "model": {"modelId": "deepseek-v4-flash", "baseUrl": "...", "maxTokens": 8192, "temperature": 0.3},
-  "limits": {"deadlineMs": 600000, "maxModelCalls": 60, "allowShell": true, "allowNetwork": true},
+  "limits": {"deadlineMs": 1800000, "maxModelCalls": 60},
   "artifacts": {"deployKey": "gOGMr8S8"},
   "callback": {"enabled": false}
 }
@@ -66,7 +63,11 @@ NDJSON，一行一帧。`\n` 是天然分帧符，不需要 SSE 的 `event:` / `
 `float64` 会丢精度。
 
 **`workspace.root` / `workspace.name` 由 Java 下发，Python 不做任何路径拼接。**
-Java 是路径真相源，Python 是内容真相源。
+Java 是路径真相源，Python 是内容真相源。新 Auto 应用的业务类型为 `auto`，请求中的工作区类型使用目录前缀 `project`；旧目录前缀继续兼容。
+
+该示例对应 `AgentRunRequest.toFrameJson`。模型、Backend 和权限策略由 Worker 配置及执行侧校验决定，不由本帧中的模型或权限字段任意覆盖。`input.taskKind` 可选，缺省为可写的 `coding`；知识分析使用 `analysis`，问答使用 `qa`，由 Python 的只读 Backend 强制限制副作用。
+
+Java 默认墙钟上限和请求缺省 `deadlineMs` 均为 30 分钟，Python 默认 `AGENT_DEADLINE_MS` 为 `1800000`；显式配置可覆盖，修改时需核对两端一致性。
 
 `historyTail` 只在 LangGraph checkpointer 为空（冷启动）时灌入；**有 checkpoint 就以
 checkpoint 为准**。
@@ -222,7 +223,7 @@ echo '{"runId":"1","workspace":{"root":"<abs>/temp/code_output","name":"html_1"}
 # Python 单测
 cd agent && uv run pytest -q
 
-# Java 侧（Phase 0 完成后）
+# Java 侧
 ./mvnw.cmd -q -DskipTests compile
 ./mvnw.cmd test -Dtest=AgentWorkerPoolTest,WorkspacePathResolverTest
 ```
@@ -231,6 +232,7 @@ cd agent && uv run pytest -q
 
 | 日期 | 改动 |
 |---|---|
+| 2026-10-02 | 仅同步文档：请求示例对齐 Auto 目录、30 分钟预算及实际序列化字段，说明只读任务与配置边界；未修改协议实现或新增运行验收。 |
 | 2026-09-12 | 初版。子进程 stdio 协议、14 个事件、进程池伸缩策略（3/5/缩容冷却 5 分钟） |
 | 2026-09-12 | 旧链路下线后复验。补第 3 条硬约束「网络出口必须显式」——修 httpx 静默走系统代理导致的 `Connection error.` |
 | 2026-09-19 | 模型出口简化为直连/指定代理二选一；新增按 App 持久化的单调用自动降级。 |
