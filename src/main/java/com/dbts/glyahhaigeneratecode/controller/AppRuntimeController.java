@@ -48,6 +48,7 @@ public class AppRuntimeController {
     private final RuntimeIncidentService incidentService;
     private final AppService appService;
     private final UserService userService;
+    private final com.dbts.glyahhaigeneratecode.projectimport.ImportWorkspaceGate importGate;
 
     /**
      * 【用户】启动应用运行
@@ -59,6 +60,7 @@ public class AppRuntimeController {
     public BaseResponse<RuntimeStatusVO> start(@PathVariable Long appId, HttpServletRequest request) {
         User loginUser = userService.getUserInSession(request);
         Path workspace = appService.resolveWorkspaceDir(loginUser, appId);
+        importGate.requireLegacyExecutionAllowed(appId);
         return ResultUtils.success(orchestrator.start(appId, loginUser.getId(), workspace));
     }
 

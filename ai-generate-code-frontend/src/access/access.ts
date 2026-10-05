@@ -28,6 +28,12 @@ router.beforeEach(async (to, from, next) => {
   // 获取目标url路径
   const toUrl = to.fullPath
 
+  if (to.name === 'project-import' && !loginUser?.id) {
+    message.warning('请先登录')
+    next({ path: '/user/login', query: { redirect: to.fullPath } })
+    return
+  }
+
   if (toUrl.startsWith('/admin')) {
     if (!loginUser || loginUser.userRole !== 'admin') {
       message.error('没有权限')

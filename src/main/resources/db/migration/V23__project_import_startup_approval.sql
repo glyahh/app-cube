@@ -1,0 +1,30 @@
+-- 用户批准与扫描证据独立；批准识别不能授予安装、构建或运行权限。
+CREATE TABLE biz.project_import_startup_approval (
+    approval_id UUID PRIMARY KEY,
+    request_id UUID NOT NULL,
+    owner_id BIGINT NOT NULL REFERENCES biz."user"(id),
+    app_id BIGINT NOT NULL REFERENCES biz.project_import_publication(app_id),
+    scan_id UUID NOT NULL REFERENCES biz.project_import_startup_inspection(scan_id),
+    import_task_id UUID NOT NULL REFERENCES biz.project_import_task(task_id),
+    content_hash TEXT NOT NULL CHECK (content_hash ~ '^[0-9a-f]{64}$'),
+    config_revision BIGINT NOT NULL CHECK (config_revision>=0),
+    context_epoch BIGINT NOT NULL CHECK (context_epoch>=0),
+    rules_version TEXT NOT NULL,
+    directories_json JSONB NOT NULL CHECK (jsonb_typeof(directories_json)='array' AND jsonb_array_length(directories_json) BETWEEN 1 AND 20),
+    request_hash TEXT NOT NULL CHECK (request_hash ~ '^[0-9a-f]{64}$'),
+    decision TEXT NOT NULL CHECK (decision IN ('APPROVE','REJECT')),
+    state TEXT NOT NULL CHECK (state IN ('APPROVED','REJECTED','RUNNING','CANCELLING','CANCELLED','SUCCEEDED','FAILED','STALE','RECOVERY_REQUIRED')),
+    revision BIGINT NOT NULL DEFAULT 0 CHECK (revision>=0),
+    cancel_requested BOOLEAN NOT NULL DEFAULT false,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    result_json JSONB,
+    error TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    update_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    UNIQUE(owner_id,request_id),
+    CHECK ((decision='REJECT' AND state='REJECTED') OR (decision='APPROVE' AND state<>'REJECTED')),
+    CHECK (state<>'SUCCEEDED' OR (result_json IS NOT NULL AND NOT cancel_requested)),
+    CHECK (state NOT IN ('CANCELLING','CANCELLED') OR cancel_requested),
+    CHECK (NOT cancel_requested OR state IN ('CANCELLING','CANCELLED','RECOVERY_REQUIRED','STALE'))
+);
+CREATE INDEX project_import_startup_approval_owner_idx ON biz.project_import_startup_approval(owner_id,state);

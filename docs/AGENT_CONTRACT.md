@@ -67,6 +67,21 @@ Java 是路径真相源，Python 是内容真相源。新 Auto 应用的业务�
 
 该示例对应 `AgentRunRequest.toFrameJson`。模型、Backend 和权限策略由 Worker 配置及执行侧校验决定，不由本帧中的模型或权限字段任意覆盖。`input.taskKind` 可选，缺省为可写的 `coding`；知识分析使用 `analysis`，问答使用 `qa`，由 Python 的只读 Backend 强制限制副作用。
 
+### 导入启动补充内部契约（尚未接业务批准接口）
+
+`input.taskKind=startup` 在解析工作区前进入封闭只读分支。`input.message` 是服务器构造的 JSON 文本，字段必须恰为：
+
+- `approvalId / scanId / importTaskId`：规范 UUID string；`appId / configRevision / contextEpoch`：十进制 string；`contentHash`：完整内容 SHA256。
+- `directories`：本次批准的 1–20 个确实未识别目录，不是任意用户输入；`files`：服务器建立的合法文本投影，最多256个文件、单文件16KiB、整请求64KiB。超限明确失败，不静默截断。
+
+Worker 复用主模型与既有路由，不自动切线路；一次调用，不装配生成 Agent 的 Shell、文件工具、Git、checkpoint、store 或历史消息，也不读取原工程路径。保护路径拒绝，模型输出工具调用拒绝；缺凭据不走占位成功。
+
+模型仅返回 `services / unidentified`；每个批准目录须包含一个或多个有依据候选，或者恰好列为一次未识别，不得同时属于两者。同目录同命令与重复服务名称拒绝，不限制一个目录只能有一个服务。服务字段恰为 `name / directory / command / build / evidence`；依据必须存在于批准投影。服务端包裹原冻结身份、标 `source=AGENT / certainty=INFERRED`，计算依据文本 SHA256；模型不能自己改身份、声称运行成功或取得安装权。`text.message` 的 `messageId=startup-candidates` 承载结构化结果，合格后才 `run.completed`；失败发脱敏 `error`，主循环始终发 `__end__`。
+
+Java 内部已有 V23 冻结批准账本、同锁当前证据复核与封存文本投影。专属执行器通过平台 `scripts/import-startup-agent.py` 一次性 Python `-I` 进程消费私有输入，先校验 SHA256/96KiB 上限；正文48KiB、封装消息64KiB，不截断。UTF-8、应用/批准/序号/事件次序与 EOF 严格核对；90秒有界执行，批准到期持续撤销。资源使用独占 PID/启动时间，不借共享 Worker 的 PID 终止任务。
+
+**边界**：这些仍是内部能力；approvalId 格式正确不代表真实用户批准存在。持久执行租约、真实批准 API、取消/重启恢复及返回时全内容发布校验仍待接；客户端不得直接提交这个消息。候选命令只是不可信推断，不可直接交旧运行入口执行。正式授权/API/界面联调与真实模型成功均未验收。现有限额/排除策略不替代相关上下文与实际模型窗口预算，见 [本节点证据](PLANS/project-import-startup-model-executor-verification.md)。
+
 Java 默认墙钟上限和请求缺省 `deadlineMs` 均为 30 分钟，Python 默认 `AGENT_DEADLINE_MS` 为 `1800000`；显式配置可覆盖，修改时需核对两端一致性。
 
 `historyTail` 只在 LangGraph checkpointer 为空（冷启动）时灌入；**有 checkpoint 就以

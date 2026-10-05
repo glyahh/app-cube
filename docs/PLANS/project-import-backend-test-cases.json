@@ -1,0 +1,718 @@
+{
+  "schemaVersion": 1,
+  "feature": "project-import",
+  "matrix": "docs/PLANS/project-import-test-matrix.md",
+  "cases": [
+    {
+      "id": "F01",
+      "suite": "folder-content",
+      "scenario": "普通工程、嵌套目录、中文/空格文件名、空文件与二进制",
+      "expected": "相对路径和内容正确；目录、源码查看对应当前新应用",
+      "layers": "单元、接口、浏览器、磁盘核对",
+      "status": "NOT_RUN",
+      "evidence": [
+        "docs/PLANS/project-import-publication-verification.md",
+        "docs/PLANS/project-import-credential-verification.md"
+      ],
+      "implementedTests": [
+        "ProjectImportManifestTest#acceptsNestedChineseSpacesAndZeroBytes (仅纯清单断言；整组仍 NOT_RUN)",
+        "ProjectImportStagingTest#storesActualBinaryBytesAndHashesWithoutTouchingOriginal (局部后端断言；最终应用/整组仍 NOT_RUN)",
+        "ProjectImportPublicationFilesTest (真实候选副本与内容复核；未覆盖整组)",
+        "scripts/verify-folder-import-real.mjs (正式浏览器与最终文件局部)"
+      ]
+    },
+    {
+      "id": "F02",
+      "suite": "folder-content",
+      "scenario": "默认保留依赖和产物",
+      "expected": "`node_modules`、`.venv`、`dist`、`target` 中的选定文件实际保留，不隐式过滤",
+      "layers": "接口、磁盘核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": [
+        "ProjectImportManifestTest#retainsDependenciesAndBuildOutputsByDefault (仅纯清单断言；整组仍 NOT_RUN)",
+        "ImportTaskServiceTest#frozenSourcePersistsAndActualFilesReachWaitingConfirmationNotSuccess (局部后端断言；最终应用/整组仍 NOT_RUN)"
+      ]
+    },
+    {
+      "id": "F03",
+      "suite": "folder-content",
+      "scenario": "开启部分跳过规则",
+      "expected": "仅过滤用户所选范围；摘要、排除清单与最终文件一致",
+      "layers": "单元、浏览器、磁盘核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": [
+        "ProjectImportManifestTest#appliesEveryFilterCombinationWithoutChangingInput (仅纯清单断言；整组仍 NOT_RUN)",
+        "ProjectImportManifestTest#sensitiveReasonTakesPrecedenceOverDirectoryFilters (仅纯清单断言；整组仍 NOT_RUN)"
+      ]
+    },
+    {
+      "id": "F04",
+      "suite": "folder-content",
+      "scenario": "敏感配置默认排除、示例保留、明确包含",
+      "expected": "选择与文件结果一致；示例中的测试密钥标记不能泄漏到模型/日志",
+      "layers": "单元、端到端、泄漏检查",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": [
+        "ProjectImportManifestTest#excludesSensitiveNames (仅纯清单断言；整组仍 NOT_RUN)",
+        "ProjectImportManifestTest#preservesExamplesAndNonMatchingNames (仅纯清单断言；整组仍 NOT_RUN)"
+      ]
+    },
+    {
+      "id": "F05",
+      "suite": "folder-content",
+      "scenario": "非法路径、重复相对路径、绝对路径与工作区外符号链接",
+      "expected": "不越出任务工作副本；拒绝或异常处理明确，不静默写入他处",
+      "layers": "单元、接口、隔离环境实测",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": [
+        "ProjectImportManifestTest#rejectsUnsafePaths (仅纯清单断言；整组仍 NOT_RUN)",
+        "ProjectImportManifestTest#rejectsDuplicatesCaseAliasesAndFileDirectoryCollisionsInEitherOrder (仅纯清单断言；整组仍 NOT_RUN)",
+        "ProjectImportManifestTest#boundsPathLengthAndComponentLength (仅纯清单断言；整组仍 NOT_RUN)",
+        "ProjectImportStagingTest#windowsJunctionRootCannotBecomeManagedStaging (局部后端断言；最终应用/整组仍 NOT_RUN)",
+        "ProjectImportStagingTest#childJunctionCleanupNeverDeletesItsOutsideTarget (局部后端断言；最终应用/整组仍 NOT_RUN)"
+      ]
+    },
+    {
+      "id": "F06",
+      "suite": "folder-content",
+      "scenario": "超限、中断、读取失败、空范围",
+      "expected": "状态真实，不隐式截断后报成功；资源限制与最终文件可核对",
+      "layers": "接口、故障注入",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": [
+        "ProjectImportManifestTest#validatesExcludedFilesTooAndDoesNotSilentlyTruncate (仅纯清单断言；整组仍 NOT_RUN)",
+        "ProjectImportManifestTest#rejectsEmptyRangeNullInputInvalidSizesAndInvalidLimits (仅纯清单断言；整组仍 NOT_RUN)",
+        "ProjectImportManifestTest#acceptsExactQuotaAndRejectsLongOverflow (仅纯清单断言；整组仍 NOT_RUN)",
+        "ProjectImportStagingTest#rejectsShortLongAndFailingStreamsAndRemovesOnlyItsPartialFile (局部后端断言；最终应用/整组仍 NOT_RUN)",
+        "ImportTaskServiceTest#truncatedUploadFailsAndCleansOnlyThisTask (局部后端断言；最终应用/整组仍 NOT_RUN)"
+      ]
+    },
+    {
+      "id": "F07",
+      "suite": "folder-content",
+      "scenario": "上传及后续安装、运行、修复",
+      "expected": "原工程、既有应用保持不变；对导入副本的修改不串写来源",
+      "layers": "全流程、内容清单对比",
+      "status": "NOT_RUN",
+      "evidence": [
+        "docs/PLANS/project-import-publication-verification.md",
+        "docs/PLANS/project-import-credential-verification.md"
+      ],
+      "implementedTests": [
+        "ImportTaskServiceTest#successfulPublicationPreservesOriginalAndRetryNeverCreatesAnotherApplication (保护来源/独立 App 局部)"
+      ]
+    },
+    {
+      "id": "G01",
+      "suite": "git-platform",
+      "scenario": "GitHub 公开仓库",
+      "expected": "真实读取、分支选择、文件接入与实际 commit 一致",
+      "layers": "真实平台集成、浏览器、磁盘核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "G02",
+      "suite": "git-platform",
+      "scenario": "GitHub 私有仓库",
+      "expected": "使用用户有权访问的凭据；文件与来源正确，未泄漏 Token",
+      "layers": "真实平台集成、浏览器、泄漏检查",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "G03",
+      "suite": "git-platform",
+      "scenario": "Gitee 公开仓库",
+      "expected": "同 G01，独立记录结果，不用 GitHub 结果替代",
+      "layers": "真实平台集成、浏览器、磁盘核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "G04",
+      "suite": "git-platform",
+      "scenario": "Gitee 私有仓库",
+      "expected": "同 G02，独立核对该平台权限与响应",
+      "layers": "真实平台集成、浏览器、泄漏检查",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "G05",
+      "suite": "git-platform",
+      "scenario": "默认/非默认分支、搜索与分批列举",
+      "expected": "有权限分支不遗漏；选中项明确，单次只有一个分支",
+      "layers": "单元、平台集成、浏览器",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "G06",
+      "suite": "git-platform",
+      "scenario": "请求伪造多分支、Tag 或指定 commit 输入",
+      "expected": "后端同样遵守首期单分支入口，不绕过界面批量创建或进入未支持路径",
+      "layers": "接口负例、数据库核对",
+      "status": "NOT_RUN",
+      "evidence": [
+        "docs/PLANS/project-import-publication-verification.md",
+        "docs/PLANS/project-import-credential-verification.md"
+      ],
+      "implementedTests": [
+        "ImportRepositorySourceTest#branchIsOneValidatedRefNotCommandOptionsOrRevisionExpression (纯分支校验；真实路由尚未完成)"
+      ]
+    },
+    {
+      "id": "G07",
+      "suite": "git-platform",
+      "scenario": "分支在预览后变化、消失或访问失效",
+      "expected": "记录实际读取版本；最终文件不混用旧预览或其他分支，失败真实",
+      "layers": "控制样本、集成、版本核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "G08",
+      "suite": "git-platform",
+      "scenario": "非支持来源、异常地址与跨域重定向",
+      "expected": "来源校验明确；Token 不发送到不应接收的地址，不落入 URL/命令参数",
+      "layers": "单元、隔离网络测试",
+      "status": "NOT_RUN",
+      "evidence": [
+        "docs/PLANS/project-import-publication-verification.md",
+        "docs/PLANS/project-import-credential-verification.md"
+      ],
+      "implementedTests": [
+        "ImportRepositorySourceTest#rejectsSecretUrlsProtocolsPortsQueriesAndForeignDestinations (纯来源校验；网络目的地尚未完成)"
+      ]
+    },
+    {
+      "id": "G09",
+      "suite": "git-platform",
+      "scenario": "Token 无效/过期/权限不足、仓库不存在",
+      "expected": "脱敏错误和失败状态正确，不自动尝试其他用户或其他未选凭据",
+      "layers": "平台负例、接口、状态核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "G10",
+      "suite": "git-platform",
+      "scenario": "网络中断、超时、临时拉取失败",
+      "expected": "无半成品可用应用，失败证据保留、残留仅清理本任务范围",
+      "layers": "故障注入、状态和磁盘核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "G11",
+      "suite": "git-platform",
+      "scenario": "重复导入同仓库/同分支/不同分支",
+      "expected": "新应用、新工作副本独立；远端无导入引起的提交/推送",
+      "layers": "平台集成、数据库、磁盘核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "C01",
+      "suite": "credential-security",
+      "scenario": "同一用户/同一平台保存多份 Token",
+      "expected": "新增不覆盖；选择、替换、删除只影响对应凭据",
+      "layers": "单元、接口、数据库、浏览器",
+      "status": "NOT_RUN",
+      "evidence": [
+        "docs/PLANS/project-import-publication-verification.md",
+        "docs/PLANS/project-import-credential-verification.md"
+      ],
+      "implementedTests": [
+        "ImportCredentialServiceTest#createProducesMetadataOnlyAndIndependentServerIds",
+        "scripts/verify-import-credentials.py (多凭据与数据库局部；Git 界面联调未完成)"
+      ]
+    },
+    {
+      "id": "C02",
+      "suite": "credential-security",
+      "scenario": "未登录、他人 Token/app/task 标识及未提交静态路径",
+      "expected": "后端拒绝越权，不只依赖前端隐藏；未完成/恢复中的导入不可通过静态、预览、下载等入口读取；无跨用户状态或文件泄漏",
+      "layers": "接口、端到端、入口覆盖核对",
+      "status": "NOT_RUN",
+      "evidence": [
+        "docs/PLANS/project-import-publication-verification.md",
+        "docs/PLANS/project-import-credential-verification.md"
+      ],
+      "implementedTests": [
+        "ImportTaskServiceTest#rejectsForeignOwnerStaleRevisionWrongOrderAndRepeatedUpload (局部后端断言；最终应用/整组仍 NOT_RUN)",
+        "ImportWorkspaceGateTest",
+        "ImportCredentialControllerTest#csrfIdentityAndBodyLimitsApplyBeforeCredentialMutation",
+        "scripts/verify-folder-import-real.mjs (私有预览/浏览器隔离局部)"
+      ]
+    },
+    {
+      "id": "C03",
+      "suite": "credential-security",
+      "scenario": "密文保存、AAD 错配/篡改、密钥缺失/轮换及完整链路泄漏",
+      "expected": "不以密码摘要存 Token；验证失败不明文回退；轮换不误作用户换 Token；浏览器持久存储、日志、模型输入、代码、URL、进程参数和下载包不含测试令牌值，helper 私有秘密协议输出不接通用事件/日志采集",
+      "layers": "集成、泄漏检查、密钥故障样本",
+      "status": "NOT_RUN",
+      "evidence": [
+        "docs/PLANS/project-import-publication-verification.md",
+        "docs/PLANS/project-import-credential-verification.md"
+      ],
+      "implementedTests": [
+        "ImportCredentialCipherTest (AES-GCM/AAD/篡改/换 keyId 局部；不是线上轮换)",
+        "ImportCredentialKeyProviderTest (失钥/坏配置/仓库外存储)",
+        "ImportCredentialControllerTest#secretInputCannotSerializeOrAppearInToString"
+      ]
+    },
+    {
+      "id": "C04",
+      "suite": "credential-security",
+      "scenario": "改备注/替换/删除与准备、拉取、确认、提交相遇",
+      "expected": "改备注不取消；新导入用新值，不混版本；替换终止旧值未完成任务，提供新任务入口，不自动续跑或中途换身份；共享条件决定凭据变更与提交先后；删除取消关联未完成任务，晚到结果不转成功，停止失败明确；其他任务/已完成应用不受影响",
+      "layers": "状态机、有限并发、故障测试",
+      "status": "NOT_RUN",
+      "evidence": [
+        "docs/PLANS/project-import-publication-verification.md",
+        "docs/PLANS/project-import-credential-verification.md"
+      ],
+      "implementedTests": [
+        "ImportCredentialServiceTest (备注/替换/删除局部)",
+        "ImportCredentialControllerTest#replacementStopFailureIsReturnedRatherThanClaimingCancelled",
+        "scripts/verify-import-credentials.py (受控租约两个提交顺序；非真实 Git 在途停止)"
+      ]
+    },
+    {
+      "id": "C05",
+      "suite": "credential-security",
+      "scenario": "敏感文件明确包含、错误文本带测试秘密",
+      "expected": "文件保存/沙箱使用与模型读取/日志分开；脱敏有效，不吞掉定位所需信息",
+      "layers": "集成、Agent 防护、端到端",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "U01",
+      "suite": "preferences-confirmation",
+      "scenario": "初始默认值、长期偏好、重新登录",
+      "expected": "默认值正确，保存后恢复；不同用户不共享偏好",
+      "layers": "单元、接口、浏览器",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": [
+        "ImportPreferenceServiceTest#absentPreferencesUseConfirmedDefaults (局部后端断言；最终应用/整组仍 NOT_RUN)",
+        "ProjectImportControllerTest#preferencesAreSessionOwnedAndExplicitSaveRequiresCsrfAndCompleteFields (局部后端断言；最终应用/整组仍 NOT_RUN)"
+      ]
+    },
+    {
+      "id": "U02",
+      "suite": "preferences-confirmation",
+      "scenario": "本次临时调整、下次导入",
+      "expected": "本次按临时值执行，下次仍取已保存偏好，旧应用文件不变",
+      "layers": "单元、端到端、磁盘核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": [
+        "ImportTaskServiceTest#defaultsReadSavedPreferenceOnlyAtCreationAndExplicitOptionsNeverSaveIt (局部后端断言；最终应用/整组仍 NOT_RUN)"
+      ]
+    },
+    {
+      "id": "U03",
+      "suite": "preferences-confirmation",
+      "scenario": "两入口摘要、展开详情、规则修改",
+      "expected": "文件数/大小/排除项由实际范围产生，修改后更新，最终文件匹配",
+      "layers": "单元、端到端、内容清单",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": [
+        "ProjectImportManifestTest#appliesEveryFilterCombinationWithoutChangingInput (仅纯清单断言；整组仍 NOT_RUN)"
+      ]
+    },
+    {
+      "id": "U04",
+      "suite": "preferences-confirmation",
+      "scenario": "统计失败、不完整或受限",
+      "expected": "明确异常，不当作完整扫描或零文件成功",
+      "layers": "单元、接口、浏览器",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": [
+        "ProjectImportManifestTest#validatesExcludedFilesTooAndDoesNotSilentlyTruncate (仅纯清单断言；整组仍 NOT_RUN)"
+      ]
+    },
+    {
+      "id": "U05",
+      "suite": "preferences-confirmation",
+      "scenario": "默认取文件夹/仓库名、手动修改、重名",
+      "expected": "名称正确保存；应用身份及来源独立，无重名覆盖",
+      "layers": "单元、端到端、数据库",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "U06",
+      "suite": "preferences-confirmation",
+      "scenario": "导入成功跳转 Agent 工作台、失败/取消与迟到结果",
+      "expected": "仅最终成功进入本次独立应用的 `/app/:id/chat`，名称和归属正确；不携带 autoSend 或自动生成提示；失败/取消不进入工作台，失效任务或其他应用标识不能串写；安装提示在工作台内，刷新/返回遵守权威任务和应用资格",
+      "layers": "浏览器、真实业务状态、归属/权限负例",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "D01",
+      "suite": "dependency-authorization",
+      "scenario": "导入、预览和扫描完成",
+      "expected": "没有依赖安装、工程构建或应用启动；后台也没有隐式执行这些动作",
+      "layers": "端到端、执行记录与进程核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "D02",
+      "suite": "dependency-authorization",
+      "scenario": "导入后安装弹窗拒绝",
+      "expected": "不安装，应用内“安装依赖”仍可用",
+      "layers": "浏览器、后台状态",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "D03",
+      "suite": "dependency-authorization",
+      "scenario": "导入后确认安装或单独点击安装按钮",
+      "expected": "只安装，不启动应用；成功/失败状态与实际依赖对应",
+      "layers": "浏览器、真实沙箱",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "D04",
+      "suite": "dependency-authorization",
+      "scenario": "点击运行但缺依赖，拒绝/取消安装",
+      "expected": "再次提示，未确认则不安装也不启动",
+      "layers": "端到端、进程核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "D05",
+      "suite": "dependency-authorization",
+      "scenario": "点击运行并确认安装成功",
+      "expected": "继续同一有效计划的必要编译/构建并启动，不重复要求独立构建按钮；已有有效依赖不静默重装；共享准备记录输入与影响范围，失败只阻塞相关服务；不启动未选项，不串应用/版本，不额外执行平台验收或生产部署",
+      "layers": "全流程、命令/状态与进程核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "D06",
+      "suite": "dependency-authorization",
+      "scenario": "安装失败、超时或取消",
+      "expected": "不启动，不把部分安装标记为就绪；残留处理范围正确",
+      "layers": "故障注入、真实沙箱",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "D07",
+      "suite": "dependency-authorization",
+      "scenario": "带入不兼容依赖目录、锁文件/版本变化、已有有效依赖",
+      "expected": "就绪判定绑定实际环境、依赖清单与工具，不因目录存在或旧记录误报；也不静默重装，UNKNOWN 不当 READY",
+      "layers": "集成、真实沙箱、版本核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "D08",
+      "suite": "dependency-authorization",
+      "scenario": "安装脚本产生文件/子进程或访问受限资源",
+      "expected": "固有生命周期记录为安装效果；受沙箱、权限和资源边界约束，不修改宿主原工程或其他应用，不自动合回执行副本产物或继续启动",
+      "layers": "隔离环境实测",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "S01",
+      "suite": "startup-recognition",
+      "scenario": "根工程、前后端分目录、嵌套工作区",
+      "expected": "候选覆盖正确，不取第一个结果冒充整个工程",
+      "layers": "语料单元、集成",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "S02",
+      "suite": "startup-recognition",
+      "scenario": "真实 scripts、自定义启动脚本、包管理器与锁文件",
+      "expected": "解析实际字段，不按整文件同名文本误判；包管理器/锁文件冲突明确；库和工具不误列服务，依据可追溯",
+      "layers": "解析单元、支持样本实跑",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "S03",
+      "suite": "startup-recognition",
+      "scenario": "显式运行配置、部署文件、框架入口相互冲突",
+      "expected": "优先级和歧义处理明确；坏声明不静默回退；扫描不执行工程脚本、插件、Python import 或外部实体读取，缺入口不盲猜",
+      "layers": "语料单元、接口",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "S04",
+      "suite": "startup-recognition",
+      "scenario": "依赖包/产物/示例干扰、无入口库项目",
+      "expected": "不误列用户服务；工程明确声明的静态产物按正确归属处理",
+      "layers": "语料单元、支持样本实跑",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "S05",
+      "suite": "startup-recognition",
+      "scenario": "三层识别、部分服务未识别、扫描不完整、入口失效",
+      "expected": "固定扫描先于算法识别；两层未识别后批准才调用 Agent，拒绝不调用且可手动补充；前端已识别/后端未识别时，允许批准补充后端，不要求全项目零结果，不无声覆盖前端；扫描失败/不完整显式显示，不偷换成未识别；Agent 只给有依据候选，不安装/运行，不能直接当成运行成功",
+      "layers": "单元、浏览器、接口、模型调用审计",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "S06",
+      "suite": "startup-recognition",
+      "scenario": "手选目录、手填服务及命令、保存后下次使用",
+      "expected": "用户选择不被静默覆盖；每次运行前重新校验，越界或失效配置不执行",
+      "layers": "单元、端到端",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "S07",
+      "suite": "startup-recognition",
+      "scenario": "源码修改、同大小/同 mtime 内容变化、run.json 或手动配置变化、旧候选/旧结果",
+      "expected": "当前内容、配置与计划版本对应；过期确认和迟到候选不改当前计划，不能用旧指纹证明有效；已有 dist 不代表对应当前源码",
+      "layers": "内容级回归、端到端",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "R01",
+      "suite": "service-lifecycle",
+      "scenario": "多选、只选部分、取消选择及聚合启动脚本",
+      "expected": "只有已选服务启动；聚合脚本不可偷偷启动未选服务，扩大范围须重确认；工程模块构建不等于启动模块，其他应用无副作用",
+      "layers": "浏览器、真实容器、进程核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "R02",
+      "suite": "service-lifecycle",
+      "scenario": "前后端均运行及业务交互",
+      "expected": "各自就绪、地址/日志归属正确，真实业务请求正常，不只看端口",
+      "layers": "真实全栈端到端",
+      "status": "NOT_RUN",
+      "evidence": [
+        "docs/PLANS/project-import-health-path-verification.md"
+      ],
+      "implementedTests": [
+        "ImportHttpReadinessTest (限定本机来源、声明路径、2xx 与禁止跳转)",
+        "ImportStartupPlanTest#declaredHealthPathIsFrozenAndChangesPlanRevision",
+        "ImportExecutionServiceTest#servingCannotBorrowAnotherServicesDirectoryPortOrCommand",
+        "scripts/verify-startup-lifetime-api.py (新增健康路径真实场景；本轮结果以证据记录为准，整组仍 NOT_RUN)"
+      ]
+    },
+    {
+      "id": "R03",
+      "suite": "service-lifecycle",
+      "scenario": "构建失败/取消、容器活着但服务未就绪、动态缺依赖、启动超时、端口冲突",
+      "expected": "必要构建未成功不启动对应服务；构建成功、容器 alive 均不被等同于运行或业务成功；构建下载依赖不绕过安装确认，不擅自追加 skipTests；逐服务就绪与错误可核对，计划变化使原批准失效",
+      "layers": "故障注入、真实容器、执行审计",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "R04",
+      "suite": "service-lifecycle",
+      "scenario": "一项启动失败，其他项成功",
+      "expected": "成功项保留，整体“部分失败”；错误与日志可核对",
+      "layers": "真实多服务故障测试",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "R05",
+      "suite": "service-lifecycle",
+      "scenario": "单独重试失败项及重试前工作区变化",
+      "expected": "不重复启动成功项；失败残留清理正确；版本变化重新确认，不将新失败项和旧成功项假称同版本；其他应用不受影响",
+      "layers": "真实进程/端口与状态对比",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "R06",
+      "suite": "service-lifecycle",
+      "scenario": "重复点击、并行导入/安装/运行及过期事件",
+      "expected": "无串写、无未授权重复执行，结果绑定正确任务和版本；策略须先明确",
+      "layers": "受限功能并发、集成",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": [
+        "ImportTaskServiceTest#cancellationClosesActualBlockedStreamAndLateCompletionCannotSucceed (局部后端断言；最终应用/整组仍 NOT_RUN)",
+        "ImportTaskServiceTest#unresponsiveInputStaysStopFailedUntilActualExitAndRetryCleanup (局部后端断言；最终应用/整组仍 NOT_RUN)"
+      ]
+    },
+    {
+      "id": "R07",
+      "suite": "service-lifecycle",
+      "scenario": "停止失败、start/stop 竞态、运行端异常退出/平台重启",
+      "expected": "stop/rm 返回与实际资源对账，杀 CLI 不当容器停止；STOP_FAILED 不释放相关恢复资格；重启不凭 DB 假运行或擅自重跑；迟到就绪不覆盖新状态，不误杀他人服务",
+      "layers": "生命周期、故障测试",
+      "status": "NOT_RUN",
+      "evidence": [
+        "docs/PLANS/project-import-runtime-quality-fixes.md",
+        "docs/PLANS/project-import-service-supervision-verification.md"
+      ],
+      "implementedTests": [
+        "ImportStartupPreparationServiceTest#stoppedServicesAreNotRetainedAndRunStartsANewExecution",
+        "ImportStartupPreparationServiceTest#partialStopRecordsOnlyUnconfirmedServiceAsStopFailed",
+        "ImportStartupPreparationServiceTest#exitedServiceIsNoLongerReadyAndCanBeRetried",
+        "ImportStartupPreparationServiceTest#unknownRuntimeIsNotReadyAndCannotBeRelaunched",
+        "ImportExecutionRunnerTest#runtimeQueryChecksFrozenOwnershipAndFinalizesExitedContainer",
+        "scripts/verify-startup-lifetime-api.py (停止重跑/异常退出恢复局部真实验收，不覆盖 R07 全组)",
+        "ImportExecutionRunnerTest#supervisorFinalizesOnlyItsExecutionAndLateCallbackCannotOverwriteTerminal",
+        "ImportExecutionRunnerTest#queryLosingCasToSupervisorReturnsAuthoritativeTerminalInsteadOfUnknown",
+        "ImportExecutionSandboxTest#supervisorKeepsLateOutputAndStopsOnOutputLimit (持续日志/监督局部，整组仍 NOT_RUN)"
+      ]
+    },
+    {
+      "id": "R08",
+      "suite": "service-lifecycle",
+      "scenario": "CPU/内存/进程/磁盘/耗时/输出限额",
+      "expected": "达到边界时状态明确，资源受控，原工程及其他应用仍完整",
+      "layers": "受限资源测试、真实隔离环境",
+      "status": "NOT_RUN",
+      "evidence": [
+        "docs/PLANS/project-import-service-supervision-verification.md",
+        "docs/PLANS/project-import-disk-volume-core-verification.md",
+        "docs/PLANS/project-import-disk-volume-recovery-verification.md",
+        "docs/PLANS/project-import-disk-volume-seed-verification.md"
+      ],
+      "implementedTests": [
+        "ImportExecutionSandboxTest#supervisorKeepsLateOutputAndStopsOnOutputLimit (输出限额局部)",
+        "ImportExecutionSandboxTest#outputWriteFailureIsNotSilentlyIgnored",
+        "scripts/verify-startup-lifetime-api.py (自动 OUTPUT_LIMIT 落库、容器消失和 4 MiB 日志边界真实通过；其他限额未验收)",
+        "scripts/tests/test_import_disk_volume.py (9 项 Linux 核心测试，生产业务未接)",
+        "scripts/verify-import-disk-volume.py (11 条受控真实磁盘卷局部断言，非业务库项目与完整 R08 验收)",
+        "scripts/tests/test_import_disk_volume.py (v2 16 项原生测试，业务未接)",
+        "scripts/verify-import-disk-volume.py (v2 17 条 journal/预分配/正常重挂载局部真实断言，不证明掉电/业务恢复)",
+        "scripts/tests/test_import_disk_volume.py (seed 增量 21 项原生测试，含清单、摘要、链接、容器门禁和复用；业务未接)",
+        "scripts/verify-import-disk-volume.py (seed 增量 22 条真实局部检查，非 Java 冻结快照或正式业务端到端)"
+      ]
+    },
+    {
+      "id": "E01",
+      "suite": "recovery-regression",
+      "scenario": "文件夹或 Git 接入中途失败、文件/DB 提交中断及清理失败",
+      "expected": "失败记录保留；半提交/恢复中内容不被静态或其他入口读取；journal 对应实际文件和状态，重启不假成功；仅清理本任务未完成副本，清理失败不得报已清理",
+      "layers": "故障注入、数据库和磁盘/入口核对",
+      "status": "NOT_RUN",
+      "evidence": [
+        "docs/PLANS/project-import-publication-verification.md",
+        "docs/PLANS/project-import-credential-verification.md"
+      ],
+      "implementedTests": [
+        "ImportTaskServiceTest#foreignOrPriorExecutorCannotBeClaimedStoppedAfterRestart (局部后端断言；最终应用/整组仍 NOT_RUN)",
+        "ImportTaskServiceTest#databaseFailureKeepsFilesUnreadableAndExplicitRecoveryReusesSameApplicationId",
+        "scripts/verify-import-publication-recovery.py (受控 journal/真实字节/旧进程资格局部；非断电验收)"
+      ]
+    },
+    {
+      "id": "E02",
+      "suite": "recovery-regression",
+      "scenario": "失败后重新导入",
+      "expected": "新任务独立，成功结果不使用失败残留；旧应用和凭据不受误删影响",
+      "layers": "全流程",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "E03",
+      "suite": "recovery-regression",
+      "scenario": "成功导入后安装/运行失败",
+      "expected": "保留已导入工程文件，不能误走导入失败清理",
+      "layers": "全流程、磁盘核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "E04",
+      "suite": "recovery-regression",
+      "scenario": "在导入副本复现真实问题并最小修复",
+      "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+      "layers": "真实调试闭环、内容与业务核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "E05",
+      "suite": "recovery-regression",
+      "scenario": "从干净来源重建副本、应用补丁再验证",
+      "expected": "可重现基线与修复结果；最终文件、业务状态和证据版本一致",
+      "layers": "干净基线回放",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "implementedTests": []
+    },
+    {
+      "id": "E06",
+      "suite": "recovery-regression",
+      "scenario": "新项目生成、历史应用、文件查看/编辑及原运行入口",
+      "expected": "无本期变更引起的回归；新生成主线用真实链路验收，Mock 不冒充真实模型链路",
+      "layers": "现有自动化回归、真实端到端",
+      "status": "NOT_RUN",
+      "evidence": [
+        "docs/PLANS/project-import-publication-verification.md",
+        "docs/PLANS/project-import-credential-verification.md"
+      ],
+      "implementedTests": [
+        "scripts/verify-import-publication-recovery.py (合法保存后历史来源身份不变；旧 App 可用入口回归局部)"
+      ]
+    }
+  ]
+}

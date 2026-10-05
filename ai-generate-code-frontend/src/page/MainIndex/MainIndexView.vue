@@ -23,7 +23,7 @@ import ReferenceFooterBackdropModule from './components/ReferenceFooterBackdropM
             <span class="project-status-pill">Creative Engineering</span>
           </div>
           <div class="project-title-row">
-            <h2 class="project-title">Glyahh AI Generate Code</h2>
+            <h2 class="project-title">应用魔方</h2>
             <p class="project-title-side">Workflow-native · Stream-first · Production-ready</p>
           </div>
           <p class="project-desc">

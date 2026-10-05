@@ -156,11 +156,11 @@ public class AppServiceSupport {
     );
 
 
-    /** 需包含的文本代码文件扩展名集合（与前端 TEXT_FILE_EXTS 保持一致） */
+    /** 文件查看与版本化保存共用的文本扩展名；编译产物不开放文本编辑。 */
     private static final Set<String> TEXT_FILE_EXTS = Set.of(
             "java", "kt", "js", "ts", "tsx", "jsx", "vue", "html", "htm",
             "css", "scss", "less", "json", "yaml", "yml", "xml", "md",
-            "txt", "properties", "sql", "sh", "bat", "ps1"
+            "txt", "properties", "sql", "sh", "bat", "ps1", "py", "toml"
     );
 
 
@@ -212,6 +212,9 @@ public class AppServiceSupport {
         if (lower.endsWith(".js") || lower.endsWith(".jsx")) return "javascript";
         if (lower.endsWith(".css") || lower.endsWith(".scss") || lower.endsWith(".less")) return "css";
         if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
+        if (lower.endsWith(".py")) return "python";
+        if (lower.endsWith(".java")) return "java";
+        if (lower.endsWith(".toml")) return "toml";
         return "text";
     }
 

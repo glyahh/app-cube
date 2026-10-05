@@ -1,0 +1,9 @@
+{
+  "name": "vue-sample",
+  "private": true,
+  "packageManager": "npm@10.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  }
+}

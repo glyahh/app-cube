@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -34,7 +35,7 @@ class WorkspacePathResolverTest {
         WorkspaceProperties props = new WorkspaceProperties();
         props.setOutputRoot(tempRoot.resolve("code_output"));
         props.setDeployRoot(tempRoot.resolve("code_deploy"));
-        resolver = new WorkspacePathResolver(props);
+        resolver = new WorkspacePathResolver(props, org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.projectimport.ImportWorkspaceGate.class));
     }
 
     @Test
@@ -73,6 +74,68 @@ class WorkspacePathResolverTest {
     void emptyResourcePathLandsOnDir() {
         Path dir = resolver.resolveOutputResource("html_123", "/");
         assertEquals(tempRoot.resolve("code_output").resolve("html_123").toAbsolutePath().normalize(), dir);
+    }
+
+    @Test
+    @DisplayName("产物根上级的目录联接不拦截普通预览")
+    void junctionAboveOutputRootStillResolves() throws Exception {
+        Path realParent = tempRoot.resolve("real-parent");
+        Path file = realParent.resolve("code_output").resolve("html_123").resolve("index.html");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "ok");
+        Path linkParent = tempRoot.resolve("link-parent");
+        assertEquals(0, junction(linkParent, realParent));
+        WorkspaceProperties props = new WorkspaceProperties();
+        props.setOutputRoot(linkParent.resolve("code_output"));
+        props.setDeployRoot(tempRoot.resolve("code_deploy"));
+        WorkspacePathResolver throughLink = new WorkspacePathResolver(props,
+                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.projectimport.ImportWorkspaceGate.class));
+        Path resolved = throughLink.resolveOutputResource("html_123", "index.html");
+        assertTrue(Files.isSameFile(resolved, file));
+    }
+
+    @Test
+    @DisplayName("工作区内部的目录联接不能解析到目录外")
+    void rejectsJunctionInsideWorkspace() throws Exception {
+        Path outside = tempRoot.resolve("outside");
+        Files.createDirectories(outside);
+        Files.writeString(outside.resolve("secret.txt"), "secret");
+        Path link = tempRoot.resolve("code_output").resolve("html_123").resolve("linked");
+        Files.createDirectories(link.getParent());
+        assertEquals(0, junction(link, outside));
+        assertThrows(MyException.class, () -> resolver.resolveOutputResource("html_123", "linked/secret.txt"));
+    }
+
+    private static int junction(Path link, Path target) throws Exception {
+        Process process = new ProcessBuilder("cmd", "/c", "mklink", "/J", link.toString(), target.toString()).start();
+        return process.waitFor();
+    }
+
+    @Test
+    @DisplayName("工作区内部的符号链接不能解析到目录外")
+    void rejectsSymlinkInsideWorkspace() throws Exception {
+        Path outside = tempRoot.resolve("secret.txt");
+        Files.writeString(outside, "secret");
+        Path link = tempRoot.resolve("code_output").resolve("html_123").resolve("link.txt");
+        Files.createDirectories(link.getParent());
+        try {
+            Files.createSymbolicLink(link, outside);
+        } catch (Exception error) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, error.getMessage());
+        }
+        assertThrows(MyException.class, () -> resolver.resolveOutputResource("html_123", "link.txt"));
+    }
+
+    @Test
+    @DisplayName("产物根下的普通文件可以解析，检查不到产物根的上级")
+    void normalFileUnderOutputRootResolves() throws Exception {
+        Path file = tempRoot.resolve("code_output").resolve("html_123").resolve("index.html");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "ok");
+        ProjectImportStaging.guardInside(tempRoot.resolve("code_output"), file);
+        Path resolved = resolver.resolveOutputResource("html_123", "index.html");
+        assertTrue(resolved.endsWith("index.html"));
+        assertTrue(Files.isSameFile(resolved, file));
     }
 
     @Test

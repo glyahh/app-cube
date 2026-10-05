@@ -41,6 +41,19 @@ class AppServiceSupportTest {
             new AppServiceSupport(null, null, null, null, null, null, null);
 
     @Test
+    void importedPythonSourcesAreEditableButArtifactsRemainBinary() {
+        assertTrue(support.isTextCodeFile(Path.of("app.py")));
+        assertTrue(support.isTextCodeFile(Path.of("APP.PY")));
+        assertTrue(support.isTextCodeFile(Path.of("pyproject.toml")));
+        assertFalse(support.isTextCodeFile(Path.of("module.pyc")));
+        assertFalse(support.isTextCodeFile(Path.of("app.jar")));
+        assertFalse(support.isTextCodeFile(Path.of("Main.class")));
+        assertEquals("python", support.inferLanguage("app.py"));
+        assertEquals("java", support.inferLanguage("Main.java"));
+        assertEquals("toml", support.inferLanguage("pyproject.toml"));
+    }
+
+    @Test
     @DisplayName("有构建产物时优先用 dist/index.html")
     void prefersDistIndex() throws IOException {
         writeFile("index.html", "<script type=\"module\" src=\"/src/main.ts\"></script>");

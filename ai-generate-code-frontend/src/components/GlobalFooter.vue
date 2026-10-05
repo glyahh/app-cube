@@ -3,7 +3,7 @@
 
 <template>
   <div class="global-footer">
-    <span class="footer-text">Ai-generate-code By glyahh</span>
+    <span class="footer-text">应用魔方 · glyahh</span>
   </div>
 </template>
 

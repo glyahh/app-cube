@@ -11,8 +11,8 @@
     <groupId>com.dbts</groupId>
     <artifactId>glyahh-ai-generate-code</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>glyahh-ai-generate-code</name>
-    <description>glyahh-ai-generate-code</description>
+    <name>应用魔方</name>
+    <description>Agent 驱动的应用开发工作台</description>
     <url/>
     <licenses>
         <license/>

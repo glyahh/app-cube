@@ -23,6 +23,7 @@ import java.nio.file.Path;
 public class WorkspacePathResolver {
 
     private final WorkspaceProperties props;
+    private final com.dbts.glyahhaigeneratecode.projectimport.ImportWorkspaceGate importGate;
 
     /**
      * 生成产物的目录名，形如 {@code html_431379639885025280} 或 {@code vue_project_...}。
@@ -42,7 +43,9 @@ public class WorkspacePathResolver {
 
     /** 生成产物目录。 */
     public Path outputDir(Long appId, CodeGenTypeEnum type) {
-        return guardWithin(props.getOutputRoot(), dirName(appId, type));
+        String name = dirName(appId, type);
+        importGate.requireReadable(name);
+        return guardWithin(props.getOutputRoot(), name);
     }
 
     /** 发布产物目录。 */
@@ -61,7 +64,14 @@ public class WorkspacePathResolver {
         // 拼成一个字符串交给同一个根校验是不行的 —— ../ 会带着路径跑到 outputRoot 下
         // 别的应用目录里（甚至别 人的应用），而 startsWith(outputRoot) 依然成立，校验形同虚设。
         Path appRoot = guardWithin(props.getOutputRoot(), dirName);
+        if (dirName == null || !dirName.matches("[a-zA-Z0-9_-]+")) throw new MyException(ErrorCode.PARAMS_ERROR, "目录名称无效");
+        importGate.requireReadable(appRoot.getFileName().toString());
         return guardWithin(appRoot, normalize(resourcePath));
+    }
+
+    public String canonicalOutputName(String dirName) {
+        if (dirName == null || !dirName.matches("[a-zA-Z0-9_-]+")) throw new MyException(ErrorCode.PARAMS_ERROR, "目录名称无效");
+        return guardWithin(props.getOutputRoot(), dirName).getFileName().toString();
     }
 
     /**
@@ -115,6 +125,18 @@ public class WorkspacePathResolver {
         if (!candidate.startsWith(rootAbs)) {
             throw new MyException(ErrorCode.PARAMS_ERROR, "路径越界");
         }
+        try {
+            // 只检查这个工作区内部。产物根的上级如果是重解析点，不能把正常预览判失败。
+            ProjectImportStaging.guardInside(rootAbs, candidate);
+            if (java.nio.file.Files.exists(candidate, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                if (java.nio.file.Files.isSymbolicLink(candidate)) throw new java.io.IOException("路径包含链接或特殊节点。");
+                Path real = candidate.toRealPath();
+                Path realRoot = java.nio.file.Files.isSymbolicLink(rootAbs) || java.nio.file.Files.exists(rootAbs)
+                        ? rootAbs.toRealPath() : rootAbs;
+                if (!real.normalize().startsWith(realRoot.normalize())) throw new java.io.IOException("路径越界。");
+                candidate = real;
+            }
+        } catch (java.io.IOException e) { throw new MyException(ErrorCode.OPERATION_ERROR, "工作区路径不可用"); }
         return candidate;
     }
 }

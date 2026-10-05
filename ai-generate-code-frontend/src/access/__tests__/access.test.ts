@@ -58,4 +58,23 @@ describe('access guard', () => {
 
     expect(next).toHaveBeenCalledWith('/user/login?redirect=/admin/users')
   })
+
+  it('keeps the import destination when authentication is required', async () => {
+    mocks.ensureLoginUser.mockResolvedValueOnce(undefined)
+    await import('../access')
+    const guard = mocks.registerGuard.mock.calls[0]?.[0]
+    const next = vi.fn()
+    await guard({ name: 'project-import', path: '/project/import', fullPath: '/project/import' }, {}, next)
+    expect(next).toHaveBeenCalledWith({ path: '/user/login', query: { redirect: '/project/import' } })
+  })
+
+  it('allows authenticated users to open the import form', async () => {
+    mocks.userLogin.id = 'user-1'
+    mocks.ensureLoginUser.mockResolvedValueOnce(undefined)
+    await import('../access')
+    const guard = mocks.registerGuard.mock.calls[0]?.[0]
+    const next = vi.fn()
+    await guard({ name: 'project-import', path: '/project/import', fullPath: '/project/import' }, {}, next)
+    expect(next).toHaveBeenCalledWith()
+  })
 })

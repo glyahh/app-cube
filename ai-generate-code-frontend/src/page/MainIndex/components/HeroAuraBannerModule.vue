@@ -10,8 +10,8 @@ const props = withDefaults(
     navItems?: NavItem[]
   }>(),
   {
-    brandText: 'Glyahh',
-    titleText: 'AI GENERATE CODE',
+    brandText: '应用魔方',
+    titleText: '应用魔方',
     navItems: () => [],
   },
 )

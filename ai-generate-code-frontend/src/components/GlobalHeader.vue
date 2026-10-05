@@ -17,6 +17,7 @@ const userLoginStore = UserLoginStore()
 /** 基础菜单项 */
 const baseMenuItems = [
   { key: 'home', path: '/', label: '首页' },
+  { key: 'project-import', path: '/project/import', label: '导入项目' },
   { key: 'code-generate', path: '/code/generate', label: '代码生成' },
   { key: 'loop', path: '/loop', label: 'Loop' },
 ]
@@ -132,7 +133,7 @@ async function handleLogout() {
   <div class="global-header">
     <div class="header-left">
       <router-link to="/main_index" class="logo-wrap">
-        <span class="site-title">Ai-generate-code</span>
+        <span class="site-title">应用魔方</span>
       </router-link>
       <a-menu mode="horizontal" :selected-keys="selectedKeys" :items="menuItemsForMenu" class="header-menu"
         @select="onMenuSelect" />
@@ -354,10 +355,6 @@ async function handleLogout() {
 
   .site-title {
     font-size: 16px;
-  }
-
-  .header-menu {
-    flex: none;
   }
 
   .user-menu {

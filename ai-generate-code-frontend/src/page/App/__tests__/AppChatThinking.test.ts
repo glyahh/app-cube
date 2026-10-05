@@ -55,7 +55,8 @@ if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {}
 }
 
-const mountPage = () => shallowMount(AppChatView, {
+const mountPage = (props: { importedProject?: boolean } = {}) => shallowMount(AppChatView, {
+  props,
   global: {
     renderStubDefaultSlot: true,
     stubs: {
@@ -88,6 +89,17 @@ describe('AppChatView thinking pipeline', () => {
         thinkingSegments: JSON.stringify([{ thinkingId: 'run:1', summary: '构思星空校徽', details: ['采用环绕构图'], status: 'completed' }]) },
     ], totalRow: 2 } } })
     mocks.stream.mockReturnValue({ close: vi.fn(), transport: () => 'websocket' })
+  })
+
+  it('导入工程不显示新应用生成标语，原入口保持不变', async () => {
+    const original = mountPage()
+    await flushPromises()
+    expect(original.find('.app-subtitle').exists()).toBe(true)
+    original.unmount()
+    const imported = mountPage({ importedProject: true })
+    await flushPromises()
+    expect(imported.find('.app-subtitle').exists()).toBe(false)
+    imported.unmount()
   })
 
   it('does not guess preview from legacy type and keeps starting runtime stoppable', async () => {

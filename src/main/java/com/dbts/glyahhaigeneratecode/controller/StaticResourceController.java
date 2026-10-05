@@ -31,6 +31,8 @@ import java.nio.file.Path;
 public class StaticResourceController {
 
     private final WorkspacePathResolver pathResolver;
+    private final com.dbts.glyahhaigeneratecode.projectimport.ImportWorkspaceGate importGate;
+    private final com.dbts.glyahhaigeneratecode.service.UserService users;
 
     /**
      * 提供静态资源访问，支持目录重定向。
@@ -45,6 +47,14 @@ public class StaticResourceController {
             HttpServletRequest request) {
         String resourcePath = (String) request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
         resourcePath = resourcePath.substring(("/static/" + dirName).length());
+        boolean imported;
+        try {
+            String canonical = pathResolver.canonicalOutputName(dirName);
+            Long userId = null;
+            if (importGate.requireReadable(canonical) != null) userId = users.getUserInSession(request).getId();
+            imported = importGate.authorizeStatic(canonical, userId);
+            if (imported && com.dbts.glyahhaigeneratecode.service.support.ProjectImportManifest.isSensitivePath(resourcePath)) return ResponseEntity.notFound().build();
+        } catch (MyException e) { return ResponseEntity.notFound().build(); }
 
         // 目录访问（不带尾斜杠）重定向到带斜杠的 URL，否则相对资源会解析错
         if (resourcePath.isEmpty()) {
@@ -67,6 +77,10 @@ public class StaticResourceController {
                     .header("Cache-Control", "no-cache, no-store, must-revalidate")
                     .header("Pragma", "no-cache")
                     .header("Expires", "0")
+                    .header("X-Content-Type-Options", "nosniff")
+                    .header("Content-Security-Policy", imported
+                            ? "sandbox allow-scripts; default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'"
+                            : "")
                     .body(new FileSystemResource(file));
         } catch (MyException e) {
             // 路径越界。回 404 而不是 400/500 —— 不向探测者透露目录结构。

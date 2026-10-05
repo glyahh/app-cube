@@ -31,6 +31,7 @@ public class AgentRunRequestFactory {
     private final UserService userService;
     private final WorkspacePathResolver pathResolver;
     private final AgentProperties agentProperties;
+    private final com.dbts.glyahhaigeneratecode.projectimport.ImportWorkspaceGate importGate;
 
     /**
      * 加载应用、校验归属、组装请求。
@@ -47,6 +48,7 @@ public class AgentRunRequestFactory {
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
         ThrowUtils.throwIf(!Objects.equals(app.getUserId(), userId),
                 ErrorCode.NO_AUTH_ERROR, "只能操作自己的应用");
+        importGate.requireLegacyExecutionAllowed(appId);
 
         CodeGenTypeEnum type = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
         ThrowUtils.throwIf(type == null, ErrorCode.PARAMS_ERROR, "应用的生成类型不合法");

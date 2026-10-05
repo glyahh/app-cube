@@ -4,6 +4,11 @@ const router = createRouter({
   // 去掉地址栏默认的 # 哈希符号，实现真实的 URL
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    {
+      path: '/project/import',
+      name: 'project-import',
+      component: () => import('@/page/Import/ProjectImportView.vue'),
+    },
     // 首页
     {
       path: '/',

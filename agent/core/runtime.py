@@ -33,12 +33,13 @@ class TaskKind(str, Enum):
     SYNC = "sync"
     INSPECT = "inspect"
     REVIEW = "review"
+    STARTUP = "startup"
 
 
 # 只读任务不允许产生副作用。参考项目踩过的坑：某个发布工具绕过了只读检查
 # 直接调了写接口，所以权限要在执行侧验证，不能只信这个集合。
 READ_ONLY_KINDS = frozenset(
-    {TaskKind.TITLE, TaskKind.ANALYSIS, TaskKind.PLANNING, TaskKind.QA, TaskKind.INSPECT, TaskKind.REVIEW}
+    {TaskKind.TITLE, TaskKind.ANALYSIS, TaskKind.PLANNING, TaskKind.QA, TaskKind.INSPECT, TaskKind.REVIEW, TaskKind.STARTUP}
 )
 
 
@@ -84,6 +85,11 @@ def run_one(request: dict[str, Any], settings: Settings, emitter: Emitter) -> No
     run_id = request["runId"]
     thread_id = request.get("threadId") or ""
     message = ((request.get("input") or {}).get("message") or "").strip()
+
+    if _classify(request, message) == TaskKind.STARTUP:
+        from core.startup import run_startup
+        run_startup(request, settings, emitter)
+        return
 
     if _classify(request, message) == TaskKind.TITLE:
         _run_title(request, settings, emitter, message)

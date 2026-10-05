@@ -74,6 +74,15 @@ import java.util.stream.Stream;
 public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppService {
 
     @Resource
+    private com.dbts.glyahhaigeneratecode.projectimport.ImportWorkspaceCoordinator importWorkspaceCoordinator;
+    @Resource
+    private com.dbts.glyahhaigeneratecode.projectimport.ImportStartupConfigurationRepository startupConfigurations;
+    @Resource
+    private org.springframework.beans.factory.ObjectProvider<com.dbts.glyahhaigeneratecode.projectimport.ImportExecutionService> importExecutions;
+    @Resource
+    private com.dbts.glyahhaigeneratecode.projectimport.ImportTaskRepository importPublications;
+
+    @Resource
     private UserService userService;
 
     @Resource
@@ -526,6 +535,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Override
     public Boolean deleteMyApp(User loginUser, Long appId) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "删除应用请求参数异常");
+        return importWorkspaceCoordinator.withLock(appId, () -> deleteMyAppLocked(loginUser, appId));
+    }
+
+    private Boolean deleteMyAppLocked(User loginUser, Long appId) {
         ThrowUtils.throwIf(appId == null || appId <= 0,
                 ErrorCode.PARAMS_ERROR, "删除应用请求参数异常");
 
@@ -533,8 +547,12 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
         ThrowUtils.throwIf(!loginUser.getId().equals(app.getUserId()) && !loginUser.getUserRole().equals(UserConstant.ADMIN_ROLE), ErrorCode.NO_AUTH_ERROR, "只能删除自己的应用");
 
+        // 1. 导入容器没确认停掉时中断，应用和持久副本都保留。
+        releaseImportedExecution(appId);
+        // 2. 应用记录删掉之后，再把仍可用的导入资格标成已中止。
         boolean result = this.removeById(appId);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "删除应用失败");
+        importPublications.retirePublication(appId);
         // 关联删除该应用的所有对话历史，失败不影响应用删除
         try {
             chatHistoryService.removeByAppId(appId);
@@ -548,6 +566,13 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         runtimeOrchestrator.purgeApp(appId);
         appServiceSupport.removeCodeOutputDirByAppId(appId);
         return true;
+    }
+
+    /** 导入容器还在时不能删应用，否则进程会继续在本机端口上提供已删除的副本。 */
+    private void releaseImportedExecution(long appId) {
+        if (!importExecutions.getObject().releaseApp(appId)) {
+            throw new MyException(ErrorCode.OPERATION_ERROR, "导入项目的运行容器尚未确认停止，应用未删除。");
+        }
     }
 
     @Override
@@ -616,10 +641,19 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Override
     public Boolean deleteAppByAdmin(Long appId) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "删除应用请求参数异常");
+        return importWorkspaceCoordinator.withLock(appId, () -> deleteAppByAdminLocked(appId));
+    }
+
+    private Boolean deleteAppByAdminLocked(Long appId) {
         ThrowUtils.throwIf(appId == null || appId <= 0,
                 ErrorCode.PARAMS_ERROR, "删除应用请求参数异常");
+        // 1. 导入容器没确认停掉时中断，应用和持久副本都保留。
+        releaseImportedExecution(appId);
+        // 2. 应用记录删掉之后，再把仍可用的导入资格标成已中止。
         boolean result = this.removeById(appId);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "删除应用失败");
+        importPublications.retirePublication(appId);
         // 关联删除该应用的所有对话历史，失败不影响应用删除
         try {
             chatHistoryService.removeByAppId(appId);
@@ -939,6 +973,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Override
     public ProjectFileContentVO saveProjectFile(User loginUser, Long appId, ProjectFileSaveRequest request) {
+        requireOwnedApp(loginUser, appId);
+        return importWorkspaceCoordinator.withLock(appId, () -> saveProjectFileLocked(loginUser, appId, request));
+    }
+
+    private ProjectFileContentVO saveProjectFileLocked(User loginUser, Long appId, ProjectFileSaveRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "保存请求为空");
         ThrowUtils.throwIf(StrUtil.isBlank(request.getPath()), ErrorCode.PARAMS_ERROR, "文件路径不能为空");
         ThrowUtils.throwIf(request.getContent() == null, ErrorCode.PARAMS_ERROR, "文件内容不能为空");
@@ -964,6 +1003,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
                 throw new MyException(ErrorCode.CONFLICT_ERROR, "文件已被修改，请重新读取后再保存");
             }
             try {
+                startupConfigurations.revokeForWrite(appId);
                 Files.writeString(file, request.getContent());
             } catch (IOException e) {
                 throw new MyException(ErrorCode.SYSTEM_ERROR, "写入文件失败");

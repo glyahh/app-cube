@@ -44,6 +44,7 @@ public class AppController {
     private final AppService appService;
     private final UserService userService;
     private final UserAppApplyService userAppApplyService;
+    private final com.dbts.glyahhaigeneratecode.projectimport.ImportWorkspaceGate importGate;
 
     /**
      * 【用户】创建应用（须填写 initPrompt）
@@ -166,6 +167,7 @@ public class AppController {
         // 获取当前登录用户
         User loginUser = userService.getUserInSession(request);
         // 调用服务部署应用，仅返回 deployKey（避免服务层硬编码 host 导致 URL 错误）。
+        importGate.requireLegacyExecutionAllowed(appId);
         String deployKey = appService.deployApp(appId, loginUser);
         String deployUrl = buildDeployUrlFromRequest(request, deployKey);
         return ResultUtils.success(deployUrl);

@@ -580,7 +580,7 @@ onMounted(() => {
           <div class="prompt-card-beam" aria-hidden="true" />
           <div class="prompt-card">
             <AInput.TextArea v-model:value="prompt" class="prompt-input" :rows="3"
-              placeholder="使用 glyahh-generate-code 创建一个高效的小工具，例如：帮我做一个旅行计划记录网站……" />
+              placeholder="使用应用魔方创建一个小工具，例如：旅行计划记录网站……" />
             <div class="prompt-footer">
               <div class="prompt-hint">
                 支持自然语言描述，越具体效果越好
@@ -622,6 +622,7 @@ onMounted(() => {
                 <AButton type="primary" shape="round" :loading="creating" @click="handleCreateApp">
                   开始生成
                 </AButton>
+                <AButton shape="round" @click="router.push({ name: 'project-import' })">导入项目</AButton>
               </div>
             </div>
           </div>

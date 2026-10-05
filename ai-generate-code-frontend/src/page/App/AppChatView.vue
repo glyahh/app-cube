@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   message,
@@ -119,11 +119,14 @@ import { mapAgentEvent, type AgentUiAction } from '@/utils/agentEventMapping'
 import '@/assets/stream-layout.css'
 import { scrollElementToEnd } from '@/utils/scrollElement'
 import { renderSafeMarkdown } from '@/utils/safeMarkdown'
+import { importedApp } from '@/features/project-import/startup'
 import ExecutionProcess from '@/components/ExecutionProcess.vue'
 import ExecutionTerminal from '@/components/ExecutionTerminal.vue'
 import { cleanExecutionText } from '@/utils/executionDisplay'
 import ThinkingStage from '@/components/ThinkingStage.vue'
 import { parseThinkingSegments, mergeThinkingAction, type ThinkingSegment } from '@/utils/thinkingSegments'
+
+const props = defineProps<{ importedProject?: boolean }>()
 
 // 与全局请求保持一致：默认走当前页面 origin 下的 `/api`
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
@@ -235,6 +238,33 @@ const isAdmin = computed(() => userLoginStore.userLogin?.userRole === 'admin')
 
 // 普通用户访问他人应用（例如首页“精选应用”）时，只能查看预览，不能继续对话生成
 const isReadOnly = computed(() => !isOwner.value && !isAdmin.value)
+
+// 1. 导入工程改用启动识别与冻结计划入口；确认不是导入应用才显示原运行按钮。
+const StartupRunPreview = defineAsyncComponent(() => import('@/preview/project-import/StartupRunPreview.vue'))
+const importedWorkspace = ref<'pending' | 'imported' | 'plain'>('pending')
+const importedView = computed(() => props.importedProject === true || importedWorkspace.value === 'imported')
+const importLookupBlocked = computed(() => props.importedProject !== true && importedWorkspace.value === 'pending')
+watch(() => [appId.value, userLoginStore.userLogin?.id] as const, async ([id, owner], _, onCleanup) => {
+  importedWorkspace.value = 'pending'
+  if (props.importedProject) return
+  if (!id || !owner) {
+    importedWorkspace.value = 'plain'
+    return
+  }
+  // 2. 只读查询导入资格。取消的结果丢掉；查失败时留在导入启动入口，不退回旧运行按钮。
+  const controller = new AbortController()
+  onCleanup(() => controller.abort())
+  try {
+    const imported = await importedApp({ appId: id, ownerId: String(owner), signal: controller.signal })
+    if (!controller.signal.aborted) importedWorkspace.value = imported ? 'imported' : 'plain'
+  } catch (cause) {
+    if (controller.signal.aborted || (cause as Error).name === 'AbortError') return
+    if (!controller.signal.aborted) {
+      importedWorkspace.value = 'imported'
+      message.warning(cause instanceof Error && cause.message ? cause.message : '暂时无法确认导入状态，已停用旧的运行入口')
+    }
+  }
+}, { immediate: true })
 
 type ChatMessage = {
   id: number
@@ -1439,7 +1469,8 @@ async function handleOpenSourceFromGraph(sourceRef: string) {
 }
 
 async function handleStartRuntime() {
-  if (!appId.value || startingRuntime.value) return
+  // 导入工程只能经冻结计划与后续隔离授权运行，不走旧运行入口。
+  if (!appId.value || startingRuntime.value || importedView.value || importLookupBlocked.value) return
   startingRuntime.value = true
   try {
     runtimeStatus.value = await startRuntime({ appId: appId.value, apiBaseUrl: API_BASE_URL })
@@ -3779,7 +3810,7 @@ defineExpose({
           <div class="app-name">
             {{ appInfo?.appName || '应用生成中' }}
           </div>
-          <div class="app-subtitle">
+          <div v-if="!importedView" class="app-subtitle">
             一句话，生成一个 Web 应用
           </div>
         </div>
@@ -3815,7 +3846,12 @@ defineExpose({
         >
           编辑应用
         </a-button>
-        <ATooltip
+        <slot name="runtime-actions"><template v-if="importedView"><StartupRunPreview v-if="!isReadOnly && appId" :app-id="appId" /></template><a-button
+          v-else-if="importLookupBlocked && !isReadOnly"
+          class="ghost-btn"
+          loading
+        >正在确认</a-button><ATooltip
+          v-else
           :title="runtimeRunning
             ? (runtimeStale ? '当前运行的仍是上次启动时的代码，重新运行才会生效' : '停止常驻进程')
             : '在受控沙箱中启动常驻进程'"
@@ -3829,7 +3865,7 @@ defineExpose({
           >
             {{ runtimeRunning ? '运行中' : '运行' }}
           </a-button>
-        </ATooltip>
+        </ATooltip></slot>
         <a-button
           v-if="!isReadOnly && generatedFiles.length > 0"
           class="ghost-btn"
@@ -3894,7 +3930,7 @@ defineExpose({
           <ASpin v-if="loadingApp" />
           <template v-else>
             <div v-if="displayMessages.length === 0" class="chat-empty">
-              <AEmpty description="还没有对话，先从左侧输入提示词开始吧" />
+              <AEmpty :description="importedView ? '还没有对话' : '还没有对话，先从左侧输入提示词开始吧'" />
             </div>
             <template v-else>
               <div v-if="hasMoreHistory && !loadingHistory" class="load-more-wrap">
@@ -4211,7 +4247,7 @@ defineExpose({
           </div>
           <AInput.TextArea
             v-model:value="inputMessage"
-            placeholder="描述你想生成的网页，例如：一个用于展示我技术博客的个人站点……"
+            :placeholder="importedView ? '描述你想调整的内容…' : '描述你想生成的网页，例如：一个用于展示我技术博客的个人站点……'"
             :rows="3"
             :disabled="isReadOnly || streaming"
             :class="['chat-input', { 'chat-input-readonly': isReadOnly || streaming }]"
@@ -4380,7 +4416,7 @@ defineExpose({
           <!-- 预览 -->
           <template v-else>
             <div v-if="!shouldShowWebsite" class="preview-empty">
-              <AEmpty :description="runtimeRunning ? '应用已启动，等待端口就绪' : 'AI 未生成内容，请先完成至少一轮对话'" />
+              <AEmpty :description="runtimeRunning ? '应用已启动，等待端口就绪' : importedView ? '项目尚未运行' : 'AI 未生成内容，请先完成至少一轮对话'" />
             </div>
             <iframe
               v-else

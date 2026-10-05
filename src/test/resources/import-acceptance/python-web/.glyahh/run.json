@@ -1,0 +1,9 @@
+{
+  "processes": [
+    {
+      "name": "api",
+      "command": "python3 app.py",
+      "port": 8080
+    }
+  ]
+}

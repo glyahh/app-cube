@@ -1,0 +1,16 @@
+{
+  "processes": [
+    {
+      "name": "web",
+      "workDir": "web",
+      "command": "python3 -m http.server 4173",
+      "port": 4173
+    },
+    {
+      "name": "api",
+      "workDir": "api",
+      "command": "python3 app.py",
+      "port": 8080
+    }
+  ]
+}
