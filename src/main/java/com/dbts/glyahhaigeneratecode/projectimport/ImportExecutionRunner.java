@@ -160,7 +160,7 @@ public final class ImportExecutionRunner {
         catch(IOException error){return new ImportExecutionSandbox.Outcome(stop.get()?"STOPPED":"FAILED",stop.get()?"STOP_REQUESTED":"COPY_FAILED",null,0,null);}
         if(copy==null)return new ImportExecutionSandbox.Outcome("FAILED","PLAN_CONTENT_CHANGED",null,0,null);
         if(stop.get())return new ImportExecutionSandbox.Outcome("STOPPED","STOP_REQUESTED",null,0,null);
-        try{if(directoryBytes(copy)>limits.diskBytes())return new ImportExecutionSandbox.Outcome("FAILED","DISK_QUOTA",null,0,null);}
+        try{if(directoryBytes(copy)>limits.diskBytes()){discardQuotaBlocked(id,target.appId());return new ImportExecutionSandbox.Outcome("FAILED","DISK_QUOTA",null,0,null);}}
         catch(IOException error){return new ImportExecutionSandbox.Outcome("FAILED","COPY_FAILED",null,0,null);}
         String mountedCopy=null;
         if(volumes!=null){
@@ -184,7 +184,7 @@ public final class ImportExecutionRunner {
             }
         },stop::get);
         if(outcome!=null&&"SUCCEEDED".equals(outcome.state())){
-            try{if(directoryBytes(copy)>limits.diskBytes())return new ImportExecutionSandbox.Outcome("FAILED","DISK_QUOTA",outcome.exitCode(),outcome.outputBytes(),outcome.containerId());}
+            try{if(directoryBytes(copy)>limits.diskBytes()){discardQuotaBlocked(id,target.appId());return new ImportExecutionSandbox.Outcome("FAILED","DISK_QUOTA",outcome.exitCode(),outcome.outputBytes(),outcome.containerId());}}
             catch(IOException error){return new ImportExecutionSandbox.Outcome("FAILED","COPY_FAILED",outcome.exitCode(),outcome.outputBytes(),outcome.containerId());}
         }
         return outcome;
@@ -349,6 +349,17 @@ public final class ImportExecutionRunner {
         boolean gone=sandbox.removed(row.containerId()!=null?row.containerId():row.containerName());
         if(row.containerId()!=null&&gone)gone=sandbox.removed(row.containerName());
         return gone;
+    }
+
+    /**
+     * 额度被上一轮残留占满时丢弃应用级副本与受限卷。
+     *
+     * 持久副本按内容身份复用，失败的写入会留在里面；不清理的话同一应用后续执行会一直 DISK_QUOTA。
+     * 仍有其它未结束执行时不动副本，避免破坏在跑的资源。
+     */
+    private void discardQuotaBlocked(UUID current,long appId){
+        boolean busy=ledger.forApp(appId).stream().anyMatch(row->!row.id().equals(current)&&(row.active()||!"DONE".equals(row.cleanup())));
+        if(!busy)removeDurable(appId);
     }
 
     /** 删除应用级持久副本。目录里出现链接时停止，不跟着链接删到目录外面。 */

@@ -38,9 +38,10 @@ class ImportExecutionRealHarnessTest {
         var sandbox=new ImportExecutionSandbox(engine,new RuntimeProperties().getImage());
         var coordinator=new ImportWorkspaceCoordinator(source);
         var ledger=new ImportExecutionLedger(jdbc,JSON);
+        var volumes=new ImportDiskVolume(engine,Path.of("scripts/import_disk_volume.py"));
         var runner=new ImportExecutionRunner(ledger,sandbox,copies,new ImportStartupResourceGuard(),new ImportExecutionRunner.Locker(){
             @Override public <T> T withLock(long id,Supplier<T> action){return coordinator.withLock(id,action);}
-        },root);
+        },root,volumes);
         var out=Path.of(fixture.get("output").asText());
         var results=JSON.createArrayNode();
         String mode=System.getProperty("import.exec.mode","cases");
@@ -54,8 +55,12 @@ class ImportExecutionRealHarnessTest {
             running.cancel(true);
             return;
         }
-        // 2. 默认生产限额：本机交换区无法被引擎限制，内存硬上限不能保证，必须拒绝且不创建副本/容器。
-        results.add(record("hard-memory-default",runner.execute(t(owner,app,planId,plan,workspace,"sh tools/ok.sh"),ImportExecutionSandbox.Limits.defaults()),jdbc,engine,root));
+        // 生产默认额度与验证模式额度不同，受限卷按额度绑定身份，必须用各自的应用承载。
+        if(mode.equals("defaults")){
+            results.add(record("hard-memory-default",runner.execute(t(owner,app,planId,plan,workspace,"sh tools/ok.sh"),ImportExecutionSandbox.Limits.defaults()),jdbc,engine,root));
+            Files.writeString(out,results.toString());
+            return;
+        }
         var verify=ImportExecutionSandbox.Memory.VERIFICATION_ONLY_UNGUARANTEED;
         String[][] cases={{"ok","sh tools/ok.sh","20"},{"exit-nonzero","sh tools/fail.sh","20"},{"tamper","sh tools/tamper.sh","20"},{"memory-gap","python3 tools/mem.py","30"},
             {"fork","python3 tools/fork.py","30"},{"disk","sh tools/disk.sh","30"},{"output","sh tools/out.sh","30"},{"timeout","sh tools/sleep.sh 600","5"},{"network","python3 tools/net.py","30"},{"cpu","sh tools/cpu.sh","30"}};

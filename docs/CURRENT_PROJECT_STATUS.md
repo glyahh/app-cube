@@ -1,5 +1,7 @@
 # 当前项目状态与开发主线
 
+2026-10-06 当前版本验收收口：[第一项当前版本收口记录](PLANS/project-import-item1-current-closure.md)在 `code_board` 工作区（含未提交修复）上重跑全部可执行验收：安装/运行/磁盘 38 项、隔离执行 16 项、平台秘密哨兵 11 项、真实框架与双服务 18 项、真实 Agent 修复闭环 E04/E05 10 项、导入接口/来源/凭据/负例/恢复 176 项、启动链与迁移 schema 15 个脚本全部通过；连续 10 次真实导入提交无失败。本轮同时修复：执行日志落盘遮盖密钥形态、额度残留导致同一应用永久 `DISK_QUOTA`、发布改名对 Windows 瞬时拒绝的有界重试、[Agent 编辑准入](PLANS/project-import-agent-edit-channel-verification.md)（已发布副本可编辑，来源暂存与保护快照结构隔离）。Java 全量 698 项 0 失败、前端 222 项通过。验收残留（283 个测试账号应用、15 个受限卷、44 个沙箱容器、约 4.6GB 文件）经 `scripts/cleanup-import-test-residue.py` 清理并留报告。**第一项仍 NOT_COMPLETE**：私库验收 G02/G04 按用户决定暂缓记 `NOT_RUN`；发布失败的 `AccessDeniedException`/`VERIFY_WORKSPACE` 根因未完全确认，保留为已知风险；历史通过数字不计当前版本。
+
 2026-10-06 最新前置增量：[受限卷冻结文件复制](PLANS/project-import-disk-volume-seed-verification.md)新增清单/逐文件摘要校验、SEEDING 未决登记和同身份复用不覆盖产物；21 项原生单元与 22 条真实卷/容器局部检查通过。**仍未接 Java 正式执行和业务资源账本，文件复制不等于完整属性/空目录语义复制**。第一项 NOT_COMPLETE；下方为历史节点。
 
 2026-10-06 最新前置增量：[受限卷预留空间与恢复](PLANS/project-import-disk-volume-recovery-verification.md)升级 v2 journal/实际预分配，新增暂停→文件系统检查→重挂载，16 项原生单元、17 条真实局部检查通过并清理专用卷。**Java 业务尚未接入，正式执行仍无持久磁盘硬配额**；冻结复制、资源账本、权限/上下文与平台恢复继续待接，掉电恢复未验收。第一项 NOT_COMPLETE；下方均为历史节点。

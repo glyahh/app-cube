@@ -308,7 +308,7 @@ public class ImportTaskService implements AutoCloseable {
                     if (context.revoked || owned(lease.ownerId(), id).revision() != lease.revision()) throw conflict();
                     // 不使用 REPLACE_EXISTING；发布期间读取资格仍关闭。
                     stage="MOVE_WORKSPACE";
-                    Files.move(prepared, target);
+                    moveWorkspace(prepared, target);
                 }
             }
             // 2. 最终文件再次核对，通过后才在短事务中创建可用 App。
@@ -324,7 +324,8 @@ public class ImportTaskService implements AutoCloseable {
             }
         } catch (Exception e) {
             // 只记录阶段与异常类型，不把工程内容、秘密或原始数据库参数写入日志。
-            log.warn("导入发布未确认，taskId={}，stage={}，type={}",id,stage,e.getClass().getSimpleName());
+            log.warn("导入发布未确认，taskId={}，stage={}，type={}，message={}",id,stage,e.getClass().getSimpleName(),
+                    e.getMessage()==null?"":e.getMessage().replaceAll("[\\r\\n]+"," ").substring(0,Math.min(200,e.getMessage().length())));
             synchronized (coordinator) {
                 ImportTask current = owned(lease.ownerId(), id);
                 if (current.status() == COMMITTING && current.revision() == lease.revision()) {
@@ -342,6 +343,31 @@ public class ImportTaskService implements AutoCloseable {
 
     private Path publicationTarget(long appId) {
         return workspace.getOutputRoot().toAbsolutePath().normalize().resolve("project_" + appId);
+    }
+
+    /**
+     * 把准备副本改名到应用目录。
+     *
+     * Windows 上目录改名会被同时进行的扫描/索引短暂占用而返回拒绝访问；只对这种瞬时失败做有界重试，
+     * 目标已存在等确定性错误立即抛出，重试用尽仍按原样失败，不改成功状态。
+     */
+    private static void moveWorkspace(Path prepared, Path target) throws IOException {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                Files.move(prepared, target);
+                return;
+            } catch (java.nio.file.FileAlreadyExistsException error) {
+                throw error;
+            } catch (java.nio.file.FileSystemException error) {
+                if (attempt >= 4) throw error;
+                try {
+                    Thread.sleep(200L * attempt);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw error;
+                }
+            }
+        }
     }
 
     private static java.time.Instant processStarted() {

@@ -59,6 +59,9 @@ temp/**
 ### Local Tooling State ###
 .cursor/settings.json
 .windsurf/
+# zcode CLI 本地状态（hook 事件、运行历史、插件缓存路径）
+.mimosa/
+.v2c/
 
 ### MCP / local agent config (DO NOT COMMIT) ###
 .mcp.json

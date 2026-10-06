@@ -280,7 +280,7 @@ public final class ImportExecutionSandbox {
         if(mismatch!=null)return removed(id)?new Outcome("REFUSED","LIMIT_NOT_APPLIED_"+mismatch,null,0,id):new Outcome("STOP_FAILED","CONTAINER_NOT_CONFIRMED_GONE",null,0,id);
         var counted=new AtomicLong();var exceeded=new AtomicBoolean();var logFailed=new AtomicBoolean();var markers=new StringBuffer();
         String killed=null;Process attach=null;Thread[] readers=new Thread[0];boolean serving=false;
-        try(DeferredLog log=new DeferredLog(Files.newOutputStream(output,StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS))){
+        try(DeferredLog log=new DeferredLog(output,Files.newOutputStream(output,StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS))){
             // 先启动再附着：守卫读到 go 才继续，附着前不会有输出丢失；sig-proxy 关闭，附着进程退出不会把信号转给容器。
             if(!engine.run(List.of("start",id),60).ok())killed="START_FAILED";
             else if(limits.memory()==Memory.REQUIRE_HARD&&!engine.pinHardSwap(id)){
@@ -402,11 +402,24 @@ public final class ImportExecutionSandbox {
     }
 
     private static final class DeferredLog extends java.io.FilterOutputStream {
+        private final java.nio.file.Path path;
         volatile boolean kept;
-        DeferredLog(OutputStream output){super(output);}
+        private boolean masked;
+        DeferredLog(java.nio.file.Path path,OutputStream output){super(output);this.path=path;}
         @Override public void write(byte[] bytes,int offset,int length)throws IOException{out.write(bytes,offset,length);out.flush();}
-        @Override public void close()throws IOException{if(!kept)super.close();}
-        synchronized void finish()throws IOException{kept=false;super.close();}
+        @Override public void close()throws IOException{if(!kept){super.close();mask();}}
+        synchronized void finish()throws IOException{kept=false;super.close();mask();}
+
+        /** 日志关闭后按固定规则遮盖工程自己打印的密钥；内容不是合法 UTF-8 时原样保留，不破坏字节。 */
+        private void mask()throws IOException{
+            if(masked)return;
+            masked=true;
+            byte[] raw=Files.readAllBytes(path);
+            if(!ImportLogMask.roundTrips(raw))return;
+            String text=new String(raw,StandardCharsets.UTF_8);
+            String safe=ImportLogMask.mask(text);
+            if(!safe.equals(text))Files.write(path,safe.getBytes(StandardCharsets.UTF_8));
+        }
     }
 
     /** 看到守卫放行且容器仍在运行后返回，不结束容器。 */

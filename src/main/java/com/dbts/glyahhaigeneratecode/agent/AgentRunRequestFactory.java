@@ -48,7 +48,8 @@ public class AgentRunRequestFactory {
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
         ThrowUtils.throwIf(!Objects.equals(app.getUserId(), userId),
                 ErrorCode.NO_AUTH_ERROR, "只能操作自己的应用");
-        importGate.requireLegacyExecutionAllowed(appId);
+        // Agent 编辑允许作用于已发布的导入应用副本；旧运行/发布入口另由各自的隔离通道校验。
+        importGate.requireAgentEditAllowed(appId);
 
         CodeGenTypeEnum type = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
         ThrowUtils.throwIf(type == null, ErrorCode.PARAMS_ERROR, "应用的生成类型不合法");

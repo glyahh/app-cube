@@ -24,4 +24,14 @@ class ImportWorkspaceGateTest {
         assertThrows(MyException.class, () -> gate.requireLegacyExecutionAllowed(12L));
         assertDoesNotThrow(() -> gate.requireLegacyExecutionAllowed(13L));
     }
+    @Test void agentEditingOpensOnlyAfterPublicationIsReady() {
+        var repository = mock(ImportTaskRepository.class);
+        var gate = new ImportWorkspaceGate(repository);
+        assertDoesNotThrow(() -> gate.requireAgentEditAllowed(13L));
+        assertDoesNotThrow(() -> gate.requireAgentEditAllowed(null));
+        when(repository.publicationByApp(12)).thenReturn(new ImportTaskRepository.Publication(java.util.UUID.randomUUID(), 12, 7, "PUBLISHING", null, 1, java.time.Instant.now()));
+        assertThrows(MyException.class, () -> gate.requireAgentEditAllowed(12L));
+        when(repository.publicationByApp(12)).thenReturn(new ImportTaskRepository.Publication(java.util.UUID.randomUUID(), 12, 7, "READY", "a".repeat(64), 1, java.time.Instant.now()));
+        assertDoesNotThrow(() -> gate.requireAgentEditAllowed(12L));
+    }
 }

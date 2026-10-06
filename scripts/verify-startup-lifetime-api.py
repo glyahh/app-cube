@@ -13,6 +13,7 @@ import urllib.request
 import uuid
 import sys
 import difflib
+import textwrap
 from pathlib import Path
 
 import psycopg
@@ -242,17 +243,19 @@ def main():
             check("D06", "安装失败后不启动，也不把服务记成就绪", failed_install["state"] == "FAILED" and failed_run["state"] == "FAILED" and failed_run["servicesStarted"] is False
                   and all(row[0] == "install" for row in executions(fail_app)), failed_install["state"] + "/" + failed_run["state"] + " " + str(failed_install.get("reason")))
 
-            pressure_source = """import errno,json,sys
-    from pathlib import Path
-    p=Path('quota-filler')
-    try:
-        with open(p,'wb',buffering=0) as output:
-            for _ in range(1200): output.write(b'Q'*(1024*1024))
-    except OSError as error:
-        print(json.dumps({'errno':error.errno,'size':p.stat().st_size}),flush=True)
-        sys.exit(28 if error.errno==errno.ENOSPC else 29)
-    sys.exit(30)
-    """
+            # 夹具源码整体反缩进：三引号内容会原样写入 pressure.py，带缩进会直接 IndentationError。
+            pressure_source = textwrap.dedent("""\
+                import errno,json,sys
+                from pathlib import Path
+                p=Path('quota-filler')
+                try:
+                    with open(p,'wb',buffering=0) as output:
+                        for _ in range(1200): output.write(b'Q'*(1024*1024))
+                except OSError as error:
+                    print(json.dumps({'errno':error.errno,'size':p.stat().st_size}),flush=True)
+                    sys.exit(28 if error.errno==errno.ENOSPC else 29)
+                sys.exit(30)
+                """)
             pressure_app = import_app(owner, "磁盘边界夹具", {"app.py": b"print('not-started')\n", "pressure.py": pressure_source.encode(), "requirements.txt": b"# fixture\n"})
             pressure_workspace = Path("temp/code_output") / ("project_" + pressure_app)
             pressure_before = tree(pressure_workspace)

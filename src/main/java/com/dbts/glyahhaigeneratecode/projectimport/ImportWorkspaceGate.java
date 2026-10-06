@@ -37,5 +37,18 @@ public class ImportWorkspaceGate {
         }
     }
 
+    /**
+     * Agent 对话/编辑通道的准入。
+     *
+     * <p>导入应用的工作区是发布副本（{@code temp/code_output/project_{appId}}），来源原件与保护快照
+     * 留在导入私有目录，Agent 工具只作用于副本；发布完成后即放行编辑。未完成发布的工作区不完整，
+     * 继续拒绝。运行与静态发布各有自己的隔离入口，不经过这里。
+     */
+    public void requireAgentEditAllowed(Long appId) {
+        if (appId == null) return;
+        var publication = repository.publicationByApp(appId);
+        if (publication != null && !publication.state().equals("READY")) throw unavailable();
+    }
+
     private static MyException unavailable() { return new MyException(ErrorCode.CONFLICT_ERROR, "导入内容尚不可用，请查看任务状态。"); }
 }

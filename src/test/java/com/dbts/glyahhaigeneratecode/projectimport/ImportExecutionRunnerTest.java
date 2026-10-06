@@ -247,4 +247,22 @@ class ImportExecutionRunnerTest {
         assertFalse(Files.exists(root.resolve("apps").resolve("7.source")));
         assertTrue(Files.isDirectory(root.resolve("apps").resolve("8")));
     }
+
+    @Test void 额度被上一轮残留占满时丢弃副本使重试不被永久阻塞()throws Exception{
+        var small=new ImportExecutionSandbox.Limits(0.5,128L<<20,32,1L<<20,1L<<20,Duration.ofSeconds(20),4096,ImportExecutionSandbox.Memory.REQUIRE_HARD);
+        var written=new java.util.concurrent.atomic.AtomicBoolean();
+        when(sandbox.execute(any(),any(),any(),any(),any(),any())).thenAnswer(call->{
+            ImportExecutionSandbox.Journal journal=call.getArgument(4);
+            journal.created("c".repeat(64));journal.started("now");
+            // 工程自己把副本写到超过额度，模拟失败/成功后留下的残留
+            if(written.compareAndSet(false,true))Files.write(root.resolve("apps").resolve("7").resolve("big.bin"),new byte[2<<20]);
+            return new ImportExecutionSandbox.Outcome("SUCCEEDED",null,0,4,"c".repeat(64));
+        });
+        var first=runner.execute(target(hash()),small);
+        assertEquals("FAILED",first.state());assertEquals("DISK_QUOTA",first.reason());
+        assertFalse(Files.exists(root.resolve("apps").resolve("7"),java.nio.file.LinkOption.NOFOLLOW_LINKS));
+        assertFalse(Files.exists(root.resolve("apps").resolve("7.source"),java.nio.file.LinkOption.NOFOLLOW_LINKS));
+        var retry=runner.execute(target(hash()),small);
+        assertEquals("SUCCEEDED",retry.state());
+    }
 }

@@ -20,12 +20,12 @@ WSL = ["wsl.exe", "-d", os.environ.get("AGENT_WSL_DISTRO", "Ubuntu"), "--exec"]
 FIXTURE = {
     "index.html": "<html><body>isolation fixture</body></html>\n",
     "README.md": "[受控夹具] 步骤5隔离执行核对用的小脚本，不是用户工程。\n",
-    "tools/ok.sh": "echo \"ok from isolated copy\"; pwd; id -u; echo changed > generated.txt; ls; exit 0\n",
+    "tools/ok.sh": "echo \"ok from isolated copy\"; pwd; id -u; echo changed > generated.txt; ls; "
+                   "echo \"swap.max=$(cat /sys/fs/cgroup/memory.swap.max 2>/dev/null || echo NA) "
+                   "swaptotal=$(awk '/^SwapTotal:/{print $2}' /proc/meminfo)\"; exit 0\n",
     "tools/fail.sh": "echo failing on purpose >&2; exit 3\n",
-    "tools/tamper.sh": "echo tamper > /input/index.html 2>/dev/null && echo INPUT_WRITE_OK || echo INPUT_WRITE_BLOCKED\n"
-                       "rm -f /input/index.html 2>/dev/null && echo INPUT_DELETE_OK || echo INPUT_DELETE_BLOCKED\n"
+    "tools/tamper.sh": "[ -e /input ] && echo INPUT_PRESENT || echo INPUT_ABSENT\n"
                        "echo x > /work/index.html && echo WORK_COPY_WRITE_OK\n"
-                       "rm -rf /work/tools && echo WORK_COPY_DELETE_OK\n"
                        "ls /mnt/d >/dev/null 2>&1 && echo HOST_DRIVE_VISIBLE || echo HOST_DRIVE_HIDDEN\n"
                        "echo \"nonce_env=$(env | grep -c GLYAHH_)\"\n"
                        "echo \"nonce_pid1=$(tr '\\0' '\\n' < /proc/1/environ | grep -c GLYAHH_)\"\n"
@@ -41,7 +41,7 @@ FIXTURE = {
                      "for p in pids:\n    os.kill(p, 9)\n",
     "tools/disk.sh": "dd if=/dev/zero of=/work/big bs=1M count=100 2>&1 | tail -1\necho \"work_big_bytes=$(stat -c %s /work/big)\"\n"
                      "dd if=/dev/zero of=/tmp/big bs=1M count=100 2>&1 | tail -1\necho \"tmp_big_bytes=$(stat -c %s /tmp/big)\"\n"
-                     "touch /rootfile 2>&1\ntouch /input/x 2>&1\ndf -k /work /tmp | cat\nexit 0\n",
+                     "touch /rootfile 2>&1\ndf -k /work /tmp | cat\nexit 0\n",
     "tools/out.sh": "yes glyahh-output-flood-0123456789\n",
     "tools/sleep.sh": "echo sleeping $1\nsleep \"$1\"\n",
     "tools/net.py": "import os, socket\n"
@@ -104,25 +104,31 @@ def main():
         assert code == 0, f"harness {mode} exit {code}"
         return None
 
-    try:
-        account = "isolation_" + secrets.token_hex(8); password = secrets.token_urlsafe(24)
-        owner = str(call("/user/register", {"userAccount": account, "userPassword": password, "checkPassword": password}))
-        call("/user/login", {"userAccount": account, "userPassword": password}); state["csrf"] = call("/project/import/csrf")
+    def provision(app_name):
+        """导入一份受控夹具并确认静态入口计划，返回 (app, workspace, protected, task_id, plan)。"""
         files = {p: c.encode() for p, c in FIXTURE.items()}
-        task = call("/project/import/tasks", {"ownerId": owner, "appName": "隔离执行夹具", "files": [{"path": p, "size": len(c)} for p, c in files.items()],
+        task = call("/project/import/tasks", {"ownerId": owner, "appName": app_name, "files": [{"path": p, "size": len(c)} for p, c in files.items()],
                                               "options": {"skipDependencies": False, "skipBuildOutputs": False, "includeSensitive": True}})
         for index, content in enumerate(files.values()):
             task = call(f"/project/import/tasks/{task['taskId']}/files/{index}?revision={task['revision']}", content, method="PUT")
         committed = call(f"/project/import/tasks/{task['taskId']}/commit", {"revision": task["revision"], "contentHash": task["contentHash"]})
-        app = committed["appId"]; workspace = (Path("temp/code_output") / ("project_" + app)).resolve()
-        protected = Path("temp/project_import_private") / task["taskId"]
-        inspection = call(f"/project/import/apps/{app}/startup/inspection", {"ownerId": owner, "scope": "."})
+        imported = committed["appId"]
+        imported_workspace = (Path("temp/code_output") / ("project_" + imported)).resolve()
+        inspection = call(f"/project/import/apps/{imported}/startup/inspection", {"ownerId": owner, "scope": "."})
         candidate = next(c["id"] for c in inspection["result"]["candidates"] if c["directory"] == "." and c["id"].endswith("index.html"))
-        plans = f"/project/import/apps/{app}/startup/plans"
-        plan = call(plans, {"ownerId": owner, "scanId": inspection["scanId"], "serviceIds": [candidate]})
-        plan = call(f"{plans}/{plan['planId']}/confirm", {"ownerId": owner, "planRevision": plan["planRevision"], "aggregateAcknowledged": False})
-        assert plan["state"] == "CONFIRMED" and plan["executable"] is False
-        report.update(appId=app, taskId=task["taskId"], ownerId=owner, planId=plan["planId"], planRevision=plan["planRevision"])
+        plans = f"/project/import/apps/{imported}/startup/plans"
+        confirmed = call(plans, {"ownerId": owner, "scanId": inspection["scanId"], "serviceIds": [candidate]})
+        confirmed = call(f"{plans}/{confirmed['planId']}/confirm", {"ownerId": owner, "planRevision": confirmed["planRevision"], "aggregateAcknowledged": False})
+        assert confirmed["state"] == "CONFIRMED" and confirmed["executable"] is False
+        return imported, imported_workspace, Path("temp/project_import_private") / task["taskId"], task["taskId"], confirmed
+
+    try:
+        account = "isolation_" + secrets.token_hex(8); password = secrets.token_urlsafe(24)
+        owner = str(call("/user/register", {"userAccount": account, "userPassword": password, "checkPassword": password}))
+        call("/user/login", {"userAccount": account, "userPassword": password}); state["csrf"] = call("/project/import/csrf")
+        app, workspace, protected, task_id, plan = provision("隔离执行夹具")
+        defaults_app, defaults_workspace, _, _, defaults_plan = provision("隔离默认额度夹具")
+        report.update(appId=app, taskId=task_id, ownerId=owner, planId=plan["planId"], planRevision=plan["planRevision"])
         before_ws, before_protected = tree(workspace), tree(protected)
         assert before_ws and before_protected and len(before_ws) == len(FIXTURE)
         report["checks"].append({"name": "[受控夹具] 导入小脚本工程并确认计划（静态入口目录 .）；计划 executable 仍为 false", "status": "PASS",
@@ -131,8 +137,14 @@ def main():
         fixture = evidence / "fixture.json"; output = evidence / "harness-results.json"
         fixture.write_text(json.dumps({"ownerId": int(owner), "appId": int(app), "planId": plan["planId"], "workspace": str(workspace), "executionRoot": str(root),
                                        "output": str(output.resolve())}), encoding="utf-8")
-        started = time.time(); harness("cases", fixture.as_posix(), "harness-cases.log")
+        defaults_fixture = evidence / "fixture-defaults.json"; defaults_output = evidence / "harness-defaults.json"
+        defaults_fixture.write_text(json.dumps({"ownerId": int(owner), "appId": int(defaults_app), "planId": defaults_plan["planId"], "workspace": str(defaults_workspace),
+                                                "executionRoot": str(root), "output": str(defaults_output.resolve())}), encoding="utf-8")
+        started = time.time()
+        harness("defaults", defaults_fixture.as_posix(), "harness-defaults.log")
+        harness("cases", fixture.as_posix(), "harness-cases.log")
         results = {r["case"]: r for r in json.loads(output.read_text(encoding="utf-8"))}
+        results.update({r["case"]: r for r in json.loads(defaults_output.read_text(encoding="utf-8"))})
         report["harnessSeconds"] = round(time.time() - started, 1)
 
         def check(name, condition, case):
@@ -142,13 +154,19 @@ def main():
 
         clean = lambda r: r["containersLeft"] == "" and r["filesLeft"] == "" and r["db_finished"] == "true" and r["db_cleanup"] == "DONE"
         log = lambda r: r.get("logTail", "")
-        check("默认生产限额：交换区无法由引擎限制，内存硬上限不能保证 → REFUSED(MEMORY_LIMIT_UNENFORCEABLE)，未建副本、未建容器", lambda r: r["state"] == "REFUSED"
-              and "MEMORY_LIMIT_UNENFORCEABLE" in r["reason"] and r["db_container_id"] is None and r["logBytes"] == -1 and clean(r), "hard-memory-default")
+        # 生产默认限额要求内存硬上限：交换区无法被限制时必须拒绝；能被限制时必须先真实钉住 swap 才允许运行。
+        check("默认生产限额：内存硬上限不可保证时 REFUSED(MEMORY_LIMIT_UNENFORCEABLE) 且不建副本/容器；"
+              "可保证时容器内 swap.max=0 或宿主无 swap 后才运行",
+              lambda r: (r["state"] == "REFUSED" and "MEMORY_LIMIT_UNENFORCEABLE" in r["reason"]
+                         and r["db_container_id"] is None and r["logBytes"] == -1 and clean(r))
+              or (r["state"] == "SUCCEEDED" and r.get("exitCode") == 0
+                  and ("swap.max=0" in log(r) or "swaptotal=0" in log(r)) and clean(r)), "hard-memory-default")
         check("正常脚本在独立副本 /work 以 uid 65534 运行并成功；容器删除确认、副本清理", lambda r: r["state"] == "SUCCEEDED" and r.get("exitCode") == 0
               and "ok from isolated copy" in log(r) and "/work" in log(r) and "65534" in log(r) and r["db_container_id"] and re.match(r"20\d\d-", r["db_container_started"] or "") and clean(r), "ok")
         check("非零退出 → FAILED(EXIT_NONZERO, 3)，已导入工程保留", lambda r: r["state"] == "FAILED" and r["reason"] == "EXIT_NONZERO" and r.get("exitCode") == 3 and clean(r), "exit-nonzero")
-        check("篡改副本：只读挂载拒绝写/删，tmpfs 副本可改；宿主盘不可见；守卫 nonce 不进入工程环境", lambda r: r["state"] == "SUCCEEDED" and "INPUT_WRITE_BLOCKED" in log(r)
-              and "INPUT_DELETE_BLOCKED" in log(r) and "WORK_COPY_WRITE_OK" in log(r) and "HOST_DRIVE_HIDDEN" in log(r) and "nonce_env=0" in log(r) and "nonce_pid1=0" in log(r) and clean(r), "tamper")
+        check("篡改检查：容器只挂受限卷 /work，看不到宿主工程挂载（无 /input）；副本可写、宿主盘不可见；守卫 nonce 不进入工程环境",
+              lambda r: r["state"] == "SUCCEEDED" and "INPUT_ABSENT" in log(r) and "WORK_COPY_WRITE_OK" in log(r)
+              and "HOST_DRIVE_HIDDEN" in log(r) and "nonce_env=0" in log(r) and "nonce_pid1=0" in log(r) and clean(r), "tamper")
         mem = re.search(r"allocated_mb (\d+)", log(results["memory-gap"])); swap = re.search(r"swap\.current (\d+)", log(results["memory-gap"]))
         check("[已知缺口实测] 验证模式下 128MiB 内存限额未阻止 384MB 分配（溢出进交换区）——证明本机内存不是硬上限，生产模式因此拒绝", lambda r: mem and int(mem.group(1)) >= 384
               and swap and int(swap.group(1)) > 0 and clean(r), "memory-gap")
@@ -156,8 +174,8 @@ def main():
         check("进程数：pids.max=32，100 次 fork 中超出部分失败，峰值不超过 32", lambda r: fork and int(fork.group(1)) < 32 and int(fork.group(2)) > 0 and fork.group(3) == "32"
               and (fork.group(5) == "NA" or int(fork.group(5)) <= 32) and clean(r), "fork")
         work = re.search(r"work_big_bytes=(\d+)", log(results["disk"])); tmp = re.search(r"tmp_big_bytes=(\d+)", log(results["disk"]))
-        check("磁盘：/work 写 100MB 止于 32MiB、/tmp 止于 8MiB，根文件系统与 /input 只读", lambda r: work and int(work.group(1)) <= 32 << 20 and tmp and int(tmp.group(1)) <= 8 << 20
-              and log(r).count("Read-only file system") >= 2 and clean(r), "disk")
+        check("磁盘：/work 写 100MB 止于受限卷额度、/tmp 止于 8MiB，根文件系统只读", lambda r: work and int(work.group(1)) <= 32 << 20 and tmp and int(tmp.group(1)) <= 8 << 20
+              and log(r).count("Read-only file system") >= 1 and clean(r), "disk")
         check("输出：无限输出在超过 256KiB 时由平台 kill 容器（退出码 137），日志恰好截在上限", lambda r: r["state"] == "FAILED" and r["reason"] == "OUTPUT_LIMIT" and r.get("exitCode") == 137 and r["logBytes"] == 256 << 10 and clean(r), "output")
         check("耗时：sleep 600 在 5 秒 wall 处强制结束 → FAILED(TIMEOUT)", lambda r: r["state"] == "FAILED" and r["reason"] == "TIMEOUT" and clean(r), "timeout")
         net = log(results["network"])
@@ -174,7 +192,7 @@ def main():
             assert tree(workspace) == before_ws, "workspace changed"
             assert tree(protected) == before_protected, "protected snapshot changed"
             assert db("SELECT is_delete FROM biz.app WHERE id=%s", (int(app),))[0][0] == 0
-            current = call(f"{plans}/{plan['planId']}")
+            current = call(f"/project/import/apps/{app}/startup/plans/{plan['planId']}")
             assert current["state"] == "CONFIRMED" and current["executable"] is False
             report["checks"].append({"name": f"{label}：原工程与保护快照逐文件 SHA-256 不变；应用未删除；计划仍 CONFIRMED 且 executable=false", "status": "PASS"})
         unchanged("全部用例（含失败/超限/停止）后")
