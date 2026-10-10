@@ -50,13 +50,14 @@ def main():
             token = "FAKE_IMPORT_TEST_" + secrets.token_hex(16); markers.append(token)
             return call("/project/import/credentials", {"ownerId": owner, "provider": provider, "name": name, "token": token})
 
-        one = create("GitHub", "读取一"); two = create("GitHub", "读取二"); gitee = create("Gitee", "读取三")
+        one = create("GitHub", "读取一"); two = create("GitHub", "读取二"); third = create("GitHub", "读取三")
+        call("/project/import/credentials", {"ownerId": owner, "provider": "Gitee", "name": "旧平台", "token": "FAKE_RETIRED_PROVIDER"}, expected=40000)
         other("/project/import/git/tasks", {"ownerId": foreign, "appName": "越权认证不得启动", "provider": "GitHub", "repositoryUrl": "https://github.com/octocat/Hello-World",
             "credentialId": one["id"], "credentialVersion": one["version"]}, expected=40900)
         call("/project/import/git/tasks", {"ownerId": owner, "appName": "平台错配不得启动", "provider": "Gitee", "repositoryUrl": "https://gitee.com/sdk/gitee5j",
-            "credentialId": one["id"], "credentialVersion": one["version"]}, expected=40900)
+            "credentialId": one["id"], "credentialVersion": one["version"]}, expected=40000)
         call(f"/project/import/credentials/{one['id']}/name", {"ownerId": owner, "name": "不应保存"}, "PUT", expected=40000)
-        assert len({one["id"], two["id"], gitee["id"]}) == 3
+        assert len({one["id"], two["id"], third["id"]}) == 3
         assert len(call("/project/import/credentials")) == 3 and other("/project/import/credentials") == []
         call("/project/import/credentials", {"ownerId": owner, "provider": "GitHub", "name": "x", "token": markers[0]}, expected=40300, csrf=False)
         other(f"/project/import/credentials/{one['id']}/token", {"ownerId": foreign, "revision": 0, "token": markers[0]}, "PUT", expected=40400)
@@ -130,7 +131,7 @@ def main():
                 return str(source_id), directory
 
             preparatory, source_directory = preparatory_source(replacement["credential"])
-            other_source, other_directory = preparatory_source(gitee)
+            other_source, other_directory = preparatory_source(third)
             note = call(f"/project/import/credentials/{one['id']}/name", {"ownerId": owner, "revision": replacement["credential"]["revision"], "name": "来源备注"}, "PUT")
             assert call(f"/project/import/git/tasks/{preparatory}")["status"] == "WAITING_BRANCH"
             replaced_source = call(f"/project/import/credentials/{one['id']}/token", {"ownerId": owner, "revision": note["revision"], "token": markers[1]}, "PUT")
@@ -139,7 +140,7 @@ def main():
             assert call(f"/project/import/git/tasks/{other_source}")["status"] == "WAITING_BRANCH"
             report["preparatorySourceReplacement"] = "CONTROLLED_FIXTURE_PASS"
             # 撤销先于提交的顺序：仅撤销本测试租约，确认不能创建 App。
-            revocation_first = ready_task(gitee)
+            revocation_first = ready_task(third)
             with database.transaction():
                 database.execute("UPDATE biz.project_import_credential_lease SET state='REVOKED' WHERE task_id=%s AND owner_id=%s", (uuid.UUID(revocation_first["taskId"]), int(owner)))
             database.commit()
@@ -150,7 +151,7 @@ def main():
             call(f"/project/import/tasks/{revocation_first['taskId']}/cancel?revision={current['revision']}", method="POST")
             for credential in call("/project/import/credentials"):
                 removed = call(f"/project/import/credentials/{credential['id']}?ownerId={owner}&revision={credential['revision']}", method="DELETE")
-                if credential["id"] == gitee["id"]:
+                if credential["id"] == third["id"]:
                     assert removed["stops"] == [{"taskId": other_source, "status": "CANCELLED", "cleanup": "DONE", "error": None}]
                     assert not other_directory.exists()
                     report["preparatorySourceDeletion"] = "CONTROLLED_FIXTURE_PASS"

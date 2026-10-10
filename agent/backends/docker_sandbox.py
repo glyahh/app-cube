@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import subprocess
+import stat
 import threading
 import time
 import uuid
@@ -23,6 +24,7 @@ from deepagents.backends.protocol import ExecuteResponse
 
 from backends.permissions import ensure_safe_command
 from core.masking import mask
+from backends.secret_files import SecretSafeFilesMixin
 
 logger = logging.getLogger(__name__)
 MAX_OUTPUT_CHARS = 30_000
@@ -47,6 +49,7 @@ class SandboxRecord:
     last_run_id: str = ""
     active: bool = False
     reused: bool = False
+    stop_failed: bool = False
 
 
 @dataclass
@@ -94,7 +97,7 @@ class DockerSandboxManager:
             distro = os.getenv("AGENT_WSL_DISTRO", "Ubuntu")
             # wsl.exe 超时只杀宿主进程，docker 子进程可能继续等待 registry；
             # 用 Linux timeout 包住实际 CLI，保证创建/拉取不会悬挂。
-            return ["wsl.exe", "-d", distro, "--", "timeout", str(timeout), "docker"]
+            return ["wsl.exe", "-d", distro, "--exec", "timeout", str(timeout), "docker"]
         raise SandboxError("Docker CLI 不可用；请安装 docker.exe 或配置 WSL")
 
     @staticmethod
@@ -133,6 +136,11 @@ class DockerSandboxManager:
     def _decode(raw: bytes | None) -> str:
         if not raw:
             return ""
+        # WSL警告是UTF-16LE，后接的Linux stderr是UTF-8；不能按整段长度猜编码。
+        if raw.startswith('wsl:'.encode('utf-16-le')):
+            end = raw.find(b'\n\x00')
+            if end >= 0:
+                return raw[:end + 2].decode('utf-16-le', errors='replace') + DockerSandboxManager._decode(raw[end + 2:])
         for encoding in ("utf-8", "utf-16", "gbk"):
             try:
                 return raw.decode(encoding).replace("\x00", "")
@@ -142,6 +150,90 @@ class DockerSandboxManager:
 
     def _healthy(self) -> None:
         self._docker("info", "--format", "{{.ServerVersion}}", timeout=10)
+
+    def _swap_is_zero(self, container_id: str) -> bool:
+        result = self._docker("exec", container_id, "cat",
+                              "/sys/fs/cgroup/memory.swap.max", check=False)
+        return result.returncode == 0 and result.stdout.strip() == "0"
+
+    def _pin_hard_swap(self, container_id: str) -> None:
+        """仅修改已核对容器的 cgroup；不能强制限制时拒绝执行。"""
+        if not re.fullmatch(r"[0-9a-f]{64}", container_id):
+            raise SandboxError("MEMORY_LIMIT_UNENFORCEABLE")
+        prefix = self._docker_command()
+        # 补救只面向同一个本地引擎；Linux平台Worker需核对root与Unix端点。
+        wsl = Path(prefix[0]).name.lower() == "wsl.exe"
+        if not wsl and not self._native_root_engine(prefix):
+            raise SandboxError("MEMORY_LIMIT_UNENFORCEABLE")
+        pid = self._docker("inspect", "--format", "{{.State.Pid}}", container_id).stdout.strip()
+        if not re.fullmatch(r"[1-9][0-9]*", pid):
+            raise SandboxError("MEMORY_LIMIT_UNENFORCEABLE")
+        script = ('set -eu; cg=$(sed -n "s/^0:://p" /proc/' + pid + '/cgroup); '
+                  '[ -n "$cg" ] && [ "$cg" != / ]; '
+                  'case "$cg" in /*) ;; *) exit 1;; esac; '
+                  'case "$cg" in *' + container_id + '*) ;; *) exit 1;; esac; '
+                  'echo 0 > "/sys/fs/cgroup${cg}/memory.swap.max"; '
+                  '[ "$(cat "/sys/fs/cgroup${cg}/memory.swap.max")" = 0 ]')
+        try:
+            command = [prefix[0], "-d", prefix[2], "-u", "root", "--exec", "sh", "-c", script] if wsl else ["sh", "-c", script]
+            result = subprocess.run(command,
+                                    capture_output=True, timeout=30)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SandboxError("MEMORY_LIMIT_UNENFORCEABLE") from exc
+        if result.returncode != 0:
+            raise SandboxError("MEMORY_LIMIT_UNENFORCEABLE")
+
+    def _native_root_engine(self, prefix) -> bool:
+        if Path(prefix[0]).name != 'docker' or getattr(os, 'geteuid', lambda: -1)() != 0:
+            return False
+        endpoint = os.environ.get('DOCKER_HOST')
+        if not endpoint:
+            result = self._docker('context', 'inspect', '--format', '{{.Endpoints.docker.Host}}', check=False)
+            if result.returncode != 0:
+                return False
+            endpoint = result.stdout.strip()
+        if not endpoint.startswith('unix:///'):
+            return False
+        try:
+            return stat.S_ISSOCK(Path(endpoint[7:]).stat().st_mode)
+        except OSError:
+            return False
+
+    def _ensure_hard_swap(self, container_id: str) -> None:
+        if not self._swap_is_zero(container_id):
+            self._pin_hard_swap(container_id)
+            if not self._swap_is_zero(container_id):
+                raise SandboxError("MEMORY_LIMIT_UNENFORCEABLE")
+
+    def _stop_after_guard_failure(self, record: SandboxRecord) -> None:
+        """停止未获执行资格的容器；停止未确认则占住槽位。"""
+        record.stop_failed = True
+        record.active = True
+        self._docker("stop", "-t", "2", record.container_id, check=False)
+        result = self._docker("inspect", "--format", "{{.State.Running}}",
+                              record.container_id, check=False)
+        if result.returncode == 0 and result.stdout.strip() == "false":
+            record.active = False
+            record.stop_failed = False
+            return
+        raise SandboxError("STOP_FAILED/RECOVERY_REQUIRED")
+
+    @staticmethod
+    def _confirmed_absent(result: subprocess.CompletedProcess[str]) -> bool:
+        # Docker socket 的 No such file 不是容器不存在。
+        return result.returncode != 0 and bool(re.search(
+            r"\bno such (?:container|object)\b", result.stderr, re.IGNORECASE))
+
+    def _remove_confirmed(self, record: SandboxRecord) -> None:
+        record.stop_failed = True
+        record.active = True
+        self._docker("rm", "-f", record.container_id, check=False)
+        result = self._docker("inspect", record.container_id, check=False)
+        if self._confirmed_absent(result):
+            record.stop_failed = False
+            record.active = False
+            return
+        raise SandboxError("STOP_FAILED/RECOVERY_REQUIRED")
 
     def _inspect_container(self, name_or_id: str) -> dict | None:
         """检查并返回指定容器的 inspect 字典；容器不存在或解析失败时返回 None。"""
@@ -270,6 +362,7 @@ class DockerSandboxManager:
                                   "--network", "bridge", "--pids-limit", "512",
                                   "--cpus", os.getenv("AGENT_SANDBOX_CPUS", "2"),
                                   "--memory", os.getenv("AGENT_SANDBOX_MEMORY", "4g"),
+                                  "--memory-swap", os.getenv("AGENT_SANDBOX_MEMORY", "4g"),
                                   "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
                                   "-v", f"{self._wsl_path(workspace)}:/workspace:rw", self.image,
                                   "sleep", "infinity")
@@ -300,6 +393,8 @@ class DockerSandboxManager:
             self._healthy()
             now = time.time()
             record = self._records.get(session_id)
+            if record and record.stop_failed:
+                raise SandboxError("STOP_FAILED/RECOVERY_REQUIRED")
             if record and record.active:
                 raise SandboxBusy(f"Session {session_id} 已有任务执行中")
             if record and record.workspace != workspace:
@@ -348,16 +443,30 @@ class DockerSandboxManager:
                 reused=was_reused,
             )
             self._records[session_id] = new_record
+            try:
+                self._ensure_hard_swap(container_id)
+            except Exception:
+                self._stop_after_guard_failure(new_record)
+                raise
             return new_record
 
     def release(self, session_id: str) -> None:
         with self._lock:
             record = self._records.get(session_id)
-            if record:
+            if record and not record.stop_failed:
                 record.active = False
                 record.last_active_at = time.time()
 
     def execute(self, record: SandboxRecord, command: str, timeout: int) -> subprocess.CompletedProcess[str]:
+        with self._lock:
+            if record.stop_failed or not record.active or self._records.get(record.session_id) is not record:
+                raise SandboxError("SANDBOX_EXECUTION_REVOKED")
+        try:
+            self._ensure_hard_swap(record.container_id)
+        except Exception:
+            with self._lock:
+                self._stop_after_guard_failure(record)
+            raise
         return self._docker("exec", "-i", "-w", "/workspace", record.container_id,
                             "bash", "-lc", command, timeout=timeout)
 
@@ -373,13 +482,14 @@ class DockerSandboxManager:
                 # 1. 检查容器在 Docker 中是否仍然有效，避免内存状态与实际脱节
                 inspect = self._docker("inspect", "-f", "{{.State.Status}}", record.container_id, check=False)
                 if inspect.returncode != 0:
-                    self._records.pop(session_id, None)
-                    destroyed.append(session_id)
+                    if self._confirmed_absent(inspect):
+                        self._records.pop(session_id, None)
+                        destroyed.append(session_id)
                     continue
 
                 status = inspect.stdout.strip().lower()
                 if status in {"", "dead", "removing"}:
-                    self._docker("rm", "-f", record.container_id, check=False)
+                    self._remove_confirmed(record)
                     self._records.pop(session_id, None)
                     destroyed.append(session_id)
                     continue
@@ -388,7 +498,7 @@ class DockerSandboxManager:
                 idle = now - record.last_active_at
                 age = now - record.created_at
                 if idle >= self.destroy_idle_seconds or age >= self.max_lifetime_seconds:
-                    self._docker("rm", "-f", record.container_id, check=False)
+                    self._remove_confirmed(record)
                     self._records.pop(session_id, None)
                     destroyed.append(session_id)
                 elif idle >= self.stop_idle_seconds:
@@ -400,9 +510,10 @@ class DockerSandboxManager:
 
     def close(self, session_id: str) -> None:
         with self._lock:
-            record = self._records.pop(session_id, None)
+            record = self._records.get(session_id)
             if record:
-                self._docker("rm", "-f", record.container_id, check=False)
+                self._remove_confirmed(record)
+                self._records.pop(session_id, None)
 
     def shutdown(self) -> None:
         self._stop_reaper.set()
@@ -411,7 +522,7 @@ class DockerSandboxManager:
 _MANAGER = DockerSandboxManager()
 
 
-class DockerSandboxBackend(LocalShellBackend):
+class DockerSandboxBackend(SecretSafeFilesMixin, LocalShellBackend):
     """兼容 DeepAgents 文件工具、通过 Session 容器执行 shell 的 backend。"""
 
     def __init__(self, workspace: Path | str, *, session_id: str, run_id: str = "",
@@ -422,12 +533,17 @@ class DockerSandboxBackend(LocalShellBackend):
         self.record = self.manager.acquire(session_id, self.workspace, run_id=run_id)
         super().__init__(str(self.workspace), virtual_mode=True, timeout=timeout, **kwargs)
 
-    def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
+    def _prepare_command(self, command: str) -> str:
         ensure_safe_command(command, self.workspace)
-        effective_timeout = timeout or getattr(self, "_default_timeout", 120)
         # 既有 prompt/测试使用 Windows 命令名；容器内统一为 POSIX 等价命令。
         command = re.sub(r"\btype\s+", "cat ", command)
         command = re.sub(r"(?m)^(\s*)dir(?=\s|$)", r"\1ls", command)
+        return command
+
+    def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
+        command = self._prepare_command(command)
+        self._refresh_secrets()
+        effective_timeout = timeout or getattr(self, "_default_timeout", 120)
         try:
             proc = self.manager.execute(self.record, command, effective_timeout)
         except (subprocess.TimeoutExpired, SandboxError) as exc:
@@ -439,10 +555,10 @@ class DockerSandboxBackend(LocalShellBackend):
         if proc.stderr:
             output += "\n".join(line if line.startswith("[stderr]") else f"[stderr] {line}"
                                     for line in proc.stderr.splitlines())
+        output = self._mask_output(output)
         truncated = len(output) > MAX_OUTPUT_CHARS
         if truncated:
             output = output[:MAX_OUTPUT_CHARS] + "\n…（输出已截断）"
-        output = mask(output)
         if truncated or proc.returncode != 0:
             output += f"\n\nExit code: {proc.returncode}"
         return ExecuteResponse(output=output, exit_code=proc.returncode, truncated=truncated)

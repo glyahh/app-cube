@@ -22,14 +22,13 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 import psycopg
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 WSL = ["wsl.exe", "-d", os.environ.get("AGENT_WSL_DISTRO", "Ubuntu"), "--exec"]
 BASE = "http://127.0.0.1:8124/api"
-SKIP_DIRS = {".git", "node_modules", ".venv", "target", "dist", "__pycache__"}
-MAX_FILE = 4 * 1024 * 1024
 
 
 def main() -> int:
@@ -49,6 +48,9 @@ def main() -> int:
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
     csrf = {"value": None}
     seen = {"responses": []}
+    app = None
+    source_id = None
+    credential = None
 
     def call(path, body=None, method=None, expected=20000, timeout=180):
         headers = {"Origin": "http://localhost:5173"}
@@ -71,6 +73,7 @@ def main() -> int:
             raw = response.read()
         text = raw.decode("utf-8", "replace")
         seen["responses"].append({"path": path, "bytes": len(raw)})
+        check("C03", "完整接口响应不含虚构 PAT：" + path, sentinel not in text, "响应字节=" + str(len(raw)))
         result = json.loads(text)
         seen["code"] = result.get("code")
         if expected is not None:
@@ -109,19 +112,29 @@ def main() -> int:
     def scan_disk():
         hits = []
         scanned = 0
+        errors = []
+        marker_bytes = sentinel.encode()
         for path in (REPO / "temp").rglob("*"):
-            if not path.is_file() or path.suffix in {".png", ".jpg", ".zip", ".jar"}:
-                continue
-            if any(part in SKIP_DIRS for part in path.parts):
+            if not path.is_file():
                 continue
             try:
-                if path.stat().st_size > MAX_FILE:
-                    continue
+                if not path.resolve().is_relative_to((REPO / "temp").resolve()):
+                    raise OSError("暂存文件指向范围外")
                 scanned += 1
-                if sentinel.encode() in path.read_bytes():
-                    hits.append(str(path.relative_to(REPO)))
-            except OSError:
-                continue
+                tail = b""
+                # 不按扩展名、依赖目录或文件大小跳过；跨读取边界的标记同样能命中。
+                with path.open("rb") as stream:
+                    while chunk := stream.read(512 * 1024):
+                        data = tail + chunk
+                        if marker_bytes in data:
+                            hits.append(str(path.relative_to(REPO)))
+                            break
+                        tail = data[-(len(marker_bytes) - 1):]
+            except OSError as error:
+                errors.append({"path": str(path.relative_to(REPO)), "errorType": type(error).__name__})
+        report["diskScanErrors"] = errors
+        if errors:
+            raise AssertionError("磁盘哨兵扫描未完成，失败文件数=" + str(len(errors)))
         return scanned, hits
 
     try:
@@ -205,7 +218,15 @@ def main() -> int:
         plan = call(f"/project/import/apps/{app}/startup/plans/{plan['planId']}/confirm",
                     {"ownerId": owner, "planRevision": plan["planRevision"], "aggregateAcknowledged": False})
         installed = call(f"/project/import/apps/{app}/startup/preparations/install",
-                         {"ownerId": owner, "planId": plan["planId"], "planRevision": plan["planRevision"], "approved": True})
+                         {"ownerId": owner, "planId": plan["planId"], "planRevision": plan["planRevision"],
+                          "requestId": str(uuid.uuid4()), "approved": True})
+        # 安装只受理；按任务查询读到终态，POST 超时不等于安装失败。
+        deadline = time.monotonic() + 1800
+        while installed["state"] not in ("SUCCEEDED", "FAILED", "REJECTED", "CANCELLED"):
+            if time.monotonic() >= deadline:
+                raise AssertionError("INSTALL_OBSERVATION_TIMED_OUT")
+            time.sleep(2)
+            installed = call(f"/project/import/apps/{app}/startup/install-jobs/{installed['jobId']}")
         check("C03", "安装准备响应不含虚构 PAT", sentinel not in json.dumps(installed, ensure_ascii=False), installed["state"])
 
         rows = db_executions(app)
@@ -243,23 +264,34 @@ def main() -> int:
                 continue
         check("C03", "执行日志落盘内容不含虚构 PAT", not logs, f"命中={logs}")
 
-        # 清理：删除专用应用、来源任务与凭据
-        call(f"/app/delete", {"id": str(app)})
-        if source_id:
-            try:
-                task = call(f"/project/import/git/tasks/{source_id}")
-                call(f"/project/import/git/tasks/{source_id}/cancel?revision={int(task['revision'])}", {}, method="POST")
-            except (AssertionError, KeyError, TypeError):
-                pass
-        for row in call("/project/import/credentials"):
-            call(f"/project/import/credentials/{row['id']}?ownerId={owner}&revision={int(row['revision'])}", method="DELETE")
-        report["cleanup"] = {"appDeleted": True, "sourceCancelled": bool(source_id), "credentialsRemoved": True}
         report["status"] = "PASS"
     except Exception as error:  # 失败如实保留，不吞
         report["status"] = "FAIL"
         report["errorType"] = type(error).__name__
-        report["error"] = str(error)[:400]
+        report["error"] = str(error).replace(sentinel, "[REDACTED]")[:400]
     finally:
+        # 失败同样走专属资源清理；任何清理失败都不能以退出码 0 收口。
+        report["cleanup"] = {}
+        try:
+            if app is not None:
+                deleted = call("/app/delete", {"id": str(app)})
+                assert deleted is True, "专属应用删除未确认"
+                report["cleanup"]["appDeleted"] = True
+            if source_id:
+                current = call(f"/project/import/git/tasks/{source_id}")
+                if current["status"] not in ("SUCCEEDED", "CANCELLED", "FAILED"):
+                    current = call(f"/project/import/git/tasks/{source_id}/cancel?revision={int(current['revision'])}", method="POST")
+                assert current["status"] in ("SUCCEEDED", "CANCELLED", "FAILED"), "来源任务未结束"
+                report["cleanup"]["sourceState"] = current["status"]
+            if credential is not None:
+                for row in call("/project/import/credentials"):
+                    if row["id"] == credential["id"]:
+                        call(f"/project/import/credentials/{row['id']}?ownerId={owner}&revision={int(row['revision'])}", method="DELETE")
+                assert all(row["id"] != credential["id"] for row in call("/project/import/credentials")), "凭据删除未确认"
+                report["cleanup"]["credentialsRemoved"] = True
+        except Exception as error:
+            report["status"] = "FAIL"
+            report["cleanupError"] = type(error).__name__
         (evidence / "result.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps({k: report[k] for k in report if k not in {"checks"}}, ensure_ascii=False))
         for row in report["checks"]:

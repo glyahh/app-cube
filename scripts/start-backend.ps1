@@ -23,5 +23,8 @@ if (-not (Test-Path $agentPython)) { throw '未找到 Agent Python 虚拟环境�
 if ($LASTEXITCODE -ne 0) { throw '执行环境未就绪，已停止启动后端。请检查上方 Docker 错误。' }
 Write-Host "使用 JDK：$env:JAVA_HOME" -ForegroundColor Cyan
 Push-Location $ProjectRoot
-try { & .\mvnw.cmd spring-boot:run }
+try {
+    & .\mvnw.cmd spring-boot:run
+    if ($LASTEXITCODE -ne 0) { throw "后端进程退出，退出码 $LASTEXITCODE。" }
+}
 finally { Pop-Location }

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 def build_agent(*, settings, backend, checkpointer, store, task_kind: str, tools=None,
                 workspace=None, window: int = 0, overhead=None, compaction_out: list | None = None,
-                route_state=None):
+                route_state=None, import_edit=False):
     """按本轮任务类型装配一个可运行的 deep agent。
 
     `tools` 传本项目自带的工具（git_snapshot 等）。框架的
@@ -64,7 +64,7 @@ def build_agent(*, settings, backend, checkpointer, store, task_kind: str, tools
     ).window
 
     spill_dir = (Path(workspace) / ".scratch") if workspace else Path(".scratch")
-    system_prompt = get_system_prompt(task_kind) + "\n面向用户的最终回答使用简体中文，简洁说明作品与实际检查结果，不介绍内部运行架构。"
+    system_prompt = get_system_prompt(task_kind, import_edit=import_edit) + "\n面向用户的最终回答使用简体中文，简洁说明作品与实际检查结果，不介绍内部运行架构。"
 
     system_prompt += (
         "\n每次调用工具前，先输出两句简短的用户可见进度说明：第一句概述当前阶段，"
@@ -102,11 +102,10 @@ def build_agent(*, settings, backend, checkpointer, store, task_kind: str, tools
             spill_threshold=settings.limits.tool_output_spill_chars,
             spill_dir=spill_dir,
         ),
-        # 模型调用次数上限。exit_behavior="end" 让超限时优雅收尾而不是抛错，
-        # 这样前面积累的产出不会因为最后一步超限而全部作废。
+        # 导入编辑耗尽预算必须失败，普通生成保留已有收尾行为。
         ModelCallLimitMiddleware(
             run_limit=settings.limits.max_model_calls,
-            exit_behavior="end",
+            exit_behavior="error" if import_edit else "end",
         ),
         compaction,
     ]

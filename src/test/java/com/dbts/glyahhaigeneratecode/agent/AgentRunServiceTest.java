@@ -71,7 +71,9 @@ class AgentRunServiceTest {
 
         pool = new AgentWorkerPool(poolProps, runtimeProps);
         service = new AgentRunService(pool, runtimeProps, mapper, new AppRunCoordinator(),
-                org.mockito.Mockito.mock(AgentRunPersistence.class));
+                org.mockito.Mockito.mock(AgentRunPersistence.class),
+                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.projectimport.ImportAgentEditPreparation.class),
+                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.projectimport.ImportAgentEditExecution.class));
     }
 
     @AfterEach

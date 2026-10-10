@@ -54,6 +54,7 @@ public class ImportSourceService implements AutoCloseable {
     }
 
     public ImportSourceTask.View prepare(long owner,String appName,String provider,String url,Options options,UUID credentialId,Long credentialVersion,UUID requestId) {
+        ImportProviderPolicy.requireSupported(provider);
         if(owner<=0 || appName==null || appName.isBlank() || appName.strip().length()>80 || appName.chars().anyMatch(Character::isISOControl))
             throw new MyException(ErrorCode.PARAMS_ERROR,"应用名称无效，最多 80 个字符。");
         if((credentialId==null)!=(credentialVersion==null) || (credentialVersion!=null && credentialVersion<=0))
@@ -117,6 +118,7 @@ public class ImportSourceService implements AutoCloseable {
 
     private void readBranches(ImportSourceTask lease,CountDownLatch exited) {
         try {
+            ImportProviderPolicy.requireSupported(lease.definition().source().provider());
             // 2. 显式代理与直连证明分开；不失败后换线路或匿名身份。
             ImportGitNetworkPolicy network=properties.getGitProxy()==null || properties.getGitProxy().isBlank()
                     ?ImportGitNetworkPolicy.direct(URI.create(lease.definition().source().cloneUrl()).getHost(),
@@ -144,6 +146,7 @@ public class ImportSourceService implements AutoCloseable {
 
     public ImportSourceTask.View selectBranch(long owner,UUID id,long revision,String branch) {
         var previous=owned(owner,id);
+        ImportProviderPolicy.requireSupported(previous.definition().source().provider());
         if(previous.status()!=WAITING_BRANCH || previous.revision()!=revision || closing)throw conflict();
         String name=ImportRepositorySource.branch(branch);
         var selected=previous.branches().stream().filter(value->value.name().equals(name)).findFirst()
@@ -204,6 +207,7 @@ public class ImportSourceService implements AutoCloseable {
 
     public ImportSourceTask.View rebuild(long owner,UUID id,long revision,String appName,Options options) {
         var previous=owned(owner,id);
+        ImportProviderPolicy.requireSupported(previous.definition().source().provider());
         if(closing || previous.status()!=WAITING_CONFIRMATION || previous.revision()!=revision || active.containsKey(id)
                 || !resourcesStopped(previous) || !releaseStoppedBroker(id))throw conflict();
         if(appName==null || appName.isBlank() || appName.strip().length()>80 || appName.chars().anyMatch(Character::isISOControl) || options==null)
@@ -335,6 +339,9 @@ public class ImportSourceService implements AutoCloseable {
     private ImportSourceTask owned(long owner,UUID id){var task=repository.find(owner,id);if(task==null)throw new MyException(ErrorCode.NOT_FOUND_ERROR,"来源任务不存在。");return task;}
     private void expire(){
         try {
+            // 1. 下线平台只撤销未完成任务，历史成功应用保持不变。
+            for(var task:repository.retired())try{cancelIfPresent(task.ownerId(),task.taskId());}
+            catch(RuntimeException error){log.warn("下线来源取消未确认，taskId={}",task.taskId());}
             for(var task:repository.expired())try{cancel(task.ownerId(),task.taskId(),task.revision());}
             catch(RuntimeException error){
                 if(error instanceof MyException known && known.getCode()==ErrorCode.CONFLICT_ERROR.getCode())continue;

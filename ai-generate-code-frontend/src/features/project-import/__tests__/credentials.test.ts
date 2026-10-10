@@ -9,6 +9,18 @@ const context = () => ({ ownerId: '12', signal: new AbortController().signal, is
 
 describe('真实凭据适配器', () => {
   beforeEach(() => api.mockReset())
+  it('旧 Gitee 凭据保留脱敏读取和删除，不允许新建或修改', async () => {
+    const retired: CredentialView = {...credential,provider:'Gitee'}
+    api.mockResolvedValueOnce(response([retired]))
+    expect(await loadCredentials(context())).toEqual([retired])
+    api.mockReset()
+    await expect(createCredential(context(),'Gitee','旧','FAKE_SECRET')).rejects.toThrow('仅支持 GitHub')
+    await expect(renameCredential(context(),retired,'新')).rejects.toThrow('已停用')
+    await expect(replaceCredential(context(),retired,'FAKE_NEW')).rejects.toThrow('已停用')
+    expect(api).not.toHaveBeenCalled()
+    api.mockResolvedValueOnce(response('csrf')).mockResolvedValueOnce(response({credential:{...retired,state:'DELETED'},stops:[]}))
+    expect((await deleteCredential(context(),retired)).credential.state).toBe('DELETED')
+  })
   it('列表仅接收元数据，不保留额外秘密字段', async () => {
     api.mockResolvedValueOnce(response([{ ...credential, token: 'FAKE_SECRET' }]))
     expect(await loadCredentials(context())).toEqual([credential])

@@ -27,6 +27,7 @@ public class ImportSourceRepository {
 
     @Transactional
     public void insert(ImportSourceTask task,UUID requestId) {
+        ImportProviderPolicy.requireSupported(task.definition().source().provider());
         if(task.status()!=ImportSourceTask.Status.RESOLVING_SOURCE || task.revision()!=0 || task.mainTaskCreated()
                 || !task.branches().isEmpty() || !task.resources().isEmpty() || task.commit()!=null || task.contentHash()!=null)
             throw new IllegalArgumentException("来源初始状态无效。");
@@ -73,12 +74,22 @@ public class ImportSourceRepository {
         return jdbc.query("SELECT * FROM biz.project_import_source WHERE expires_at<=now() AND status IN ('RESOLVING_SOURCE','WAITING_BRANCH','READING_CONTENT','WAITING_CONFIRMATION')",this::read);
     }
 
+    public List<ImportSourceTask> retired() {
+        return jdbc.query("""
+                SELECT * FROM biz.project_import_source
+                WHERE definition_json->'source'->>'provider'='Gitee'
+                    AND status IN ('RESOLVING_SOURCE','WAITING_BRANCH','READING_CONTENT','WAITING_CONFIRMATION')
+                """,this::read);
+    }
+
     public boolean qualified(ImportSourceTask lease) {
+        if (!ImportProviderPolicy.supported(lease.definition().source().provider())) return false;
         Integer valid=jdbc.queryForObject("""
                 SELECT count(*) FROM biz.project_import_source s
                 LEFT JOIN biz.project_import_credential c ON c.credential_id=s.credential_id
                 LEFT JOIN biz.project_import_credential_version v ON v.credential_id=s.credential_id AND v.version=s.credential_version
                 WHERE s.task_id=? AND s.owner_id=? AND s.revision=? AND s.status=? AND s.executor_id=? AND s.expires_at>now()
+                    AND s.definition_json->'source'->>'provider'='GitHub'
                     AND (s.credential_id IS NULL OR (c.owner_id=s.owner_id AND c.provider=s.definition_json->'source'->>'provider'
                         AND c.state='ACTIVE' AND v.state='ACTIVE' AND c.current_version=s.credential_version))
                 """,Integer.class,lease.taskId(),lease.ownerId(),lease.revision(),lease.status().name(),lease.executorId());
@@ -120,6 +131,7 @@ public class ImportSourceRepository {
 
     @Transactional
     public ImportSourceTask select(ImportSourceTask previous,String branch,String commit,UUID executor,long pid,java.time.Instant started,long reservedBytes) {
+        ImportProviderPolicy.requireSupported(previous.definition().source().provider());
         if(previous.status()!=ImportSourceTask.Status.WAITING_BRANCH || !ImportRepositorySource.branch(branch).equals(branch)
                 || !commit.matches("[0-9a-f]{40}") || reservedBytes<=0)throw new IllegalArgumentException("来源选择无效。");
         if(previous.credentialId()!=null) {
@@ -136,6 +148,7 @@ public class ImportSourceRepository {
 
     @Transactional
     public void contentReady(ImportSourceTask lease,String contentHash) {
+        ImportProviderPolicy.requireSupported(lease.definition().source().provider());
         if(lease.status()!=ImportSourceTask.Status.READING_CONTENT || contentHash==null || !contentHash.matches("[0-9a-f]{64}"))throw new IllegalArgumentException("来源封存版本无效。");
         if(lease.credentialId()!=null) {
             var locked=jdbc.queryForList("SELECT credential_id FROM biz.project_import_credential WHERE credential_id=? AND owner_id=? FOR UPDATE",lease.credentialId(),lease.ownerId());
@@ -158,6 +171,8 @@ public class ImportSourceRepository {
 
     @Transactional
     public ImportSourceTask rebuild(ImportSourceTask previous,ImportSourceTask.Definition definition,UUID executor,long pid,java.time.Instant started) {
+        ImportProviderPolicy.requireSupported(previous.definition().source().provider());
+        ImportProviderPolicy.requireSupported(definition.source().provider());
         if(previous.status()!=ImportSourceTask.Status.WAITING_CONFIRMATION || !previous.mainTaskCreated())requireChanged(0);
         if(previous.credentialId()!=null) {
             var locked=jdbc.queryForList("SELECT credential_id FROM biz.project_import_credential WHERE credential_id=? AND owner_id=? FOR UPDATE",previous.credentialId(),previous.ownerId());

@@ -52,6 +52,27 @@ async function click(name: string) {
 }
 
 describe('formal folder import frontend', () => {
+  it('reads native handles including empty directories and binary files', async () => {
+    await openForm()
+    const binary = new File([new Uint8Array([0, 255])], 'binary.bin')
+    const empty = { name: '中文 空目录', kind: 'directory', async *values() {} }
+    const root = { name: '原生工程', kind: 'directory', async *values() {
+      yield empty
+      yield { name: 'binary.bin', kind: 'file', getFile: async () => binary }
+    } }
+    Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: vi.fn().mockResolvedValue(root) })
+    try {
+      await click('选择文件夹')
+      expect(wrapper!.get('[data-testid="included-count"]').text()).toBe('2')
+      await click('确认导入')
+      const request = vi.mocked(submitFolderImport).mock.calls[0]![0]
+      expect(request.files.map(entry => entry.metadata)).toEqual([
+        { path: '中文 空目录', size: 0, directory: true }, { path: 'binary.bin', size: 2, directory: false },
+      ])
+      expect(request.files[0]!.file.size).toBe(0)
+      expect(request.files[1]!.file).toBe(binary)
+    } finally { Reflect.deleteProperty(window, 'showDirectoryPicker') }
+  })
   it('retains dependency files by default and excludes sensitive files from the frozen submission', async () => {
     const { router } = await openForm()
     const files = await choose()

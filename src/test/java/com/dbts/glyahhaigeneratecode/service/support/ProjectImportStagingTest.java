@@ -26,6 +26,35 @@ class ProjectImportStagingTest {
     }
 
     @Test
+    void preservesEmptyDirectoriesAndRejectsDirectoryInventoryChanges() throws Exception {
+        var store=staging();var id=UUID.randomUUID();store.create(id);
+        var directory=store.receive(id,0,new FileEntry("中文 空目录/子目录",0,true),InputStream.nullInputStream(),()->true,timeout);
+        var file=store.receive(id,1,new FileEntry("空文件",0),InputStream.nullInputStream(),()->true,timeout);
+        var entries=List.of(directory,file);
+        var copy=store.prepareWorkspace(id,entries,()->true,timeout);
+        assertTrue(Files.isDirectory(copy.resolve(directory.path())));
+        assertTrue(Files.isRegularFile(copy.resolve(file.path())));
+        assertEquals(store.seal(id,entries),store.verifyWorkspace(copy,entries,()->true,timeout));
+        var other=UUID.randomUUID();store.create(other);
+        var ordinary=store.receive(other,0,new FileEntry(directory.path(),0),InputStream.nullInputStream(),()->true,timeout);
+        var otherFile=store.receive(other,1,new FileEntry(file.path(),0),InputStream.nullInputStream(),()->true,timeout);
+        assertNotEquals(store.seal(id,entries),store.seal(other,List.of(ordinary,otherFile)));
+        Files.createDirectory(copy.resolve("未授权空目录"));
+        assertThrows(IOException.class,()->store.verifyWorkspace(copy,entries,()->true,timeout));
+        Files.delete(copy.resolve("未授权空目录"));Files.delete(copy.resolve(directory.path()));
+        assertThrows(IOException.class,()->store.verifyWorkspace(copy,entries,()->true,timeout));
+    }
+
+    @Test
+    void validatesExplicitDirectoriesAndFiltersDirectoryRoots() {
+        var entries=List.of(new FileEntry("node_modules",0,true),new FileEntry("保留",0,true));
+        var manifest=validate(entries,new Options(true,false,true),new Limits(10,100));
+        assertEquals(List.of(new FileEntry("保留",0,true)),manifest.included());
+        assertThrows(IllegalArgumentException.class,()->validate(List.of(new FileEntry("a",0,true),new FileEntry("a",0)),Options.defaults(),new Limits(10,100)));
+        assertThrows(IllegalArgumentException.class,()->validate(List.of(new FileEntry("a",1,true)),Options.defaults(),new Limits(10,100)));
+    }
+
+    @Test
     void storesActualBinaryBytesAndHashesWithoutTouchingOriginal() throws Exception {
         var store = staging();
         var id = UUID.randomUUID();

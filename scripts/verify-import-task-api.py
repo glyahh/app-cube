@@ -115,6 +115,9 @@ def main():
             path.write_bytes(data)
         hashes = {path: hashlib.sha256(data).hexdigest() for path, data in entries.items()}
         files = [{"path": path, "size": len(data)} for path, data in entries.items()]
+        directory_path = "工程/中文 空目录/空子目录"
+        (source / directory_path).mkdir(parents=True)
+        files.append({"path": directory_path, "size": 0, "directory": True})
         payload = {"ownerId": owner, "appName": "x", "files": files, "options": {
             "skipDependencies": False, "skipBuildOutputs": False, "includeSensitive": False,
         }}
@@ -127,18 +130,19 @@ def main():
         assert expect("temporary-options-do-not-save", request(first, "/project/import/preferences")) == saved
         identifier = view["taskId"]
         included = view["manifest"]["included"]
-        assert len(included) == 6 and len(view["manifest"]["excluded"]) == 1
+        assert len(included) == 7 and len(view["manifest"]["excluded"]) == 1
         expect("foreign-task-read", request(second, "/project/import/tasks/" + identifier), 40400)
         expect("foreign-task-cancel", request(second, f"/project/import/tasks/{identifier}/cancel?revision={view['revision']}", "POST", csrf=other_token), 40400)
         expect("out-of-order-upload", request(first, f"/project/import/tasks/{identifier}/files/1?revision={view['revision']}", "PUT", b"", token), 40900)
         for index, entry in enumerate(included):
             old_revision = view["revision"]
-            view = expect("upload-file-" + str(index), request(first, f"/project/import/tasks/{identifier}/files/{index}?revision={old_revision}", "PUT", entries[entry["path"]], token))
+            content = b"" if entry.get("directory") else entries[entry["path"]]
+            view = expect("upload-file-" + str(index), request(first, f"/project/import/tasks/{identifier}/files/{index}?revision={old_revision}", "PUT", content, token))
             if index == 0:
                 expect("stale-upload-revision", request(first, f"/project/import/tasks/{identifier}/files/{index}?revision={old_revision}", "PUT", entries[entry["path"]], token), 40900)
             stored = staging / identifier / f"{index}.bin"
             assert stored.resolve().is_relative_to(staging)
-            assert hashlib.sha256(stored.read_bytes()).hexdigest() == hashes[entry["path"]]
+            assert hashlib.sha256(stored.read_bytes()).hexdigest() == hashlib.sha256(content).hexdigest()
         assert view["status"] == "WAITING_CONFIRMATION" and len(view["contentHash"]) == 64
         result["taskResults"].append({"taskId": identifier, "ownerId": owner, "revision": view["revision"],
                                      "observedStatus": view["status"], "contentHash": view["contentHash"], "actualFiles": len(included)})
@@ -175,7 +179,11 @@ def main():
             assert workspace["hasSource"] and workspace["workspaceDirName"] == "project_" + app_id
             target = Path("temp/code_output").resolve() / ("project_" + app_id)
             for entry in included:
-                assert hashlib.sha256((target / entry["path"]).read_bytes()).hexdigest() == hashes[entry["path"]]
+                if entry.get("directory"):
+                    assert (target / entry["path"]).is_dir()
+                    assert not list((target / entry["path"]).iterdir())
+                else:
+                    assert hashlib.sha256((target / entry["path"]).read_bytes()).hexdigest() == hashes[entry["path"]]
             assert not (target / "工程/.env").exists()
             expect("cancel-successful-import-rejected", request(first, f"/project/import/tasks/{identifier}/cancel?revision={actual['revision']}", "POST", csrf=token), 40900)
             result["applicationsCreated"] = True

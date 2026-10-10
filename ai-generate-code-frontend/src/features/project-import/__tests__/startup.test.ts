@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 const api = vi.hoisted(() => vi.fn())
 vi.mock('@/request', () => ({ default: { request: api } }))
-import { agentDirectories, attemptAllowed, confirmPlan, createScan, executionAllowed, importedApp, loadConfiguration, selectableCandidates, StartupError, type InspectionRecord, type StartupPlan, type StartupScope, type StartupScan } from '../startup'
+import { agentDirectories, attemptAllowed, confirmPlan, createScan, currentPreparation, executionAllowed, importedApp, loadConfiguration, loadExecution, loadExecutionLog, reconcilePreparations, selectableCandidates, stopExecution, StartupError, type InspectionRecord, type StartupPlan, type StartupScope, type StartupScan } from '../startup'
 
 const ok = (data: unknown, code = 20000, message = '失败') => ({ data: { code, data, message } })
 const context = { appId: '2106', ownerId: '77' }
@@ -24,6 +24,25 @@ describe('启动识别正式接口适配', () => {
     expect(api.mock.calls[1]![0].url).toBe('/project/import/csrf')
     expect(api.mock.calls[2]![0]).toMatchObject({ url: '/project/import/apps/2106/startup/scans', method: 'POST', headers: { 'X-Project-Import-CSRF': 'token' },
       data: { ownerId: '77', requestId: '33333333-3333-4333-8333-333333333333', configRevision: 3, contextEpoch: 1, scope: 'web' } })
+  })
+  it('执行查询、日志和对账都绑定计划；日志默认限长且停止携带身份', async () => {
+    const p = plan('CONFIRMED', true)
+    const executionId = '44444444-4444-4444-8444-444444444444'
+    api.mockResolvedValueOnce(ok({ preparationId: 'p' }))
+    await currentPreparation(context, p)
+    expect(api.mock.calls[0]![0]).toMatchObject({ url: `/project/import/apps/2106/startup/preparations/current?planId=${p.planId}`, method: 'GET' })
+    api.mockResolvedValueOnce(ok({ id: executionId }))
+    await loadExecution(context, p, executionId)
+    expect(api.mock.calls[1]![0].url).toContain(`/executions/${executionId}?planId=${p.planId}`)
+    api.mockResolvedValueOnce(ok({ executionId, state: 'RUNNING', content: 'x', truncated: false }))
+    await loadExecutionLog(context, p, executionId)
+    expect(api.mock.calls[2]![0].url).toContain('maxBytes=262144')
+    api.mockResolvedValueOnce(ok('token')).mockResolvedValueOnce(ok({ id: executionId }))
+    await stopExecution(context, p, executionId)
+    expect(api.mock.calls[4]![0]).toMatchObject({ method: 'POST', data: { ownerId: '77', planId: p.planId } })
+    api.mockResolvedValueOnce(ok('token')).mockResolvedValueOnce(ok({ rows: 1, containers: 0, files: 0, unresolved: [] }))
+    await reconcilePreparations(context, p)
+    expect(api.mock.calls[6]![0]).toMatchObject({ method: 'POST', data: { ownerId: '77', planId: p.planId } })
   })
   it('业务码与 HTTP 拒绝都成为带码错误，不当作成功', async () => {
     api.mockResolvedValueOnce(ok('token')).mockResolvedValueOnce(ok(null, 40900, '计划版本不一致'))

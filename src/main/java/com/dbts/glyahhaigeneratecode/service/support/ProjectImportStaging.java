@@ -21,7 +21,9 @@ import static com.dbts.glyahhaigeneratecode.service.support.ProjectImportManifes
 /** 私有暂存只用服务端任务和序号命名，不把用户相对路径当宿主写入路径。 */
 public final class ProjectImportStaging {
     private final Path root;
-    public record StoredFile(int index, String path, long size, String sha256) { }
+    public record StoredFile(int index, String path, long size, String sha256, boolean directory) {
+        public StoredFile(int index,String path,long size,String sha256){this(index,path,size,sha256,false);}
+    }
 
     public ProjectImportStaging(Path root, List<Path> forbiddenRoots) throws IOException {
         this.root = root.toAbsolutePath().normalize();
@@ -57,7 +59,7 @@ public final class ProjectImportStaging {
                 created = true;
                 String hash = transfer(input, Channels.newOutputStream(channel), entry.size(), eligible, timeout);
                 channel.force(true);
-                return new StoredFile(index, entry.path(), entry.size(), hash);
+                return new StoredFile(index, entry.path(), entry.size(), hash,entry.directory());
             }
         } catch (IOException e) {
             if (created) {
@@ -112,7 +114,7 @@ public final class ProjectImportStaging {
                 byte[] path = file.path().getBytes(StandardCharsets.UTF_8);
                 output.writeInt(path.length);
                 output.write(path);
-                output.writeLong(file.size());
+                output.writeLong(file.directory()?-1:file.size());
                 output.write(HexFormat.of().parseHex(file.sha256()));
             }
         }
@@ -140,6 +142,11 @@ public final class ProjectImportStaging {
             if (!destination.startsWith(target)) throw new IOException("工作副本路径越界。");
             guardAncestors(destination);
             Files.createDirectories(destination.getParent());
+            if(file.directory()){
+                if(!eligible.getAsBoolean())throw new IOException("工作副本资格已撤销。");
+                Files.createDirectories(destination);
+                continue;
+            }
             try (InputStream input = Files.newInputStream(payload(taskId, file.index()), LinkOption.NOFOLLOW_LINKS);
                  FileChannel channel = FileChannel.open(destination, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)) {
                 String hash = transfer(input, Channels.newOutputStream(channel), file.size(), eligible, remaining(timeout, started));
@@ -154,14 +161,22 @@ public final class ProjectImportStaging {
 
     public String verifyWorkspace(Path target, List<StoredFile> files, BooleanSupplier eligible, Duration timeout) throws IOException {
         guardAncestors(target);
-        validate(files.stream().map(f -> new FileEntry(f.path(), f.size())).toList(), new Options(false, false, true),
+        validate(files.stream().map(f -> new FileEntry(f.path(), f.size(),f.directory())).toList(), new Options(false, false, true),
                 new Limits(files.size(), Long.MAX_VALUE));
         long started = System.nanoTime();
         Set<String> expected = new HashSet<>();
+        Set<String> expectedDirectories=new HashSet<>();
         for (StoredFile file : files) {
-            expected.add(file.path());
+            if(!file.directory())expected.add(file.path());
+            Path relative=Path.of(file.path());
+            for(Path directory=file.directory()?relative:relative.getParent();directory!=null;directory=directory.getParent())
+                expectedDirectories.add(directory.toString().replace('\\','/'));
             Path path = target.resolve(file.path()).normalize();
             guardAncestors(path);
+            if(file.directory()){
+                if(!Files.isDirectory(path,LinkOption.NOFOLLOW_LINKS))throw new IOException("工作副本目录缺失。");
+                continue;
+            }
             if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) throw new IOException("工作副本文件缺失。");
             try (InputStream input = Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)) {
                 if (!transfer(input, OutputStream.nullOutputStream(), file.size(), eligible, remaining(timeout, started)).equals(file.sha256())) {
@@ -170,10 +185,12 @@ public final class ProjectImportStaging {
             }
         }
         Set<String> actual = new HashSet<>();
+        Set<String> actualDirectories=new HashSet<>();
         Files.walkFileTree(target, new SimpleFileVisitor<>() {
             @Override public FileVisitResult preVisitDirectory(Path path, BasicFileAttributes attrs) throws IOException {
                 if (!eligible.getAsBoolean() || attrs.isOther() || attrs.isSymbolicLink()) throw new IOException("工作副本范围无效。");
                 remaining(timeout, started);
+                if(!path.equals(target))actualDirectories.add(target.relativize(path).toString().replace('\\','/'));
                 return FileVisitResult.CONTINUE;
             }
             @Override public FileVisitResult visitFile(Path path, BasicFileAttributes attrs) throws IOException {
@@ -182,7 +199,7 @@ public final class ProjectImportStaging {
                 return FileVisitResult.CONTINUE;
             }
         });
-        if (!actual.equals(expected)) throw new IOException("工作副本范围不一致。");
+        if (!actual.equals(expected)||!actualDirectories.equals(expectedDirectories)) throw new IOException("工作副本范围不一致。");
         return contentIdentity(files);
     }
 
@@ -197,7 +214,7 @@ public final class ProjectImportStaging {
         try (var output = new DataOutputStream(new DigestOutputStream(OutputStream.nullOutputStream(), digest))) {
             for (StoredFile file : files.stream().sorted(Comparator.comparing(StoredFile::path)).toList()) {
                 byte[] path = file.path().getBytes(StandardCharsets.UTF_8);
-                output.writeInt(path.length); output.write(path); output.writeLong(file.size());
+                output.writeInt(path.length); output.write(path); output.writeLong(file.directory()?-1:file.size());
                 output.write(HexFormat.of().parseHex(file.sha256()));
             }
         }

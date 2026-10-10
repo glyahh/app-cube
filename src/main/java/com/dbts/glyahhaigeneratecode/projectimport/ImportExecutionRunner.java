@@ -19,6 +19,7 @@ import java.util.function.Supplier;
  * 原工程不被执行产物改写，失败保留已导入工程及未决资源登记，不把清理失败当成功。
  */
 public final class ImportExecutionRunner {
+    private static final org.slf4j.Logger log=org.slf4j.LoggerFactory.getLogger(ImportExecutionRunner.class);
     public record Target(long ownerId,long appId,UUID planId,String planRevision,String contentHash,Path workspace,String directory,String command,
                          String slot,ImportExecutionSandbox.Network network,ImportExecutionSandbox.Lifetime lifetime,Integer port,String healthPath){
         public Target(long ownerId,long appId,UUID planId,String planRevision,String contentHash,Path workspace,String directory,String command,
@@ -97,6 +98,11 @@ public final class ImportExecutionRunner {
         return removeDurable(appId);
     }
 
+    /** 该应用当前未结束的指定前缀槽位执行；取消安装时按它停掉正在跑的命令。 */
+    public List<UUID> activeSlots(long appId,String slotPrefix){
+        return ledger.activeSlots(appId,slotPrefix);
+    }
+
     /** 计划版本变化时先停止旧槽位。停不掉则返回 false，调用方不能把新旧结果拼成一次成功。 */
     public boolean stopOtherPlans(long appId,String planRevision){
         boolean stopped=true;
@@ -109,19 +115,25 @@ public final class ImportExecutionRunner {
 
     public Result execute(Target target,ImportExecutionSandbox.Limits limits){
         var id=UUID.randomUUID();
+        ImportInstallControl.check();
+        ImportInstallDiagnostics.execution(null);
+        ImportInstallDiagnostics.setCommandStage(target.slot().startsWith("build:")?"BUILD_PREPARE":target.lifetime()==ImportExecutionSandbox.Lifetime.SERVE?"SERVICE_WAIT":ImportInstallDiagnostics.commandType(target.command()));
         var entry=new ImportExecutionLedger.Entry(id,target.ownerId(),target.appId(),target.planId(),target.planRevision(),target.contentHash(),target.directory(),
             sha(target.command()),limits,pid,started,target.slot(),switch(target.network()){case EGRESS->"glyahh-imp-egress";case LOOPBACK->"bridge";case NONE->"none";});
         // 1. 先确认每一项边界都能真实生效；同一槽位未结束时拒绝，不建立副本、不创建容器。
-        var refused=new ArrayList<>(sandbox.preflight(limits));
+        var refused=new ArrayList<>(ImportInstallDiagnostics.call("ADMISSION",()->sandbox.preflight(limits)));
         if(ledger.blocking(target.appId(),target.slot()))refused.add("PREVIOUS_EXECUTION_UNRESOLVED");
         if(!refused.isEmpty()){
             var row=ledger.open(entry,"REFUSED",String.join(",",refused));
+            ImportInstallDiagnostics.execution(id);ImportInstallControl.execution(id);
             return new Result(id,row.state(),row.reason(),null,0,null);
         }
         ledger.open(entry,"PREPARING",null);
+        ImportInstallDiagnostics.execution(id);
         var stop=new AtomicBoolean();active.put(id,stop);
         ImportExecutionSandbox.Outcome outcome=null;
         try{
+            ImportInstallControl.execution(id);ImportInstallControl.check();
             outcome=run(id,target,limits,stop);
         }catch(RuntimeException error){
             outcome=new ImportExecutionSandbox.Outcome("FAILED","EXECUTION_ERROR",null,0,null);
@@ -145,29 +157,29 @@ public final class ImportExecutionRunner {
         try{
             // 3. 锁内全量复制并复核原目录，内容身份必须等于计划确认时的内容；不等即失败，不执行旧计划。
             snapshot=locker.withLock(target.appId(),()->{
-                try{return copies.capture(id,target.workspace(),()->!stop.get());}
-                catch(IOException error){throw new IllegalStateException("COPY_FAILED");}
+                try{return ImportInstallDiagnostics.call("COPY_PROJECT",()->copies.capture(id,target.workspace(),()->!stop.get()&&!ImportInstallControl.cancelled()));}
+                catch(IOException error){recordCopyFailure(id,target.appId(),"CAPTURE",error);throw new IllegalStateException("COPY_FAILED");}
             });
         }catch(IllegalStateException|MyException error){
-            if(stop.get())return new ImportExecutionSandbox.Outcome("STOPPED","STOP_REQUESTED",null,0,null);
+            if(stop.get()||ImportInstallControl.cancelled())return new ImportExecutionSandbox.Outcome("STOPPED","STOP_REQUESTED",null,0,null);
             return new ImportExecutionSandbox.Outcome("FAILED",error instanceof MyException?"WORKSPACE_BUSY":"COPY_FAILED",null,0,null);
         }
         if(!snapshot.contentHash().equals(target.contentHash()))return new ImportExecutionSandbox.Outcome("FAILED","PLAN_CONTENT_CHANGED",null,0,null);
         long bytes=snapshot.files().stream().mapToLong(ProjectImportStaging.StoredFile::size).sum();
         if(bytes>limits.diskBytes())return new ImportExecutionSandbox.Outcome("FAILED","COPY_EXCEEDS_DISK",null,0,null);
         Path copy;
-        try{copy=durable(target,snapshot,limits,()->!stop.get());copies.discard(id);}
-        catch(IOException error){return new ImportExecutionSandbox.Outcome(stop.get()?"STOPPED":"FAILED",stop.get()?"STOP_REQUESTED":"COPY_FAILED",null,0,null);}
+        try{copy=ImportInstallDiagnostics.call("PREPARE_WORKSPACE",()->durable(target,snapshot,limits,()->!stop.get()&&!ImportInstallControl.cancelled()));copies.discard(id);}
+        catch(IOException error){recordCopyFailure(id,target.appId(),"MATERIALIZE",error);return new ImportExecutionSandbox.Outcome(stop.get()?"STOPPED":"FAILED",stop.get()?"STOP_REQUESTED":"COPY_FAILED",null,0,null);}
         if(copy==null)return new ImportExecutionSandbox.Outcome("FAILED","PLAN_CONTENT_CHANGED",null,0,null);
-        if(stop.get())return new ImportExecutionSandbox.Outcome("STOPPED","STOP_REQUESTED",null,0,null);
+        if(stop.get()||ImportInstallControl.cancelled())return new ImportExecutionSandbox.Outcome("STOPPED","STOP_REQUESTED",null,0,null);
         try{if(directoryBytes(copy)>limits.diskBytes()){discardQuotaBlocked(id,target.appId());return new ImportExecutionSandbox.Outcome("FAILED","DISK_QUOTA",null,0,null);}}
         catch(IOException error){return new ImportExecutionSandbox.Outcome("FAILED","COPY_FAILED",null,0,null);}
         String mountedCopy=null;
         if(volumes!=null){
             try{
-                mountedCopy=prepareVolume(id,target,snapshot,copy,limits);
+                mountedCopy=ImportInstallDiagnostics.call("PREPARE_VOLUME",()->prepareVolume(id,target,snapshot,copy,limits));
             }catch(IOException error){return new ImportExecutionSandbox.Outcome("FAILED",error.getMessage()!=null&&error.getMessage().matches("DISK_VOLUME_[A-Z0-9_:]{1,110}")?error.getMessage():"DISK_VOLUME_UNAVAILABLE",null,0,null);}
-            if(stop.get())return new ImportExecutionSandbox.Outcome("STOPPED","STOP_REQUESTED",null,0,null);
+            if(stop.get()||ImportInstallControl.cancelled())return new ImportExecutionSandbox.Outcome("STOPPED","STOP_REQUESTED",null,0,null);
         }
         var request=new ImportExecutionSandbox.Request(id,target.appId(),copy,target.directory(),target.command(),limits,target.network(),target.lifetime(),true,target.port(),target.healthPath(),mountedCopy);
         var outcome=sandbox.execute(request,file(id,".guard.sh"),file(id,".env"),file(id,".output.log"),new ImportExecutionSandbox.Journal(){
@@ -182,12 +194,30 @@ public final class ImportExecutionRunner {
                 boolean cleaned=!"STOP_FAILED".equals(result.state())&&cleanup(id);
                 ledger.finish(current,result.state(),result.reason(),result.exitCode(),result.outputBytes(),cleaned?"DONE":"FAILED");
             }
-        },stop::get);
+        },()->stop.get()||ImportInstallControl.cancelled());
         if(outcome!=null&&"SUCCEEDED".equals(outcome.state())){
             try{if(directoryBytes(copy)>limits.diskBytes()){discardQuotaBlocked(id,target.appId());return new ImportExecutionSandbox.Outcome("FAILED","DISK_QUOTA",outcome.exitCode(),outcome.outputBytes(),outcome.containerId());}}
             catch(IOException error){return new ImportExecutionSandbox.Outcome("FAILED","COPY_FAILED",outcome.exitCode(),outcome.outputBytes(),outcome.containerId());}
         }
         return outcome;
+    }
+
+    /** 只记录固定原因码与类型，不输出可能含工程秘密的路径、异常消息或堆栈。 */
+    private static void recordCopyFailure(UUID id,long appId,String stage,IOException error){
+        Throwable root=error;
+        while(root.getCause()!=null&&root.getCause()!=root)root=root.getCause();
+        String message=root.getMessage();
+        String reason=switch(message==null?"":message){
+            case "实际文件长度与清单不一致。"->"FILE_LENGTH_MISMATCH";
+            case "工作副本内容已变化。","工作区内容或属性已变化。"->"CONTENT_CHANGED";
+            case "目录数量超限。"->"DIRECTORY_LIMIT";
+            case "快照任务失效或超时。"->"COPY_EXPIRED";
+            case "快照清单无效。"->"MANIFEST_INVALID";
+            default->"COPY_IO_FAILED";
+        };
+        String site=Arrays.stream(root.getStackTrace()).filter(frame->frame.getClassName().startsWith("com.dbts.glyahhaigeneratecode."))
+            .findFirst().map(frame->frame.getClassName()+"."+frame.getMethodName()+":"+frame.getLineNumber()).orElse("UNKNOWN");
+        log.warn("导入执行副本失败 executionId={} appId={} stage={} reason={} type={} site={}",id,appId,stage,reason,root.getClass().getSimpleName(),site);
     }
 
     /** 按冻结身份检查服务；已退出的资源清理并落终态，不自动重跑。 */
@@ -211,6 +241,26 @@ public final class ImportExecutionRunner {
             // 监督线程可能已经确认终态；只复用同一冻结身份的权威结果，不把正常竞争记成未知。
             return current!=null&&current.ownerId()==ownerId&&current.appId()==appId&&current.planId().equals(planId)&&!current.active()?current.state():"UNKNOWN";
         }
+    }
+
+    /** 按冻结身份读取执行摘要；未知身份统一返回 null，避免泄露其他用户执行记录。 */
+    public ImportExecutionLedger.Detail detail(long ownerId,long appId,UUID planId,UUID id){
+        var detail=ledger.detail(id);
+        return detail!=null&&detail.ownerId()==ownerId&&detail.appId()==appId&&detail.planId().equals(planId)?detail:null;
+    }
+
+    /** 读取已脱敏执行日志，限制返回字节数，避免把日志文件直接搬进 JVM。 */
+    public String log(long ownerId,long appId,UUID planId,UUID id,int maxBytes){
+        if(maxBytes<1||maxBytes>1<<20)throw new IllegalArgumentException("日志长度无效。");
+        var detail=detail(ownerId,appId,planId,id);
+        if(detail==null)return null;
+        Path path=file(id,".output.log");
+        if(!Files.isRegularFile(path,LinkOption.NOFOLLOW_LINKS))return "";
+        try(var input=Files.newInputStream(path)){
+            byte[] bytes=input.readNBytes(maxBytes);
+            String value=ImportLogMask.mask(new String(bytes,StandardCharsets.UTF_8));
+            return value+(Files.size(path)>bytes.length?"\n[日志已截断]":"");
+        }catch(IOException error){throw new MyException(com.dbts.glyahhaigeneratecode.exception.ErrorCode.OPERATION_ERROR,"执行日志暂时不可读。");}
     }
 
     /** 请求停止：本实例执行中的由执行线程结束容器并确认消失；执行者已不在时直接按账本核对。 */
@@ -275,6 +325,16 @@ public final class ImportExecutionRunner {
         return new Reconciled(rows,containers,files,List.copyOf(unresolved));
     }
 
+    /** 用户触发的应用级对账只处理该应用，不扫描或清理其他用户资源。 */
+    public Reconciled reconcileApp(long appId){
+        int rows=0;var unresolved=new ArrayList<String>();
+        for(var row:ledger.forApp(appId)){
+            if(!row.active()&&"DONE".equals(row.cleanup()))continue;
+            if(reconcileRow(row))rows++;else unresolved.add(row.id()+":NOT_CONFIRMED");
+        }
+        return new Reconciled(rows,0,0,List.copyOf(unresolved));
+    }
+
     private boolean reconcileRow(ImportExecutionLedger.Row row){
         boolean gone=sandbox.removed(row.containerId()!=null?row.containerId():row.containerName());
         if(row.containerId()!=null&&gone)gone=sandbox.removed(row.containerName());
@@ -301,7 +361,8 @@ public final class ImportExecutionRunner {
         long size=snapshot.files().stream().mapToLong(ProjectImportStaging.StoredFile::size).sum();
         if(size>limits.diskBytes())throw new IOException("DISK_QUOTA");
         Path staged=copies.materialize(snapshot,eligible);
-        Files.move(staged,durable);
+        // 与导入发布复用同一个有界改名策略，不让 Windows 瞬时占用只在执行副本阶段漏处理。
+        ImportTaskService.moveWorkspace(staged,durable);
         Files.writeString(marker,snapshot.contentHash(),StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE);
         return durable;
     }
@@ -317,8 +378,8 @@ public final class ImportExecutionRunner {
             if(existing.path("ownerId").asLong()!=target.ownerId()||!target.contentHash().equals(existing.path("contentHash").asText())||existing.path("diskBytes").asLong()!=limits.diskBytes())throw new IOException("DISK_VOLUME_IDENTITY_CONFLICT");
         }else{
             var files=new ArrayList<Map<String,Object>>();
-            for(var file:snapshot.files())files.add(Map.of("path",file.path(),"size",file.size(),"sha256",file.sha256(),"executable",snapshot.attributes().getOrDefault(file.path(),"-").startsWith("x")));
-            var filePaths=snapshot.files().stream().map(ProjectImportStaging.StoredFile::path).collect(java.util.stream.Collectors.toSet());
+            for(var file:snapshot.files())if(!file.directory())files.add(Map.of("path",file.path(),"size",file.size(),"sha256",file.sha256(),"executable",snapshot.attributes().getOrDefault(file.path(),"-").startsWith("x")));
+            var filePaths=snapshot.files().stream().filter(file->!file.directory()).map(ProjectImportStaging.StoredFile::path).collect(java.util.stream.Collectors.toSet());
             var directories=snapshot.attributes().keySet().stream().filter(path->!".".equals(path)&&!filePaths.contains(path)).sorted().toList();
             Files.writeString(manifest,json.writeValueAsString(Map.of("appId",Long.toString(target.appId()),"contentHash",target.contentHash(),"diskBytes",limits.diskBytes(),"formatVersion",2,"files",files,"directories",directories)),StandardOpenOption.CREATE_NEW);
             Files.writeString(resource,json.writeValueAsString(Map.of("appId",Long.toString(target.appId()),"ownerId",target.ownerId(),"contentHash",target.contentHash(),"diskBytes",limits.diskBytes(),"executionId",executionId.toString(),"planId",target.planId().toString(),"planRevision",target.planRevision(),"state","PREPARING")),StandardOpenOption.CREATE_NEW);
@@ -415,6 +476,10 @@ public final class ImportExecutionRunner {
 
     /** 删除本次执行的封存块与临时文件，均限定在执行根目录内；应用持久副本和输出日志保留。 */
     private boolean cleanup(UUID id){
+        return ImportInstallDiagnostics.call("CLEANUP",()->cleanupObserved(id));
+    }
+
+    private boolean cleanupObserved(UUID id){
         try{
             copies.discardMaterialized(id);copies.discard(id);
             for(String suffix:List.of(".guard.sh",".env")){var path=file(id,suffix);ProjectImportStaging.guardManagedPath(path);Files.deleteIfExists(path);}

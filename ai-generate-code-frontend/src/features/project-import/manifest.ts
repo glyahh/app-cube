@@ -1,6 +1,7 @@
 export interface FileMetadata {
   path: string
   size: number
+  directory?: boolean
 }
 
 export interface ImportOptions {
@@ -27,7 +28,7 @@ export function validateFiles(files: FileMetadata[]): string | null {
     if (
       parts.some((part) => !part || part === '.' || part === '..') ||
       /[\\:\u0000-\u001f\u007f]/.test(file.path) ||
-      !Number.isSafeInteger(file.size) || file.size < 0
+      !Number.isSafeInteger(file.size) || file.size < 0 || (file.directory === true && file.size !== 0)
     ) return '文件路径或大小无效，请重新选择文件夹。'
     if (paths.has(file.path)) return '发现重复文件路径，未生成导入清单。'
     paths.add(file.path)
@@ -48,7 +49,7 @@ export function createManifest(files: FileMetadata[], options: ImportOptions) {
   const included: FileMetadata[] = []
   const excluded: Array<FileMetadata & { reason: string }> = []
   for (const file of files) {
-    const directories = file.path.split('/').slice(0, -1)
+    const directories = file.path.split('/').slice(0, file.directory ? undefined : -1)
     const reason = !options.includeSensitive && isSensitivePath(file.path) ? '敏感配置' :
       options.skipDependencies && directories.some((part) => ['node_modules', '.venv', 'venv'].includes(part)) ? '依赖目录' :
       options.skipBuildOutputs && directories.some((part) => ['dist', 'target', 'build'].includes(part)) ? '构建产物' : ''

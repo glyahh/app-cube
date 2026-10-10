@@ -26,6 +26,18 @@ public class AppRunCoordinator {
 
     private final ConcurrentHashMap<Long, LockEntry> appLocks = new ConcurrentHashMap<>();
 
+    /** 删除等操作与 Agent 使用同一许可；忙碌时拒绝，不能先检查再删除。 */
+    public <T> T whenIdle(Long appId, Supplier<T> action) {
+        LockEntry entry = retain(appId);
+        if (!entry.semaphore.tryAcquire()) {
+            releaseEntry(appId, entry);
+            throw new com.dbts.glyahhaigeneratecode.exception.MyException(
+                    com.dbts.glyahhaigeneratecode.exception.ErrorCode.CONFLICT_ERROR, "应用正在生成，请先停止再删除。");
+        }
+        try { return action.get(); }
+        finally { release(appId, entry); }
+    }
+
     /**
      * 把一次 run 包进该 app 的临界区。
      *

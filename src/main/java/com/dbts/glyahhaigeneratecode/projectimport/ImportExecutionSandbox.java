@@ -96,8 +96,8 @@ public final class ImportExecutionSandbox {
         [ "$(cat /sys/fs/cgroup/cpu.max)" = "$GLYAHH_CPU 100000" ] || fail CPU
         [ "$(cat /sys/fs/cgroup/memory.max)" = "$GLYAHH_MEMORY" ] || fail MEMORY
         if [ "$GLYAHH_HARD_MEMORY" = 1 ]; then
-          s=$(cat /sys/fs/cgroup/memory.swap.max 2>/dev/null || echo none); t=$(awk '/^SwapTotal:/{print $2}' /proc/meminfo)
-          [ "$s" = 0 ] || [ "$t" = 0 ] || fail MEMORY_SWAP
+          s=$(cat /sys/fs/cgroup/memory.swap.max 2>/dev/null || echo none)
+          [ "$s" = 0 ] || fail MEMORY_SWAP
         fi
         if [ "$GLYAHH_NETWORK" = egress ] || [ "$GLYAHH_NETWORK" = loopback ]; then
           [ -d /sys/class/net/eth0 ] && [ -d /sys/class/net/lo ] || fail NETWORK
@@ -136,7 +136,12 @@ public final class ImportExecutionSandbox {
                 command.addAll(args);return command;
             }
             @Override public Result run(List<String> args,int timeoutSeconds){
-                try{return spawn(command(args),timeoutSeconds);}
+                try(var span=ImportInstallDiagnostics.start("DOCKER_CLI","DOCKER_"+args.getFirst().toUpperCase(Locale.ROOT))){
+                    var command=ImportInstallDiagnostics.call("DOCKER_ENTRYPOINT",()->command(args));
+                    var result=spawn(command,timeoutSeconds);
+                    span.result(result.ok()?"SUCCEEDED":"FAILED",result.ok()?null:"DOCKER_COMMAND_FAILED",result.exitCode());
+                    return result;
+                }
                 catch(IOException error){return new Result(false,-1,"",error.getMessage());}
             }
             @Override public Result platform(List<String> args,int timeoutSeconds){
@@ -146,7 +151,12 @@ public final class ImportExecutionSandbox {
                     int at=prefix.indexOf("-d");
                     if(at<0||at+1>=prefix.size()||!prefix.get(at+1).matches("[A-Za-z0-9._-]+"))return new Result(false,-1,"","WSL_DISTRO_UNKNOWN");
                     var command=new ArrayList<>(List.of(prefix.getFirst(),"-d",prefix.get(at+1),"-u","root","--exec"));
-                    command.addAll(args);return spawn(command,timeoutSeconds);
+                    command.addAll(args);
+                    try(var span=ImportInstallDiagnostics.start("PLATFORM_CLI")){
+                        var result=spawn(command,timeoutSeconds);
+                        span.result(result.ok()?"SUCCEEDED":"FAILED",result.ok()?null:"PLATFORM_COMMAND_FAILED",result.exitCode());
+                        return result;
+                    }
                 }catch(IOException error){return new Result(false,-1,"","PLATFORM_COMMAND_FAILED");}
             }
             @Override public void prepareCopy(Path copy){
@@ -167,7 +177,7 @@ public final class ImportExecutionSandbox {
                 if(containerId==null||!CONTAINER.matcher(containerId).matches())return false;
                 String pid="";
                 for(int attempt=0;attempt<20;attempt++){
-                    var inspected=run(List.of("inspect","--format","{{.State.Pid}}",containerId),30);
+                    var inspected=ImportInstallDiagnostics.call("SWAP_PID_QUERY",()->run(List.of("inspect","--format","{{.State.Pid}}",containerId),30));
                     String value=inspected.ok()?inspected.stdout().strip():"";
                     if(value.matches("[1-9][0-9]*")){pid=value;break;}
                     try{Thread.sleep(100);}catch(InterruptedException error){Thread.currentThread().interrupt();return false;}
@@ -185,16 +195,28 @@ public final class ImportExecutionSandbox {
                     if(distroAt<0||distroAt+1>=prefix.size())return new Result(false,-1,"","swap pin needs wsl distro");
                     String distro=prefix.get(distroAt+1);
                     if(!distro.matches("[A-Za-z0-9._-]+"))return new Result(false,-1,"","swap pin distro invalid");
-                    return spawn(List.of(prefix.getFirst(),"-d",distro,"-u","root","--exec","sh","-c",script),30);
+                    try(var span=ImportInstallDiagnostics.start("SWAP_WRITE_READ")){
+                        var result=spawn(List.of(prefix.getFirst(),"-d",distro,"-u","root","--exec","sh","-c",script),30);
+                        span.result(result.ok()?"SUCCEEDED":"FAILED",result.ok()?null:"SWAP_WRITE_FAILED",result.exitCode());
+                        return result;
+                    }
                 }catch(IOException error){return new Result(false,-1,"",error.getMessage());}
             }
             private Result spawn(List<String> command,int timeoutSeconds)throws IOException{
                 Process process=null;
                 try{
-                    process=new ProcessBuilder(command).start();process.getOutputStream().close();
+                    process=ImportInstallDiagnostics.call("CLI_PROCESS_START",()->new ProcessBuilder(command).start());process.getOutputStream().close();
                     var out=drain(process.getInputStream());var err=drain(process.getErrorStream());
-                    if(!process.waitFor(timeoutSeconds,java.util.concurrent.TimeUnit.SECONDS)){process.destroyForcibly();return new Result(false,124,"","timeout");}
-                    out.join(5000);err.join(5000);
+                    boolean finished;
+                    try(var span=ImportInstallDiagnostics.start("CLI_PROCESS_WAIT")){
+                        finished=process.waitFor(timeoutSeconds,java.util.concurrent.TimeUnit.SECONDS);
+                        span.result(finished?"SUCCEEDED":"FAILED",finished?null:"TIMEOUT",finished?process.exitValue():124);
+                    }
+                    if(!finished){process.destroyForcibly();return new Result(false,124,"","timeout");}
+                    try(var span=ImportInstallDiagnostics.start("CLI_OUTPUT_DRAIN")){
+                        out.join(5000);err.join(5000);
+                        span.result(out.isAlive()||err.isAlive()?"INCOMPLETE":"SUCCEEDED",out.isAlive()||err.isAlive()?"DRAIN_PENDING":null,null);
+                    }
                     return new Result(process.exitValue()==0,process.exitValue(),out.text(),err.text());
                 }catch(InterruptedException error){Thread.currentThread().interrupt();return new Result(false,-1,"","interrupted");}
                 finally{if(process!=null&&process.isAlive())process.destroyForcibly();}
@@ -224,6 +246,7 @@ public final class ImportExecutionSandbox {
     /** 返回无法保证的边界；为空才允许执行。不缓存：引擎或宿主状态可能变化。 */
     public List<String> preflight(Limits limits){
         var refused=new ArrayList<String>();
+        ImportInstallControl.check();
         var info=engine.run(List.of("info","--format","{{.MemoryLimit}}|{{.PidsLimit}}|{{.CPUCfsQuota}}|{{.SwapLimit}}"),30);
         if(!info.ok()){refused.add("ENGINE_UNAVAILABLE");return refused;}
         String[] flags=info.stdout().strip().split("\\|");
@@ -232,32 +255,44 @@ public final class ImportExecutionSandbox {
         if(!"true".equals(flags[1]))refused.add("PROCESS_LIMIT_UNSUPPORTED");
         if(!"true".equals(flags[2]))refused.add("CPU_LIMIT_UNSUPPORTED");
         if(!engine.run(List.of("image","inspect","--format","{{.Id}}",image),30).ok()){refused.add("IMAGE_MISSING");return refused;}
-        // 1. 引擎无法限制交换区、宿主又有交换区时，只有能把容器交换区钉成 0 才允许硬上限。
-        if(limits.memory()==Memory.REQUIRE_HARD&&!"true".equals(flags[3])&&!"0".equals(swapTotal())&&!hardSwapPinReady())refused.add("MEMORY_LIMIT_UNENFORCEABLE");
+        // 1. 宿主没有 swap 不是硬限额；引擎不支持时，必须实际验证容器交换区可限制为 0。
+        if(limits.memory()==Memory.REQUIRE_HARD&&!"true".equals(flags[3])){
+            String failure=hardSwapPinFailure();
+            if(failure!=null)refused.add(failure);
+        }
         return refused;
     }
 
     /** 用一只不挂工程的探针容器确认：启动后能把 memory.swap.max 写成 0。用完即删。 */
-    private boolean hardSwapPinReady(){
-        String name=PREFIX+"pinprobe";
-        engine.run(List.of("rm","-f",name),30);
-        var created=engine.run(List.of("create","--name",name,"--network","none","--read-only","--user","65534:65534","--cap-drop","ALL",
+    private String hardSwapPinFailure(){
+        // 每次探针独占名称，不能用固定名称删除另一个请求正在验证的容器。
+        ImportInstallControl.check();
+        String name=PREFIX+"pinprobe-"+UUID.randomUUID();
+        ImportInstallControl.probe(name,null);
+        String job=ImportInstallControl.job();
+        var arguments=new ArrayList<>(List.of("create","--name",name,"--network","none","--read-only","--user","65534:65534","--cap-drop","ALL",
             "--security-opt","no-new-privileges","--pids-limit","8","--memory","32m","--memory-swap","32m","--log-driver","none",
-            "--label",LABEL+"=pinprobe","--entrypoint","sleep",image,"20"),60);
+            "--label",LABEL+"=pinprobe"));
+        if(job!=null)arguments.addAll(List.of("--label","glyahh.import.install-job="+job));
+        arguments.addAll(List.of("--entrypoint","sleep",image,"20"));
+        var created=engine.run(arguments,60);
         String id=created.ok()?created.stdout().strip():"";
-        boolean pinned=CONTAINER.matcher(id).matches()&&engine.run(List.of("start",id),30).ok()&&engine.pinHardSwap(id);
-        engine.run(List.of("rm","-f",CONTAINER.matcher(id).matches()?id:name),30);
-        return pinned;
-    }
-
-    private String swapTotal(){
-        var probe=engine.run(List.of("run","--rm","--network","none","--read-only","--user","65534:65534","--cap-drop","ALL","--security-opt","no-new-privileges",
-            "--pids-limit","8","--memory","32m","--log-driver","none","--label",LABEL+"=probe","--entrypoint","awk",image,"/^SwapTotal:/{print $2}","/proc/meminfo"),60);
-        return probe.ok()?probe.stdout().strip():"UNKNOWN";
+        boolean pinned=false;
+        try{
+            if(CONTAINER.matcher(id).matches()){
+                ImportInstallControl.probe(name,id);ImportInstallControl.check();
+                pinned=engine.run(List.of("start",id),30).ok()&&engine.pinHardSwap(id);
+            }
+        }finally{
+            if(!removed(CONTAINER.matcher(id).matches()?id:name)){if(job==null)return "MEMORY_PROBE_STOP_UNCONFIRMED";throw new IllegalStateException("MEMORY_PROBE_STOP_UNCONFIRMED");}
+        }
+        ImportInstallControl.check();
+        return pinned?null:"MEMORY_LIMIT_UNENFORCEABLE";
     }
 
     /** 建容器、核对实际配置、附着运行；wall/输出/停止任一触发即强制结束，最后以容器不存在为停止依据。 */
     public Outcome execute(Request request,Path guard,Path environment,Path output,Journal journal,BooleanSupplier stopRequested){
+        ImportInstallControl.check();
         var limits=request.limits();String name=PREFIX+request.id();
         if(request.network()==Network.EGRESS)ensureEgress();
         if(request.persist()&&request.mountedCopy()==null)engine.prepareCopy(request.copy());
@@ -266,7 +301,7 @@ public final class ImportExecutionSandbox {
             writePrivate(guard,GUARD.getBytes(StandardCharsets.UTF_8));
             writePrivate(environment,env(request,nonce).getBytes(StandardCharsets.UTF_8));
         }catch(IOException error){return new Outcome("FAILED","EXECUTION_FILES_FAILED",null,0,null);}
-        var created=engine.run(createArgs(request,name,guard,environment),120);
+        var created=ImportInstallDiagnostics.call("CREATE_CONTAINER",()->engine.run(createArgs(request,name,guard,environment),120));
         String id=created.ok()?created.stdout().strip():"";
         if(!CONTAINER.matcher(id).matches()){
             // 创建结果不明时按名称清理并核实，避免留下未登记容器。
@@ -276,13 +311,14 @@ public final class ImportExecutionSandbox {
             return removed(id)?new Outcome("FAILED","LEDGER_UNAVAILABLE",null,0,id):new Outcome("STOP_FAILED","CONTAINER_NOT_CONFIRMED_GONE",null,0,id);
         }
         // 1. 启动前核对引擎实际记录的配置；与请求不符说明限额没有生效，直接删除不运行。
-        String mismatch=verify(id,request,guard,environment);
+        String mismatch=ImportInstallDiagnostics.call("VERIFY",()->verify(id,request,guard,environment));
         if(mismatch!=null)return removed(id)?new Outcome("REFUSED","LIMIT_NOT_APPLIED_"+mismatch,null,0,id):new Outcome("STOP_FAILED","CONTAINER_NOT_CONFIRMED_GONE",null,0,id);
         var counted=new AtomicLong();var exceeded=new AtomicBoolean();var logFailed=new AtomicBoolean();var markers=new StringBuffer();
         String killed=null;Process attach=null;Thread[] readers=new Thread[0];boolean serving=false;
-        try(DeferredLog log=new DeferredLog(output,Files.newOutputStream(output,StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS))){
+        ImportInstallDiagnostics.Span commandTiming=null;
+        try(DeferredLog log=new DeferredLog(output,Files.newOutputStream(output,StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS),limits.outputBytes(),exceeded)){
             // 先启动再附着：守卫读到 go 才继续，附着前不会有输出丢失；sig-proxy 关闭，附着进程退出不会把信号转给容器。
-            if(!engine.run(List.of("start",id),60).ok())killed="START_FAILED";
+            if(!ImportInstallDiagnostics.call("START_CONTAINER",()->engine.run(List.of("start",id),60)).ok())killed="START_FAILED";
             else if(limits.memory()==Memory.REQUIRE_HARD&&!engine.pinHardSwap(id)){
                 // 守卫要看到交换区为 0 才放行。钉不住就删除容器，不发送 go，工程命令不运行。
                 return removed(id)?new Outcome("REFUSED","MEMORY_LIMIT_UNENFORCEABLE",null,0,id):new Outcome("STOP_FAILED","CONTAINER_NOT_CONFIRMED_GONE",null,0,id);
@@ -290,9 +326,10 @@ public final class ImportExecutionSandbox {
             else try{attach=engine.attach(List.of("attach","--sig-proxy=false",id));}
             catch(IOException error){killed="ATTACH_FAILED";}
             if(attach!=null){
+                commandTiming=ImportInstallDiagnostics.start(ImportInstallDiagnostics.commandStage(request.command()));
                 try(var stdin=attach.getOutputStream()){stdin.write("go\n".getBytes(StandardCharsets.US_ASCII));}
-                readers=new Thread[]{reader(attach.getInputStream(),log,limits.outputBytes(),counted,exceeded,null,logFailed),
-                    reader(attach.getErrorStream(),log,limits.outputBytes(),counted,exceeded,markers,logFailed)};
+                readers=new Thread[]{reader(attach.getInputStream(),log.stream(),limits.outputBytes(),counted,exceeded,null,logFailed),
+                    reader(attach.getErrorStream(),log.stream(),limits.outputBytes(),counted,exceeded,markers,logFailed)};
                 // 登记引擎记录的真实启动时间（容器身份的一部分），最多等 10 秒。
                 String startedAt="UNKNOWN";
                 for(int attempt=0;attempt<100;attempt++){
@@ -315,6 +352,7 @@ public final class ImportExecutionSandbox {
                 }
                 if(killed==null&&exceeded.get())killed="OUTPUT_LIMIT";
                 if(killed==null&&logFailed.get())killed="EXECUTION_IO_FAILED";
+                commandTiming.stopClock();
             }
             if(killed!=null)serving=false;
             if(serving){
@@ -332,6 +370,7 @@ public final class ImportExecutionSandbox {
         }catch(InterruptedException error){
             Thread.currentThread().interrupt();killed="INTERRUPTED";engine.run(List.of("kill",id),30);
         }finally{
+            if(commandTiming!=null){commandTiming.stopClock();if(serving){commandTiming.result(killed==null?"RUNNING":"FAILED",killed,null);commandTiming.close();}}
             if((!serving||killed!=null)&&attach!=null&&attach.isAlive())attach.destroyForcibly();
         }
         if(serving){
@@ -358,8 +397,10 @@ public final class ImportExecutionSandbox {
         Integer exit=fields.length==3&&fields[1].matches("-?\\d+")?Integer.valueOf(fields[1]):null;
         boolean oom=fields.length==3&&"true".equals(fields[2]);
         long bytes=Math.min(counted.get(),limits.outputBytes());
-        if(!removed(id))return new Outcome("STOP_FAILED","CONTAINER_NOT_CONFIRMED_GONE",exit,bytes,id);
         var outcome=classify(killed,exit,oom,markers.toString(),nonce,bytes,id);
+        if(commandTiming!=null){commandTiming.result(outcome.state(),outcome.reason(),exit);commandTiming.close();}
+        if(!removed(id))return new Outcome("STOP_FAILED","CONTAINER_NOT_CONFIRMED_GONE",exit,bytes,id);
+        try(var verified=ImportInstallDiagnostics.start("VERIFY","COMMAND_EXIT")){verified.result(outcome.state(),outcome.reason(),exit);}
         if(request.lifetime()==Lifetime.SERVE&&"SUCCEEDED".equals(outcome.state()))return new Outcome("FAILED","NOT_READY",exit,bytes,id);
         return outcome;
     }
@@ -401,24 +442,45 @@ public final class ImportExecutionSandbox {
         thread.setDaemon(true);thread.start();
     }
 
-    private static final class DeferredLog extends java.io.FilterOutputStream {
-        private final java.nio.file.Path path;
+    private static final class DeferredLog extends OutputStream {
+        private final OutputStream output;
+        private final long cap;
+        private final AtomicBoolean exceeded;
+        private long written;
+        private final List<OutputStream> streams = new ArrayList<>();
+        private final OutputStream direct;
         volatile boolean kept;
-        private boolean masked;
-        DeferredLog(java.nio.file.Path path,OutputStream output){super(output);this.path=path;}
-        @Override public void write(byte[] bytes,int offset,int length)throws IOException{out.write(bytes,offset,length);out.flush();}
-        @Override public void close()throws IOException{if(!kept){super.close();mask();}}
-        synchronized void finish()throws IOException{kept=false;super.close();mask();}
-
-        /** 日志关闭后按固定规则遮盖工程自己打印的密钥；内容不是合法 UTF-8 时原样保留，不破坏字节。 */
-        private void mask()throws IOException{
-            if(masked)return;
-            masked=true;
-            byte[] raw=Files.readAllBytes(path);
-            if(!ImportLogMask.roundTrips(raw))return;
-            String text=new String(raw,StandardCharsets.UTF_8);
-            String safe=ImportLogMask.mask(text);
-            if(!safe.equals(text))Files.write(path,safe.getBytes(StandardCharsets.UTF_8));
+        private boolean closed;
+        DeferredLog(Path path,OutputStream output){this(path,output,64L<<20,new AtomicBoolean());}
+        DeferredLog(Path path,OutputStream output,long cap,AtomicBoolean exceeded){
+            this.output=output;this.cap=cap;this.exceeded=exceeded;this.direct=stream();
+        }
+        OutputStream stream(){
+            var channel=ImportLogMask.lines(new OutputStream(){
+                @Override public void write(int value)throws IOException{write(new byte[]{(byte)value});}
+                @Override public void write(byte[] bytes,int offset,int length)throws IOException{
+                    synchronized(DeferredLog.this){
+                        if(closed)throw new IOException("执行日志已关闭。");
+                        int accepted=(int)Math.min(length,cap-written);
+                        if(accepted<length){
+                            exceeded.set(true);
+                            // 替换非法字节可能增大日志；仍按实际落盘字节限额，并保留完整 UTF-8 字符。
+                            while(accepted>0&&(bytes[offset+accepted]&0xc0)==0x80)accepted--;
+                        }
+                        output.write(bytes,offset,accepted);written+=accepted;output.flush();
+                    }
+                }
+            });
+            streams.add(channel);return channel;
+        }
+        @Override public void write(int value)throws IOException{direct.write(value);}
+        @Override public void write(byte[] bytes,int offset,int length)throws IOException{direct.write(bytes,offset,length);}
+        @Override public void close()throws IOException{if(!kept)finish();}
+        void finish()throws IOException{
+            kept=false;
+            // 不持有文件锁等待各流，避免和正在提交完整行的 reader 相互等待。
+            try{for(var stream:streams)stream.close();}
+            finally{synchronized(this){if(!closed){closed=true;output.close();}}}
         }
     }
 
@@ -484,6 +546,9 @@ public final class ImportExecutionSandbox {
 
     /** 强制删除并核实：kill/rm 的返回值不作为依据，只认 inspect 查不到。 */
     public boolean removed(String idOrName){
+        return ImportInstallDiagnostics.call("CLEANUP",()->removedObserved(idOrName));
+    }
+    private boolean removedObserved(String idOrName){
         engine.run(List.of("rm","-f",idOrName),60);
         var inspect=engine.run(List.of("inspect","--format","{{.Id}}",idOrName),30);
         return !inspect.ok()&&(inspect.stderr()+inspect.stdout()).toLowerCase(Locale.ROOT).contains("no such");
@@ -500,7 +565,8 @@ public final class ImportExecutionSandbox {
             if(parts.length!=2||!CONTAINER.matcher(parts[0]).matches())continue;
             String value="";
             for(String label:parts[1].split(","))if(label.startsWith(LABEL+"="))value=label.substring(LABEL.length()+1);
-            result.put(parts[0],value);
+            // 安装准入探针由任务专属恢复核验，不能被通用孤儿容器对账误删。
+            if(!"pinprobe".equals(value))result.put(parts[0],value);
         }
         return result;
     }
@@ -568,7 +634,7 @@ public final class ImportExecutionSandbox {
     private static Thread reader(InputStream input,OutputStream log,long cap,AtomicLong counted,AtomicBoolean exceeded,StringBuffer markers,AtomicBoolean logFailed){
         var thread=new Thread(()->{
             byte[] buffer=new byte[16*1024];
-            try(input){
+            try(input;log){
                 int read;
                 while((read=input.read(buffer))>=0){
                     if(markers!=null&&markers.length()<8192)markers.append(new String(buffer,0,Math.min(read,8192),StandardCharsets.UTF_8));

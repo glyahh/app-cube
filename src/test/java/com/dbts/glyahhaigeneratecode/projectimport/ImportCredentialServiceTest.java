@@ -75,6 +75,19 @@ class ImportCredentialServiceTest {
         assertThrows(MyException.class,()->service.create(12,"GitHub","x","secret"));
         verify(jdbc,never()).update(anyString(),any(Object[].class));
     }
+    @Test void retiredCredentialCanBeListedAndDeletedButNotCreatedRenamedReplacedOrUsed() {
+        var legacy = new java.util.HashMap<>(row());
+        legacy.put("provider", "Gitee");
+        when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(legacy));
+        assertEquals("Gitee", service.list(12).getFirst().provider());
+        assertThrows(MyException.class, () -> service.create(12,"Gitee","旧平台","TEST_SECRET_ONLY"));
+        assertThrows(MyException.class, () -> service.rename(12,id,2,"新备注"));
+        assertThrows(MyException.class, () -> service.replace(12,id,2,"TEST_SECRET_ONLY"));
+        verify(keys, never()).cipher();
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+        when(jdbc.queryForList(contains("SELECT l.task_id"),any(Object[].class))).thenReturn(List.of());
+        assertEquals("DELETED",service.delete(12,id,2).credential().state());
+    }
     ImportSourceTask lease() {
         return new ImportSourceTask(UUID.randomUUID(),12,new ImportSourceTask.Definition("工程",ImportRepositorySource.parse("GitHub","https://github.com/octocat/Hello-World"),
                 new com.dbts.glyahhaigeneratecode.service.support.ProjectImportManifest.Options(false,false,false)),ImportSourceTask.Status.RESOLVING_SOURCE,0,id,1L,

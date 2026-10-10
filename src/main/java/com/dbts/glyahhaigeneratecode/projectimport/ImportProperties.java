@@ -13,6 +13,10 @@ import java.util.Set;
 @Configuration
 @ConfigurationProperties(prefix = "project-import")
 public class ImportProperties {
+    @org.springframework.context.annotation.Bean
+    public ImportDiskVolume importDiskVolume(com.dbts.glyahhaigeneratecode.runtime.DockerCli docker){
+        return new ImportDiskVolume(ImportExecutionSandbox.docker(docker),Path.of("scripts/import_disk_volume.py"));
+    }
     private Path stagingRoot = Path.of("temp/project_import_private");
     private Path credentialKeyRingFile;
     private Path gitExecutable;

@@ -242,7 +242,7 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <ProjectImportForm v-if="!inWorkbench" v-model:app-name="appName" v-model:options="options"
+      <ProjectImportForm v-if="!inWorkbench" metadata-preview v-model:app-name="appName" v-model:options="options"
         :files="files" :folder-name="folderName" :manifest="manifest" :state="state" :busy="busy"
         :can-submit="canSubmit" :error="error" :notice="notice" :stage-label="steps[phase]"
         :progress="Math.round((phase + 1) / 4 * 100)" @select-folder="selectFolder"

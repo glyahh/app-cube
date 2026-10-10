@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+import uuid
 import json
 import subprocess
 import sys
@@ -16,6 +17,120 @@ SPEC.loader.exec_module(volume)
 
 
 class DiskVolumeTest(unittest.TestCase):
+    def test_edit_file_rejects_malformed_requests_before_platform_access(self):
+        expected = volume.identity('123', 'a'*64, 64<<20, owner_id='7', run_id='201', edit_id=str(uuid.uuid4()))
+        requests = [{'operation':{},'path':'app.py'}, {'operation':'delete','path':'a\\b'},
+                    {'operation':'write','path':'app.py','content':1},
+                    {'operation':'write','path':'app.py','content':'\ud800'},
+                    {'operation':'edit','path':'app.py','oldString':'','newString':'x','replaceAll':False},
+                    {'operation':'edit','path':'app.py','oldString':'x','newString':'y','replaceAll':1}]
+        with patch.object(volume, 'locked', side_effect=AssertionError('must not touch resources')):
+            for request in requests:
+                with self.assertRaisesRegex(volume.VolumeError, 'EDIT_REQUEST_INVALID'):
+                    volume.edit_file(expected, request)
+            with self.assertRaisesRegex(volume.VolumeError, 'EDIT_REQUEST_LIMIT'):
+                volume.edit_file(expected, {'operation':'write','path':'app.py','content':'x'*(1<<20)})
+    @unittest.skipUnless(sys.platform == 'linux', 'LINUX_FILESYSTEM_REQUIRED')
+    def test_edit_view_rechecks_source_after_private_mapping_is_saved(self):
+        expected = volume.identity('123', 'a'*64, 64<<20, owner_id='7', run_id='201', edit_id=str(uuid.uuid4()))
+        # 先装配纯标准库平台核心，不依赖Windows Agent虚拟环境。
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'agent'))
+        from backends.secret_free_view import SecretFreeView
+        with tempfile.TemporaryDirectory() as directory, patch.object(volume, 'ROOT', Path(directory)/'volumes'), \
+                patch.object(volume, 'mounted', side_effect=lambda folder, record: record), \
+                patch.object(volume, 'command', return_value=subprocess.CompletedProcess([], 0, '', '')):
+            folder = volume.resource_folder(expected)
+            (folder/'work').mkdir(parents=True)
+            volume.write_record(folder, {**expected, 'state':'READY'})
+            source = Path(directory)/'source'
+            source.mkdir()
+            payload = source/'app.py'
+            payload.write_bytes(b'print("before")')
+            original = SecretFreeView.save_private_state
+            def changed(view, path, **kwargs):
+                digest = original(view, path, **kwargs)
+                payload.write_bytes(b'print("after")')
+                return digest
+            with patch.object(SecretFreeView, 'save_private_state', changed), \
+                    self.assertRaisesRegex(volume.VolumeError, 'VIEW_SOURCE_CHANGED'):
+                volume.prepare_edit_view(expected, source)
+            self.assertEqual(json.loads((folder/'record.json').read_text())['viewState'], 'FAILED')
+
+    @unittest.skipUnless(sys.platform == 'linux', 'LINUX_FILESYSTEM_REQUIRED')
+    def test_edit_view_retains_failed_intent_without_framework_dependencies(self):
+        expected = volume.identity('123', 'a'*64, 64<<20, owner_id='7', run_id='201', edit_id=str(uuid.uuid4()))
+        with tempfile.TemporaryDirectory() as directory, patch.object(volume, 'ROOT', Path(directory)/'volumes'), \
+                patch.object(volume, 'mounted', side_effect=lambda folder, record: record), \
+                patch.object(volume, 'command', return_value=subprocess.CompletedProcess([], 0, '', '')):
+            folder = volume.resource_folder(expected)
+            (folder/'work').mkdir(parents=True)
+            volume.write_record(folder, {**expected, 'state':'READY'})
+            source = Path(directory)/'source'
+            source.mkdir()
+            (source/'.env').write_bytes(b'API_TOKEN=fixture-secret-123456\n')
+            (source/'asset.bin').write_bytes(b'\xfffixture-secret-123456')
+            with self.assertRaisesRegex(volume.VolumeError, 'VIEW_SECRET_IN_BINARY'):
+                volume.prepare_edit_view(expected, source)
+            record = json.loads((folder/'record.json').read_text())
+            self.assertEqual(record['viewState'], 'FAILED')
+            self.assertFalse((folder/'work/view').exists())
+            with self.assertRaisesRegex(volume.VolumeError, 'EDIT_VIEW_TARGET_NOT_EMPTY'):
+                volume.prepare_edit_view(expected, source)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'LINUX_FILESYSTEM_REQUIRED')
+    def test_edit_view_rejects_live_container_before_any_copy_or_permission_change(self):
+        expected = volume.identity('123', 'a'*64, 64<<20, owner_id='7', run_id='201', edit_id=str(uuid.uuid4()))
+        with tempfile.TemporaryDirectory() as directory, patch.object(volume, 'ROOT', Path(directory)/'volumes'), \
+                patch.object(volume, 'mounted', side_effect=lambda folder, record: record), \
+                patch.object(volume, 'command', return_value=subprocess.CompletedProcess([], 0, 'container', '')):
+            folder = volume.resource_folder(expected)
+            (folder/'work').mkdir(parents=True)
+            volume.write_record(folder, {**expected, 'state':'READY'})
+            with self.assertRaisesRegex(volume.VolumeError, 'APP_CONTAINERS_REMAIN'):
+                volume.prepare_edit_view(expected, Path(directory)/'not-read')
+            self.assertNotIn('viewState', json.loads((folder/'record.json').read_text()))
+            self.assertEqual(list((folder/'work').iterdir()), [])
+
+    def test_edit_identity_is_complete_string_bound_and_separate_from_install(self):
+        eid=str(uuid.uuid4())
+        expected=volume.identity('123','a'*64,64<<20,owner_id='7',run_id='201',edit_id=eid)
+        self.assertEqual(expected['formatVersion'],3)
+        self.assertEqual(volume.resource_folder(expected),volume.ROOT/('edit-'+eid))
+        self.assertNotEqual(volume.resource_folder(expected),volume.resource_folder(volume.identity('123','a'*64,64<<20)))
+        self.assertEqual(volume.container_filter(expected),'label=glyahh.import.edit='+eid)
+        for changed in ({'owner_id':None},{'run_id':'01'},{'run_id':201},{'edit_id':'../escape'},
+                        {'edit_id':eid.upper()},{'owner_id':'9223372036854775808'}):
+            args={'owner_id':'7','run_id':'201','edit_id':eid};args.update(changed)
+            with self.assertRaises(volume.VolumeError):volume.identity('123','a'*64,64<<20,**args)
+        for field,value in [('ownerId','8'),('runId','202'),('editId',str(uuid.uuid4())),('contentHash','b'*64)]:
+            with self.assertRaises(volume.VolumeError):volume.match(expected,{**expected,field:value,'state':'READY'})
+
+    @unittest.skipUnless(sys.platform=='linux','LINUX_FILESYSTEM_REQUIRED')
+    def test_absent_edit_release_requires_no_container_no_mount_and_no_loop(self):
+        expected=volume.identity('123','a'*64,64<<20,owner_id='7',run_id='201',edit_id=str(uuid.uuid4()))
+        with tempfile.TemporaryDirectory() as directory,patch.object(volume,'ROOT',Path(directory)/'volumes'):
+            def commands(args,**kwargs):return subprocess.CompletedProcess(args,1 if args[0]=='findmnt' else 0,'','')
+            with patch.object(volume,'command',side_effect=commands):
+                self.assertTrue(volume.apply('release',expected)['verifiedAbsent'])
+            for fault in ['docker','findmnt','losetup']:
+                def failing(args,**kwargs):
+                    result=commands(args,**kwargs)
+                    if args[0]==fault:return subprocess.CompletedProcess(args,2 if fault=='findmnt' else 0,'remaining','')
+                    return result
+                with patch.object(volume,'command',side_effect=failing),self.assertRaises(volume.VolumeError):
+                    volume.apply('release',expected)
+
+    @unittest.skipUnless(sys.platform=='linux','LINUX_FILESYSTEM_REQUIRED')
+    def test_other_edit_cannot_inspect_or_release_existing_edit_volume(self):
+        expected=volume.identity('123','a'*64,64<<20,owner_id='7',run_id='201',edit_id=str(uuid.uuid4()))
+        with tempfile.TemporaryDirectory() as directory,patch.object(volume,'ROOT',Path(directory)/'volumes'):
+            folder=volume.resource_folder(expected);folder.mkdir(parents=True)
+            volume.write_record(folder,{**expected,'state':'READY'})
+            for field,value in [('ownerId','8'),('runId','202'),('contentHash','b'*64)]:
+                changed={**expected,field:value}
+                with self.assertRaisesRegex(volume.VolumeError,'VOLUME_IDENTITY_CONFLICT'):
+                    volume.apply('release',changed)
+                self.assertTrue((folder/'record.json').exists())
     def manifest(self, expected, data=b"frozen"):
         return {**expected, "files": [{"path": "src/main.py", "size": len(data), "sha256": hashlib.sha256(data).hexdigest(), "executable": False}]}
 

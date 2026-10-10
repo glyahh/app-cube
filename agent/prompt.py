@@ -122,11 +122,25 @@ READ_ONLY_PROMPTS = {
 }
 
 
-def get_system_prompt(task_kind: str = "coding") -> str:
+def get_system_prompt(task_kind: str = "coding", *, import_edit: bool = False) -> str:
     """按任务类型拼系统提示词。"""
+    base = BASE_PROMPT
+    if import_edit:
+        start = base.index("## 关于 execute")
+        end = base.index("## 关于失败", start)
+        base = base[:start] + """## 关于 execute
+
+运行环境是Linux容器，工作目录是隔离副本。使用python3，不使用Windows的cmd或where。
+源码修改只能使用文件工具。execute仅用于检查或生成检查产物，安装和服务启动必须另行批准。
+只允许白名单中的单条命令；禁止Shell串联、管道、重定向、后台执行和命令替换。
+Python -c的引号参数可包含普通分号；参数按字面值传递，不做Shell变量展开。
+路径使用工作目录内的相对路径，不访问外部绝对路径或上级目录。
+首次策略拒绝可修正一次，同类拒绝再次发生会终止本轮。
+
+""" + base[end:]
     if task_kind == "coding":
-        return f"{BASE_PROMPT}\n{CODING_PROMPT}"
+        return f"{base}\n{CODING_PROMPT}"
     specific = READ_ONLY_PROMPTS.get(task_kind)
     if specific is None:
         specific = READ_ONLY_PROMPTS["qa"]
-    return f"{BASE_PROMPT}\n{specific}"
+    return f"{base}\n{specific}"

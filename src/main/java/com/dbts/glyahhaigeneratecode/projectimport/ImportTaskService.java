@@ -351,7 +351,7 @@ public class ImportTaskService implements AutoCloseable {
      * Windows 上目录改名会被同时进行的扫描/索引短暂占用而返回拒绝访问；只对这种瞬时失败做有界重试，
      * 目标已存在等确定性错误立即抛出，重试用尽仍按原样失败，不改成功状态。
      */
-    private static void moveWorkspace(Path prepared, Path target) throws IOException {
+    static void moveWorkspace(Path prepared, Path target) throws IOException {
         for (int attempt = 1; ; attempt++) {
             try {
                 Files.move(prepared, target);

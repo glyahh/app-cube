@@ -37,6 +37,7 @@ public class ImportTaskRepository {
 
     @Transactional
     public void insertFromSource(ImportTask task,ImportSourceTask source,ImportGitReader.Snapshot snapshot) {
+        ImportProviderPolicy.requireSupported(source.definition().source().provider());
         if(!task.taskId().equals(source.taskId()) || task.ownerId()!=source.ownerId())
             throw publicationConflict();
         if(source.credentialId()!=null) {
@@ -74,6 +75,7 @@ public class ImportTaskRepository {
 
     @Transactional
     public ImportTask resetFromSource(ImportTask previous,ImportTask.Definition definition,ImportSourceTask source,ImportGitReader.Snapshot snapshot) {
+        ImportProviderPolicy.requireSupported(source.definition().source().provider());
         requireCredentialLease(previous);
         // 固定快照、来源租约与主任务必须同时匹配，不能覆盖已提交或已取消任务。
         Integer valid=jdbc.queryForObject("""
@@ -239,6 +241,7 @@ public class ImportTaskRepository {
         try {
             var snapshot=json.readValue(source.get("manifest_json").toString(),ImportGitReader.Snapshot.class);
             var definition=json.readValue(source.get("definition_json").toString(),ImportSourceTask.Definition.class);
+            ImportProviderPolicy.requireSupported(definition.source().provider());
             var files=snapshot.blobs().stream().map(blob->new com.dbts.glyahhaigeneratecode.service.support.ProjectImportManifest.FileEntry(blob.path(),blob.size())).toList();
             if(!snapshot.commit().equals(source.get("commit_id")) || !snapshot.branch().equals(source.get("branch_name"))
                     || !task.definition().files().equals(files) || !task.definition().appName().equals(definition.appName())

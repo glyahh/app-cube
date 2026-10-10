@@ -44,6 +44,20 @@ public class AgentRunRequest {
     String codeGenType;
     /** {@code create} 表示首轮建工程，{@code edit} 表示改已有产物。 */
     String mode;
+    /** 导入来源身份；非空时禁止执行侧挂载发布工作区。 */
+    String importTaskId;
+    /** 平台冻结的编辑身份；不包含秘密映射或原配置。 */
+    String importEditId;
+    String importSourceHash;
+    String importConfigRevision;
+    String importContextEpoch;
+    String importVolumePath;
+    String importViewPath;
+    String importViewHash;
+    String importViewStateHash;
+    String importContainerId;
+    String importWorkerLeaseId;
+    Long importDiskBytes;
 
     String message;
     String initPrompt;
@@ -85,6 +99,19 @@ public class AgentRunRequest {
         workspace.put("name", workspaceName);
         workspace.put("codeGenType", codeGenType == null ? "html" : codeGenType);
         workspace.put("mode", mode == null ? "create" : mode);
+        if (importTaskId != null) workspace.put("importTaskId", importTaskId);
+        if (importEditId != null) {
+            workspace.put("importEditId", importEditId);
+            workspace.put("sourceHash", importSourceHash);
+            workspace.put("configRevision", importConfigRevision);
+            workspace.put("contextEpoch", importContextEpoch);
+            workspace.put("importVolumePath", importVolumePath);
+            workspace.put("importViewPath", importViewPath);
+            workspace.put("viewHash", importViewHash);
+            workspace.put("viewStateHash", importViewStateHash);
+            if(importContainerId!=null)workspace.put("containerId",importContainerId);
+            if(importWorkerLeaseId!=null)workspace.put("workerLeaseId",importWorkerLeaseId);
+        }
         frame.put("workspace", workspace);
 
         Map<String, Object> input = new LinkedHashMap<>();
@@ -101,6 +128,7 @@ public class AgentRunRequest {
         Map<String, Object> limits = new LinkedHashMap<>();
         limits.put("deadlineMs", deadlineMs == null ? 1_800_000L : deadlineMs);
         limits.put("maxModelCalls", maxModelCalls == null ? 60 : maxModelCalls);
+        if(importDiskBytes!=null)limits.put("importDiskBytes",importDiskBytes);
         frame.put("limits", limits);
 
         Map<String, Object> artifacts = new LinkedHashMap<>();

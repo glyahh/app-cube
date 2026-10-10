@@ -12,8 +12,9 @@ const main = () => ({taskId:id,revision:'9007199254740993',status:'WAITING_CONFI
 const response = (data:unknown,code=20000) => ({data:{code,data}})
 describe('真实 Git 业务适配器', () => {
   beforeEach(()=>api.mockReset())
-  it('只接受双平台规范 HTTPS，不接受秘密 URL 或跨平台',()=>{
+  it('新导入只接受 GitHub 规范 HTTPS，不接受秘密 URL 或跨平台',()=>{
     expect(repository('GitHub','https://github.com/example/repo')).toEqual({name:'repo',cloneUrl:'https://github.com/example/repo.git'})
+    expect(()=>repository('Gitee','https://gitee.com/example/repo')).toThrow('仅支持 GitHub')
     for(const url of ['https://x:y@github.com/example/repo','https://gitee.com/example/repo','http://github.com/example/repo','https://github.com/example/repo?token=fake']) expect(()=>repository('GitHub',url)).toThrow()
     expect(api).not.toHaveBeenCalled()
   })
@@ -24,11 +25,24 @@ describe('真实 Git 业务适配器', () => {
     expect(JSON.stringify(api.mock.calls)).not.toContain('token')
   })
   it('跨平台凭据在网络前拒绝，公开来源不偷偷带凭据',async()=>{
-    await expect(prepareGit(context(),'Gitee','https://gitee.com/example/repo',scope,{id,provider:'GitHub',version:'1',revision:'0',state:'ACTIVE',name:'专用'})).rejects.toThrow('当前平台')
+    await expect(prepareGit(context(),'Gitee','https://gitee.com/example/repo',scope,{id,provider:'GitHub',version:'1',revision:'0',state:'ACTIVE',name:'专用'})).rejects.toThrow('仅支持 GitHub')
     expect(api).not.toHaveBeenCalled()
     api.mockResolvedValueOnce(response('csrf')).mockResolvedValueOnce(response(source('RESOLVING_SOURCE')))
     await prepareGit(context(),'GitHub','https://github.com/example/repo',scope)
     expect(api.mock.calls[1]![0].data).not.toHaveProperty('credentialId')
+  })
+  it('历史 Gitee 来源可读取和取消，但不能重新选择或重建',async()=>{
+    const legacy = source('WAITING_BRANCH')
+    legacy.definition.source = {provider:'Gitee',cloneUrl:'https://gitee.com/example/repo.git'}
+    api.mockResolvedValueOnce(response(legacy))
+    expect((await getGit(context(),id)).definition.source.provider).toBe('Gitee')
+    api.mockReset()
+    await expect(selectGitBranch(context(),legacy,'main')).rejects.toThrow('已停用')
+    await expect(rebuildGit(context(),legacy,'repo',scope)).rejects.toThrow('已停用')
+    await expect(commitGit(context(),legacy,'repo',scope)).rejects.toThrow('已停用')
+    expect(api).not.toHaveBeenCalled()
+    api.mockResolvedValueOnce(response(legacy)).mockResolvedValueOnce(response('csrf')).mockResolvedValueOnce(response({...legacy,status:'CANCELLED',cleanup:'DONE'}))
+    expect((await cancelGit(context(),legacy)).status).toBe('CANCELLED')
   })
   it('迟到或跨任务结果不进入当前页面',async()=>{
     let valid=true

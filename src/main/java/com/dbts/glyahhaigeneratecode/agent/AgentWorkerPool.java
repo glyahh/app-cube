@@ -283,6 +283,14 @@ public class AgentWorkerPool implements DisposableBean {
         replenishToCoreAsync();
     }
 
+    /** 原生导入执行与普通Worker共享总额度；停止未确认时调用方保留占用。 */
+    public void acquireExternal(){
+        if(shutdown||!reserveSlotIgnoringCooldown())throw new MyException(ErrorCode.TOO_MANY_REQUEST,"当前生成任务较多，请稍后重试");
+        active.incrementAndGet();
+    }
+
+    public void releaseExternal(){active.decrementAndGet();total.decrementAndGet();replenishToCoreAsync();}
+
     /**
      * 把池补回 coreSize。异步做，不阻塞取消路径。
      *

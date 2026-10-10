@@ -109,6 +109,8 @@ def main() -> int:
             task = call(f"/project/import/tasks/{task['taskId']}/files/{index}?revision={task['revision']}", content, method="PUT")
         committed = call(f"/project/import/tasks/{task['taskId']}/commit", {"revision": task["revision"], "contentHash": task["contentHash"]})
         apps.append(str(committed["appId"]))
+        report.setdefault('applications', []).append({'appId': str(committed['appId']), 'taskId': task['taskId'],
+                                                     'contentHash': task['contentHash']})
         return str(committed["appId"]), task["taskId"]
 
     def plan_for(app):
@@ -228,9 +230,21 @@ def main() -> int:
     finally:
         for app in apps:
             try:
-                call("/app/delete", {"id": app})
-            except Exception:
-                report.setdefault("cleanupErrors", []).append(app)
+                deleted = call("/app/delete", {"id": app})
+                agent = subprocess.run(WSL + ['docker', 'ps', '-a', '--filter', 'label=glyahh.session_id=app:' + app,
+                                             '--format', '{{.ID}}'], capture_output=True, timeout=60)
+                native = subprocess.run(['wsl.exe', '-d', 'Ubuntu', '-u', 'root', '--exec', 'test', '-e',
+                                         '/var/lib/glyahh/import-disks/' + app], capture_output=True, timeout=30)
+                done = deleted is True and agent.returncode == 0 and not agent.stdout.strip() and not containers(app) and native.returncode == 1
+                report.setdefault('cleanup', []).append({'appId': app, 'businessDelete': deleted is True,
+                    'agentContainersGone': agent.returncode == 0 and not agent.stdout.strip(), 'nativeVolumeGone': native.returncode == 1,
+                    'done': done})
+                if not done:
+                    report.setdefault('cleanupErrors', []).append(app)
+            except Exception as error:
+                report.setdefault("cleanupErrors", []).append({'appId': app, 'errorType': type(error).__name__})
+        if report.get('cleanupErrors'):
+            report['status'] = 'FAIL'
         (evidence / "result.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         for row in report["checks"]:
             print(row["status"], row["group"], row["name"], "|", row["detail"][:150])

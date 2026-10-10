@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from contextvars import ContextVar
 from collections.abc import Callable
 from urllib.parse import urlparse
 
@@ -12,6 +13,30 @@ from core.settings import ModelSettings
 logger = logging.getLogger(__name__)
 THINKING_DISABLED = {"type": "disabled"}
 _CLIENTS: dict[str | None, tuple] = {}
+model_request_audit: ContextVar[Callable | None] = ContextVar('model_request_audit', default=None)
+_AUDIT_FALLBACK: Callable | None = None
+_AUDIT_LOCK = threading.Lock()
+
+
+def set_model_request_audit_fallback(callback: Callable | None):
+    global _AUDIT_FALLBACK
+    with _AUDIT_LOCK:
+        previous = _AUDIT_FALLBACK
+        _AUDIT_FALLBACK = callback
+    return previous
+
+
+def _audit_request(request):
+    callback = model_request_audit.get()
+    if callback is None:
+        with _AUDIT_LOCK:
+            callback = _AUDIT_FALLBACK
+    if callback is not None:
+        callback(request)
+
+
+async def _audit_async_request(request):
+    _audit_request(request)
 
 
 class ModelRouteState:
@@ -92,7 +117,8 @@ def _clients(proxy_url: str | None = None):
         )
         if proxy_url:
             kwargs["proxy"] = proxy_url
-        cached = (httpx.Client(**kwargs), httpx.AsyncClient(**kwargs))
+        cached = (httpx.Client(**kwargs, event_hooks={'request': [_audit_request]}),
+                  httpx.AsyncClient(**kwargs, event_hooks={'request': [_audit_async_request]}))
         _CLIENTS[proxy_url] = cached
         logger.info("模型 httpx 客户端：trust_env=false proxy=%s", _proxy_label(proxy_url))
     return cached

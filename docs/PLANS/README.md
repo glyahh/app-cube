@@ -1,13 +1,15 @@
 # PLANS 目录索引
 
-2026-10-04 最新内部增量：[独占执行租约与资源 CAS](./project-import-startup-model-lease-verification.md)绑定批准版本/executor/PID/start，取消撤销资格但保留资源登记，清理后拒绝旧写入。V24已应用；Java424项中423通过/1跳过，真实回滚SQL5组，标准重启后已有API19组通过。批准/执行表均0行，正式批准/调度/取消恢复业务未接；第一项 NOT_COMPLETE，其他三项不展开。以下保留历史节点。
+## 当前入口
 
+- [当前项目状态](../CURRENT_PROJECT_STATUS.md)：只看顶部，历史节点不覆盖当前决定。
+- [第一项最终范围与完成记录](./project-import-item1-final-scope-20261009.md)：已有项目导入 COMPLETE；已舍弃扩展不自动恢复为待办。
+- [五组关键使用风险证据](./project-import-five-risk-20261009.md)：最终范围的专项验收记录。
+- [权限模式计划](./import-agent-permission-modes-plan.md)、[前端评审记录](./import-agent-permission-modes-frontend-review.md)：独立前端待评审，后端尚未实施。
 
-2026-10-04 最新内部增量：[封存文本与专属模型进程](./project-import-startup-model-executor-verification.md)已接同锁资格复核、批准摘要重校验、独占平台进程和严格 UTF-8/协议/到期门禁。Java416项中415通过、1跳过；Python350项、真实 helper 拒绝3组、标准重启后已有 API19组通过。V23未改，批准表0行。持久执行租约/取消恢复、正式批准接口/模型成功、工作台和隔离多服务仍待接；第一项 NOT_COMPLETE，其余三项不展开。下方是历史节点。
+## 历史证据与设计索引
 
-
-2026-10-04 当前恢复增量：[启动扫描恢复证据](./project-import-startup-recovery-verification.md)已接过期/重启资源核对、持久取消意图与 owner/revision 重新核对；V22 已应用。最终 Java 356 项中 355 通过、1 跳过，真实 API 19 组通过，包含真正扫描中断后标准重启、失败清理且不重跑。崩溃发生在 Python 前，运行中辅助进程故障与硬额度仍未验收。正式启动 UI、只读 Agent、冻结计划、安装/构建/隔离多服务继续待开发；第一项 NOT_COMPLETE，其他三项不展开。下面保留历史节点。
-
+以下说明按各文档记录时点保留；“待实现”“未完成”和旧测试数字不是当前第一项的完成门禁。功能验收证据保留在各专项报告，不在索引重复累计。
 
 | 文档 | 说明 |
 |------|------|
@@ -50,7 +52,7 @@
 | [conversation-memory-v4-target-architecture.md](./conversation-memory-v4-target-architecture.md) | 会话记忆 V4 **目标架构**（To-Be；方案文档，不代表实现完工） |
 | [agent-cluster-orchestration.md](./agent-cluster-orchestration.md) | Agent 集群编排方案 |
 | [agent-cluster-modules-ABC-and-prompts.md](./agent-cluster-modules-ABC-and-prompts.md) | Agent 集群模块与 Prompt |
-| `rag-v5-grep-glob-retrieval-plan.md` | 历史索引：目标文件当前缺失，不伪造文档或保留无效跳转 |
+| [rag-v5-grep-glob-retrieval-plan.md](../archive/plans/rag-v5-grep-glob-retrieval-plan.md) | 已归档的检索方案；不作为当前开发任务 |
 | [code-knowledge-graph-design.md](./code-knowledge-graph-design.md) | 第五需求：统一图谱、通用解析器与 Agent 补全；主方案已确认，实现待验证 |
 | [code-knowledge-graph-test-matrix.md](./code-knowledge-graph-test-matrix.md) | 图谱分阶段验收与 P0 验证设计；全部待执行 |
 | [code-knowledge-graph-p0-contract.md](./code-knowledge-graph-p0-contract.md) | P0 统一结果契约、人工样本与预期；未安装或执行候选 |
@@ -58,3 +60,5 @@
 - [启动 Agent 只读内部核心](./project-import-startup-agent-core-verification.md)：不代表业务批准、真实模型成功或S05验收。
 
 - [启动批准账本与回包校验内部证据](./project-import-startup-approval-core-verification.md)：V23、规则v2、严格冻结回包；批准API/模型执行尚未接。
+
+- [独占执行租约与资源 CAS](./project-import-startup-model-lease-verification.md)、[封存文本与专属模型进程](./project-import-startup-model-executor-verification.md)、[启动扫描恢复证据](./project-import-startup-recovery-verification.md)：历史内部增量与原始验收边界。

@@ -7,6 +7,19 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class UserFacingOutputHandlerTest {
+    @Test void preservesOnlySafeImportFailureKeys() {
+        for (String key : List.of("IMPORT_EDIT_REPEATED_COMMAND_REJECTION", "IMPORT_EDIT_MODEL_BUDGET_EXHAUSTED",
+                "IMPORT_EDIT_NO_CHANGES", "IMPORT_EDIT_CANDIDATE_VERIFY_FAILED", "/private/secret", "IMPORT_BAD\nsecret")) {
+            AgentEvent raw = event(AgentEvent.ERROR, "private secret");
+            var frame = (com.fasterxml.jackson.databind.node.ObjectNode) raw.frame();
+            frame.put("failureKey", key).put("message", "private secret").put("stack", "private secret");
+            AgentEvent safe = UserFacingOutputHandler.apply(Flux.just(raw)).blockFirst();
+            assertNotNull(safe);
+            assertEquals(key.matches("IMPORT_[A-Z_]{1,70}"), safe.frame().has("failureKey"));
+            assertFalse(safe.frame().toString().contains("private secret"));
+            assertFalse(safe.frame().has("stack"));
+        }
+    }
     private final ObjectMapper mapper = new ObjectMapper();
     private AgentEvent event(String kind, String content) {
         var frame = mapper.createObjectNode().put("event", kind).put("content", content)
@@ -105,5 +118,31 @@ class UserFacingOutputHandlerTest {
         assertEquals("direct", safe.frame().path("toRoute").asText());
         assertEquals("connect_error", safe.frame().path("reason").asText());
         assertFalse(safe.frame().has("proxyUrl"));
+    }
+
+    @Test void forwardsValidatedImportModelAuditWithoutRequestBody() {
+        AgentEvent raw = event("import.edit.model.audit", "ignored");
+        var frame = (com.fasterxml.jackson.databind.node.ObjectNode) raw.frame();
+        frame.put("editId", "123e4567-e89b-12d3-a456-426614174000")
+                .put("count", 1).put("blocked", 0)
+                .put("requestBody", "secret must never leave the worker");
+        frame.putArray("digests").add("a".repeat(64));
+
+        AgentEvent safe = UserFacingOutputHandler.apply(Flux.just(raw)).blockFirst();
+
+        assertNotNull(safe);
+        assertEquals("import.edit.model.audit", safe.event());
+        assertEquals(1, safe.frame().path("count").asInt());
+        assertEquals(1, safe.frame().path("digests").size());
+        assertFalse(safe.frame().has("requestBody"));
+    }
+
+    @Test void dropsInvalidImportModelAudit() {
+        AgentEvent raw = event("import.edit.model.audit", "ignored");
+        var frame = (com.fasterxml.jackson.databind.node.ObjectNode) raw.frame();
+        frame.put("editId", "not-an-edit-id").put("count", 1).put("blocked", 0);
+        frame.putArray("digests").add("short");
+
+        assertTrue(UserFacingOutputHandler.apply(Flux.just(raw)).collectList().block().isEmpty());
     }
 }

@@ -86,6 +86,12 @@ def run_one(request: dict[str, Any], settings: Settings, emitter: Emitter) -> No
     thread_id = request.get("threadId") or ""
     message = ((request.get("input") or {}).get("message") or "").strip()
 
+    # READY 发布目录不是隔离编辑副本。正式导入身份不能回退到旧 Docker/Shell 链路。
+    if (request.get("workspace") or {}).get("importTaskId") is not None:
+        emitter.error(ErrorCode.IMPORT_EDIT_NOT_READY,
+                      "导入项目隔离编辑链路尚未接通，未执行。", retryable=False)
+        return
+
     if _classify(request, message) == TaskKind.STARTUP:
         from core.startup import run_startup
         run_startup(request, settings, emitter)

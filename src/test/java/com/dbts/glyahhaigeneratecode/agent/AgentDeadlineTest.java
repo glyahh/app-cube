@@ -25,7 +25,9 @@ class AgentDeadlineTest {
         }).when(pool).discard(worker);
         var service = new AgentRunService(pool, props, new ObjectMapper(),
                 org.mockito.Mockito.mock(AppRunCoordinator.class),
-                org.mockito.Mockito.mock(AgentRunPersistence.class));
+                org.mockito.Mockito.mock(AgentRunPersistence.class),
+                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.projectimport.ImportAgentEditPreparation.class),
+                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.projectimport.ImportAgentEditExecution.class));
         org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
                 () -> service.streamUncoordinated("{}").blockLast(Duration.ofSeconds(3)));
         org.mockito.Mockito.verify(pool, org.mockito.Mockito.timeout(1000)).discard(worker);

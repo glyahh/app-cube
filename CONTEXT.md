@@ -1,5 +1,9 @@
 # 应用魔方：项目接入
 
+第一项“已有项目导入”已于2026-10-09按用户批准的最终范围彻底完成，状态 **COMPLETE**。当前范围无剩余开发或验收阻塞；未交付扩展已删除，不自动恢复。权威范围见[最终完成记录](docs/PLANS/project-import-item1-final-scope-20261009.md)，当前状态见[状态顶部](docs/CURRENT_PROJECT_STATUS.md)。
+
+## 历史节点（以下不再是当前待办）
+
 2026-10-04 最新内部增量：[独占执行租约与资源 CAS](docs/PLANS/project-import-startup-model-lease-verification.md)绑定批准版本/executor/PID/start，取消撤销资格但保留资源登记，清理后拒绝旧写入。V24已应用；Java424项中423通过/1跳过，真实回滚SQL5组，标准重启后已有API19组通过。批准/执行表均0行，正式批准/调度/取消恢复业务未接；第一项 NOT_COMPLETE，其他三项不展开。以下保留历史节点。
 
 

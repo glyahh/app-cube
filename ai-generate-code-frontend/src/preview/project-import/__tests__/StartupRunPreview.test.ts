@@ -1,11 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { InspectionRecord, StartupPlan, StartupScan } from '@/features/project-import/startup'
+import type { InspectionRecord, StartupInstallJob, StartupPlan, StartupScan } from '@/features/project-import/startup'
 
 const api = vi.hoisted(() => ({
   loadConfiguration: vi.fn(), currentPlan: vi.fn(), createScan: vi.fn(), loadScan: vi.fn(), cancelScan: vi.fn(), loadInspection: vi.fn(),
   decideApproval: vi.fn(), loadApproval: vi.fn(), cancelApproval: vi.fn(), createPlan: vi.fn(), loadPlan: vi.fn(), confirmPlan: vi.fn(), saveConfiguration: vi.fn(),
-  startRun: vi.fn(), stopRun: vi.fn(), retryRun: vi.fn(),
+  startRun: vi.fn(), stopRun: vi.fn(), retryRun: vi.fn(), currentPreparation: vi.fn(),
+  decideInstall: vi.fn(), loadInstallJob: vi.fn(), currentInstallJob: vi.fn(), installJobByRequest: vi.fn(), cancelInstallJob: vi.fn(),
 }))
 vi.mock('@/features/project-import/startup', async (original) => ({ ...(await original<typeof import('@/features/project-import/startup')>()), ...api }))
 vi.mock('@/stores/UserLogin', () => ({ UserLoginStore: () => ({ userLogin: { id: '77' } }) }))
@@ -54,7 +55,8 @@ describe('正式启动识别工作台', () => {
   beforeEach(() => {
     sessionStorage.clear()
     for (const fn of Object.values(api)) fn.mockReset()
-    api.loadConfiguration.mockResolvedValue(config); api.currentPlan.mockResolvedValue(null)
+    api.loadConfiguration.mockResolvedValue(config); api.currentPlan.mockResolvedValue(null); api.currentPreparation.mockResolvedValue(null)
+    api.currentInstallJob.mockResolvedValue(null)
   })
   it('真实识别后列出候选与未识别目录；安装、运行按钮可见但不可执行', async () => {
     const wrapper = await scanned()
@@ -117,6 +119,7 @@ describe('正式启动识别工作台', () => {
   })
   it('计划因识别过期失效时收起旧候选，必须重新识别', async () => {
     api.currentPlan.mockResolvedValue(plan('CONFIRMED', { aggregateAcknowledged: true }))
+    api.currentPreparation.mockResolvedValue(null)
     api.loadScan.mockResolvedValue(scan('SUCCEEDED')); api.loadInspection.mockResolvedValue(record)
     const wrapper = await opened()
     expect(wrapper.findAll('[data-testid="startup-candidate"]')).toHaveLength(1)
@@ -129,6 +132,7 @@ describe('正式启动识别工作台', () => {
   })
   it('已就绪且未声明端口时不编造地址；停止失败不提供重试', async () => {
     api.currentPlan.mockResolvedValue(plan('CONFIRMED', { aggregateAcknowledged: true }))
+    api.currentPreparation.mockResolvedValue(null)
     api.loadScan.mockResolvedValue(scan('SUCCEEDED')); api.loadInspection.mockResolvedValue(record)
     const wrapper = await opened()
     const ready = {
@@ -145,6 +149,57 @@ describe('正式启动识别工作台', () => {
     expect(api.stopRun).toHaveBeenCalled()
     expect(wrapper.find('[data-testid="startup-retry"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('停止失败')
+  })
+  it('安装只提交任务，按轮询读到服务端终态才算完成；未到终态前不能重复安装或运行', async () => {
+    api.currentPlan.mockResolvedValue(plan('CONFIRMED', { aggregateAcknowledged: true }))
+    api.loadScan.mockResolvedValue(scan('SUCCEEDED')); api.loadInspection.mockResolvedValue(record)
+    const wrapper = await opened()
+    const job = (state: string, extra: Partial<StartupInstallJob> = {}): StartupInstallJob => ({
+      jobId: '55555555-5555-4555-8555-555555555555', requestId: '66666666-6666-4666-8666-666666666666', appId: '2106',
+      planId: plan('CONFIRMED').planId, planRevision: 'b'.repeat(64), state, revision: '1', cancelRequested: false,
+      failureStage: null, failureReason: null, startedAt: null, finishedAt: null, executionIds: [], stages: [], preparationId: null,
+      cleanup: state === 'SUCCEEDED' ? 'DONE' : 'PENDING', preparation: null, ...extra })
+    api.decideInstall.mockResolvedValue(job('PREPARING'))
+    api.loadInstallJob.mockResolvedValue(job('SUCCEEDED', { preparation: { preparationId: 'p', kind: 'INSTALL', decision: 'APPROVED', state: 'SUCCEEDED', reason: null } }))
+    await button(wrapper, 'startup-install').trigger('click'); await flushPromises()
+    await button(wrapper, 'startup-install-approve').trigger('click'); await flushPromises()
+    expect(api.decideInstall).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ state: 'CONFIRMED' }), true, expect.any(String))
+    // 提交返回的还不是终态：不能重复安装，也不能运行。
+    expect(wrapper.get('[data-testid="startup-install-job"]').text()).toContain('准备中')
+    expect(button(wrapper, 'startup-install').attributes('disabled')).toBeDefined()
+    expect(button(wrapper, 'startup-run').attributes('disabled')).toBeDefined()
+    await new Promise((resolve) => setTimeout(resolve, 2400)); await flushPromises()
+    expect(wrapper.get('[data-testid="startup-install-job"]').text()).toContain('完成')
+    expect(button(wrapper, 'startup-run').attributes('disabled')).toBeUndefined()
+  })
+  it('刷新找回安装后继续观察，终态清除原请求身份', async () => {
+    const requestId='66666666-6666-4666-8666-666666666666'
+    const job={jobId:'55555555-5555-4555-8555-555555555555',requestId,appId:'2106',planId:plan('CONFIRMED').planId,planRevision:'b'.repeat(64),state:'INSTALLING',revision:'2',cancelRequested:false,stages:[],executionIds:[],cleanup:'PENDING'}
+    sessionStorage.setItem('project-import-install-request:77:2106',JSON.stringify({requestId,planId:job.planId,planRevision:job.planRevision,approved:true}))
+    api.installJobByRequest.mockResolvedValue(job)
+    api.currentPlan.mockResolvedValue(plan('CONFIRMED'));api.loadScan.mockResolvedValue(scan('SUCCEEDED'));api.loadInspection.mockResolvedValue(record)
+    api.loadInstallJob.mockResolvedValue({...job,state:'SUCCEEDED',cleanup:'DONE'})
+    const wrapper=await opened()
+    expect(button(wrapper,'startup-install').attributes('disabled')).toBeDefined()
+    await new Promise(resolve=>setTimeout(resolve,2400));await flushPromises()
+    expect(wrapper.get('[data-testid="startup-install-job"]').text()).toContain('完成')
+    expect(sessionStorage.getItem('project-import-install-request:77:2106')).toBeNull()
+    expect(api.decideInstall).not.toHaveBeenCalled();wrapper.unmount()
+  })
+  it('受理未知不会换新身份重跑；404后显式提交原请求', async () => {
+    const {StartupError}=await import('@/features/project-import/startup')
+    const saved={requestId:'66666666-6666-4666-8666-666666666666',planId:plan('CONFIRMED').planId,planRevision:'b'.repeat(64),approved:true}
+    sessionStorage.setItem('project-import-install-request:77:2106',JSON.stringify(saved))
+    api.installJobByRequest.mockRejectedValue(new StartupError('不存在',40400))
+    api.currentPlan.mockResolvedValue(plan('CONFIRMED'));api.loadScan.mockResolvedValue(scan('SUCCEEDED'));api.loadInspection.mockResolvedValue(record)
+    const wrapper=await opened()
+    expect(button(wrapper,'startup-run').attributes('disabled')).toBeDefined()
+    await button(wrapper,'startup-install-recover').trigger('click');await flushPromises()
+    expect(api.decideInstall).not.toHaveBeenCalled()
+    api.decideInstall.mockResolvedValue({jobId:'j',...saved,state:'SUCCEEDED',stages:[],executionIds:[],cleanup:'DONE'})
+    await button(wrapper,'startup-install-resubmit').trigger('click');await flushPromises()
+    expect(api.decideInstall).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({planId:saved.planId}),true,saved.requestId)
+    expect(sessionStorage.getItem('project-import-install-request:77:2106')).toBeNull();wrapper.unmount()
   })
   it('找回已过期的 Agent 批准只显示过期，不读取补充结果', async () => {
     sessionStorage.setItem('project-import-startup-approval:77:2106', '33333333-3333-4333-8333-333333333333')

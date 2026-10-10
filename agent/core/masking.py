@@ -18,9 +18,10 @@ _GENERIC_KEY = re.compile(r"\b(sk-[A-Za-z0-9_\-]{8,}|LTAI[A-Za-z0-9]{8,})\b")
 _BEARER = re.compile(r"(Bearer\s+)[A-Za-z0-9._\-]{8,}", re.I)
 # KEY=value 形式的敏感赋值
 _ENV_ASSIGN = re.compile(
-    r"\b([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)[A-Z0-9_]*)\s*=\s*([^\s\"']+)",
+    r'''(?<![A-Z0-9_])(["']?)([A-Z0-9_]+)\1\s*(?:=|:)\s*("[^"\r\n]*"?|'[^'\r\n]*'?|[^\s,;}]+)''',
     re.I,
 )
+_SECRET_NAME = re.compile(r"KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL", re.I)
 
 # 环境变量里实际的密钥值，启动时抓一份，逐字替换
 _SENSITIVE_ENV_NAMES = (
@@ -31,7 +32,7 @@ _SENSITIVE_ENV_NAMES = (
 )
 
 
-def mask(text: str | None, limit: int | None = None) -> str:
+def mask(text: str | None, limit: int | None = None, *, source: bool = False) -> str:
     """脱敏。可选截断，用于工具输出预览。"""
     if not text:
         return ""
@@ -44,7 +45,9 @@ def mask(text: str | None, limit: int | None = None) -> str:
 
     masked = _GENERIC_KEY.sub("***", masked)
     masked = _BEARER.sub(r"\1***", masked)
-    masked = _ENV_ASSIGN.sub(lambda m: f"{m.group(1)}=***", masked)
+    masked = _ENV_ASSIGN.sub(lambda m: f"{m.group(1)}{m.group(2)}{m.group(1)}=***"
+                            if _SECRET_NAME.search(m.group(2)) and (not source or m.group(3).startswith(('"', "'")))
+                            else m.group(0), masked)
 
     if limit is not None and len(masked) > limit:
         masked = masked[:limit] + "…（已截断）"

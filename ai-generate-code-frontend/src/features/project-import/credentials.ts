@@ -75,13 +75,14 @@ function validateReference(credential: CredentialView) {
 
 export async function createCredential(context: CredentialContext, provider: CredentialView['provider'], name: string, token: string) {
   validateName(name); validateToken(token)
-  if (!['GitHub', 'Gitee'].includes(provider)) throw new Error('平台无效。')
+  if (provider !== 'GitHub') throw new Error('仅支持 GitHub 仓库导入。')
   const csrf = await call<string>(context, '/csrf', 'GET')
   return view(await call<CredentialView>(context, '/credentials', 'POST', { ownerId: context.ownerId, provider, name, token }, csrf))
 }
 
 export async function renameCredential(context: CredentialContext, credential: CredentialView, name: string) {
   validateReference(credential); validateName(name)
+  if (credential.provider !== 'GitHub') throw new Error('该凭据已停用，仅可删除。')
   const csrf = await call<string>(context, '/csrf', 'GET')
   return view(await call<CredentialView>(context, `/credentials/${credential.id}/name`, 'PUT',
     { ownerId: context.ownerId, revision: credential.revision, name }, csrf))
@@ -89,6 +90,7 @@ export async function renameCredential(context: CredentialContext, credential: C
 
 export async function replaceCredential(context: CredentialContext, credential: CredentialView, token: string): Promise<CredentialChange> {
   validateReference(credential); validateToken(token)
+  if (credential.provider !== 'GitHub') throw new Error('该凭据已停用，仅可删除。')
   const csrf = await call<string>(context, '/csrf', 'GET')
   return change(await call<CredentialChange>(context, `/credentials/${credential.id}/token`, 'PUT',
     { ownerId: context.ownerId, revision: credential.revision, token }, csrf))

@@ -84,7 +84,7 @@ def main():
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
     csrf = {"value": None}
 
-    def call(path, body=None, method=None, expected=20000, timeout=180):
+    def call(path, body=None, method=None, expected=20000, timeout=60):
         headers = {"Origin": "http://localhost:5173"}
         if csrf["value"]:
             headers["X-Project-Import-CSRF"] = csrf["value"]
@@ -111,6 +111,7 @@ def main():
         account = "life_" + secrets.token_hex(8)
         password = secrets.token_urlsafe(24)
         owner = str(call("/user/register", {"userAccount": account, "userPassword": password, "checkPassword": password}))
+        report.setdefault('fixtures', []).append({'ownerId': owner, 'account': account})
         call("/user/login", {"userAccount": account, "userPassword": password})
         csrf["value"] = call("/project/import/csrf")
         return owner
@@ -210,9 +211,10 @@ def main():
             install_workspace = Path("temp/code_output") / ("project_" + install_app)
             install_before = tree(install_workspace)
             _, install_inspection = prepare(owner, install_app, [
-                {"id": None, "name": "网页", "directory": ".", "command": "python3 app.py", "install": "printf installed > installed.txt", "build": None, "port": None},
+                {"id": None, "name": "网页", "directory": ".", "command": "python3 app.py", "install": "printf 'installed\n' >> installed.txt", "build": None, "port": None},
+                {"id": None, "name": "共享安装项", "directory": ".", "command": "python3 app.py", "install": "printf 'installed\n' >> installed.txt", "build": None, "port": None},
             ])
-            install_plan = confirm(owner, install_app, install_inspection, [next(row["id"] for row in install_inspection["result"]["candidates"] if row["name"] == "网页")])
+            install_plan = confirm(owner, install_app, install_inspection, [row['id'] for row in install_inspection['result']['candidates'] if row['name'] in ('网页', '共享安装项')], acknowledge=True)
             declined = prep(install_app, install_plan, "install", False)
             declined_run = prep(install_app, install_plan, "run")
             check("D04", "用户拒绝安装后再次运行仍不安装也不启动", declined["state"] == "REJECTED" and declined_run["state"] == "WAITING_INSTALL" and executions(install_app) == [],
@@ -224,6 +226,8 @@ def main():
                   installed["state"] + " " + str(installed.get("reason")))
             check("D08", "安装产物留在执行副本，导入工程字节不变", tree(install_workspace) == install_before and copied.stdout.strip() == b"installed",
                   "workspaceChanged=" + str(tree(install_workspace) != install_before))
+            check('D05', '两个已选服务的共享安装只执行一次', copied.stdout == b'installed\n' and sum(row[0] == 'install' for row in executions(install_app)) == 1)
+            report['checks'][-1]['assertion'] = 'shared-step-once'
             check("D07", "安装成功后依赖状态仍是未核对，不改写成已就绪", all(row["status"] == "UNKNOWN" for row in installed["dependencies"]),
                   json.dumps(installed["dependencies"], ensure_ascii=False)[:300])
             started = prep(install_app, install_plan, "run")

@@ -61,6 +61,15 @@ class ImportExecutionRealHarnessTest {
             Files.writeString(out,results.toString());
             return;
         }
+        if(mode.equals("core")){
+            String[][] coreCases={{"ok","sh tools/ok.sh","20"},{"memory-hard","python3 tools/mem.py","20"},
+                {"fork","python3 tools/fork.py","25"},{"disk","sh tools/disk.sh","20"},
+                {"output","sh tools/out.sh","20"},{"timeout","sh tools/sleep.sh 600","5"},{"cpu","sh tools/cpu.sh","20"}};
+            for(var item:coreCases)results.add(record(item[0],runner.execute(t(owner,app,planId,plan,workspace,item[1]),
+                limits(Integer.parseInt(item[2]),ImportExecutionSandbox.Memory.REQUIRE_HARD)),jdbc,engine,root));
+            Files.writeString(out,JSON.writerWithDefaultPrettyPrinter().writeValueAsString(results));
+            return;
+        }
         var verify=ImportExecutionSandbox.Memory.VERIFICATION_ONLY_UNGUARANTEED;
         String[][] cases={{"ok","sh tools/ok.sh","20"},{"exit-nonzero","sh tools/fail.sh","20"},{"tamper","sh tools/tamper.sh","20"},{"memory-gap","python3 tools/mem.py","30"},
             {"fork","python3 tools/fork.py","30"},{"disk","sh tools/disk.sh","30"},{"output","sh tools/out.sh","30"},{"timeout","sh tools/sleep.sh 600","5"},{"network","python3 tools/net.py","30"},{"cpu","sh tools/cpu.sh","30"}};

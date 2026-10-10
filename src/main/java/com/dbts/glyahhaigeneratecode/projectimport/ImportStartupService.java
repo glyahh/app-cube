@@ -223,7 +223,7 @@ public class ImportStartupService {
                 // 2. 全内容复核也覆盖未经过平台保存的磁盘改动，不凭版本计数宣称当前。
                 UUID verification=UUID.randomUUID();boolean captured=false;
                 try{
-                    var snapshot=snapshots.capture(verification,apps.resolveWorkspaceDir(user,appId),()->!Thread.currentThread().isInterrupted());captured=true;
+                    var snapshot=ImportInstallDiagnostics.call("COPY_PROJECT",()->snapshots.capture(verification,apps.resolveWorkspaceDir(user,appId),()->!Thread.currentThread().isInterrupted()&&!ImportInstallControl.cancelled()));captured=true;
                     // 3. 内容一致才叠加已发布补充；回调与发布共用这份已复核副本。
                     if(snapshot.contentHash().equals(result.contentHash()))
                         return action.apply(new InspectionRecord(scanId,Long.toString(appId),initial.taskId(),"SUCCEEDED",null,withPublished(user.getId(),result,snapshot)),snapshot);

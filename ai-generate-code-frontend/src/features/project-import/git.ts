@@ -31,7 +31,7 @@ function options(value: ImportOptions): ImportOptions {
   if (!value || [value.skipDependencies, value.skipBuildOutputs, value.includeSensitive].some(item => typeof item !== 'boolean')) throw new Error('导入范围无效。')
   return { skipDependencies: value.skipDependencies, skipBuildOutputs: value.skipBuildOutputs, includeSensitive: value.includeSensitive }
 }
-export function repository(provider: CredentialView['provider'], input: string) {
+function sourceRepository(provider: CredentialView['provider'], input: string) {
   try {
     if (!['GitHub', 'Gitee'].includes(provider) || input.length > 512 || /[^\x21-\x7e]/.test(input)) throw new Error()
     const url = new URL(input), host = provider === 'GitHub' ? 'github.com' : 'gitee.com'
@@ -42,6 +42,10 @@ export function repository(provider: CredentialView['provider'], input: string) 
       !name || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name) || name.includes('..')) throw new Error()
     return { name, cloneUrl: `https://${host}/${parts[1]}/${name}.git` }
   } catch { throw new Error('请输入对应平台的 HTTPS 仓库地址。') }
+}
+export function repository(provider: CredentialView['provider'], input: string) {
+  if (provider !== 'GitHub') throw new Error('仅支持 GitHub 仓库导入。')
+  return sourceRepository(provider, input)
 }
 async function call<T>(context: CredentialContext, path: string, method = 'GET', data?: unknown): Promise<T> {
   current(context)
@@ -74,7 +78,7 @@ function view(input: GitSourceView): GitSourceView {
     (input.commit !== null && !/^[0-9a-f]{40}$/.test(input.commit)) || (input.contentHash !== null && !/^[0-9a-f]{64}$/.test(input.contentHash)) ||
     (input.error !== null && !/^[A-Z0-9_]{1,80}$/.test(input.error)) || !/^[A-Z_]{1,40}$/.test(input.cleanup)) throw new Error('来源结果无效。')
   const source = input.definition?.source
-  repository(source?.provider, source?.cloneUrl)
+  sourceRepository(source?.provider, source?.cloneUrl)
   if ((input.credentialId === null) !== (input.credentialVersion === null)) throw new Error('凭据关联无效。')
   if (input.credentialId !== null) { reference(input.credentialId); if (revision(input.credentialVersion) === '0') throw new Error('凭据版本无效。') }
   return { taskId: input.taskId, revision: revision(input.revision), status: input.status, branches, branch: input.branch, commit: input.commit,
@@ -110,6 +114,7 @@ export async function getGit(context: CredentialContext, id: string) {
 }
 export async function selectGitBranch(context: CredentialContext, task: GitSourceView, branch: string) {
   reference(task.taskId)
+  if (task.definition.source.provider !== 'GitHub') throw new Error('该来源已停用。')
   if (task.status !== 'WAITING_BRANCH' || !task.branches.some(item => item.name === branch)) throw new Error('请选择当前仓库的一个分支。')
   const result = view(await call<GitSourceView>(context, `/git/tasks/${task.taskId}/branch`, 'POST', { ownerId: context.ownerId, revision: revision(task.revision), branch }))
   if (result.taskId !== task.taskId) throw new Error('来源关联错误。')
@@ -117,6 +122,7 @@ export async function selectGitBranch(context: CredentialContext, task: GitSourc
 }
 export async function rebuildGit(context: CredentialContext, task: GitSourceView, appName: string, scope: ImportOptions) {
   reference(task.taskId)
+  if (task.definition.source.provider !== 'GitHub') throw new Error('该来源已停用。')
   if (task.status !== 'WAITING_CONFIRMATION' || !appName.trim() || appName.trim().length > 80 || /[\x00-\x1f\x7f]/.test(appName)) throw new Error('名称或任务状态无效。')
   const result = view(await call<GitSourceView>(context, `/git/tasks/${task.taskId}/range`, 'POST', { ownerId: context.ownerId, revision: revision(task.revision), appName: appName.trim(), options: options(scope) }))
   if (result.taskId !== task.taskId || result.commit !== task.commit || result.branch !== task.branch) throw new Error('固定内容关联错误。')
@@ -132,7 +138,9 @@ export async function getGitMain(context: CredentialContext, task: GitSourceView
   return { taskId: input.taskId, revision: revision(input.revision), status: input.status, appName: input.appName, contentHash: input.contentHash, manifest: { included, excluded } }
 }
 export async function commitGit(context: CredentialContext, task: GitSourceView, appName: string, scope: ImportOptions) {
+  if (task.definition.source.provider !== 'GitHub') throw new Error('该来源已停用。')
   const latest = await getGit(context, task.taskId), main = await getGitMain(context, latest)
+  if (latest.definition.source.provider !== 'GitHub') throw new Error('该来源已停用。')
   if (latest.status !== 'WAITING_CONFIRMATION' || main.status !== 'WAITING_CONFIRMATION' || latest.commit !== task.commit ||
     latest.branch !== task.branch || main.contentHash !== latest.contentHash || !main.contentHash || !/^[0-9a-f]{64}$/.test(main.contentHash) ||
     main.appName !== appName.trim() || latest.definition.appName !== appName.trim() || JSON.stringify(options(latest.definition.options)) !== JSON.stringify(options(scope))) throw new Error('确认内容已变化，请重新读取。')

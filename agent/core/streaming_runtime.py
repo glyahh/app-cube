@@ -36,6 +36,14 @@ PREVIEW_CHARS = 500
 
 _loop: asyncio.AbstractEventLoop | None = None
 
+
+class ImportEditStopped(RuntimeError):
+    """导入止损原因只使用固定错误码。"""
+
+    def __init__(self, failure_key):
+        self.failure_key = failure_key
+        super().__init__(failure_key)
+
 # psycopg 的异步驱动不支持 Windows ProactorEventLoop；统一使用 Selector。
 # 必须在创建本模块事件循环前设置，避免连接池拿到不兼容的 loop。
 if sys.platform == "win32":
@@ -58,6 +66,7 @@ def run_agent_with_events(
     emitter: Emitter,
     task_kind: str,
     overhead: Any = None,
+    import_edit: bool = False,
 ) -> dict:
     """跑一轮，事件直接写进 emitter。返回本轮摘要信息。
 
@@ -66,7 +75,7 @@ def run_agent_with_events(
     """
     limits = RunLimits.for_task(task_kind)
     tracker = RunLimitTracker(limits)
-    state = _RunState()
+    state = _RunState(import_edit=import_edit)
     # 每轮都先建立一个面向用户的阶段，即使模型最终不调用工具也有可见进度。
     initial_id = f"{emitter._run_id}:thinking:initial"
     state.current_thinking_id = initial_id
@@ -87,14 +96,26 @@ def run_agent_with_events(
         _event_loop().run_until_complete(
             _drive(agent, messages, config, emitter, tracker, state, overhead)
         )
+    except ImportEditStopped as exc:
+        _complete_thinking(emitter, state, status="failed")
+        emitter.emit(Event.ERROR, code=ErrorCode.TOOL_EXECUTION_FAILED.value, message="同类命令已被拒绝两次，本轮已停止。", retryable=False,
+                      stage="IMPORT_EDIT_MODEL_RUN", failureKey=exc.failure_key)
+        return {**state.summary(status="failed"), "failureKey": exc.failure_key}
     except RunLimitExceeded as exc:
         # 预算是设计好的止损，不是崩溃
         logger.warning("触及运行预算：%s", exc)
         _complete_thinking(emitter, state, status="failed")
         emitter.error(ErrorCode.RUN_DEADLINE_EXCEEDED, str(exc), retryable=False)
         return state.summary(status="failed")
-    except Exception:
+    except Exception as exc:
         _complete_thinking(emitter, state, status="failed")
+        if import_edit:
+            from langchain.agents.middleware.model_call_limit import ModelCallLimitExceededError
+            if isinstance(exc, ModelCallLimitExceededError):
+                key = "IMPORT_EDIT_MODEL_BUDGET_EXHAUSTED"
+                emitter.emit(Event.ERROR, code=ErrorCode.MODEL_QUOTA_EXCEEDED.value, message="模型调用预算已耗尽，本轮未完成修改。", retryable=False,
+                              stage="IMPORT_EDIT_MODEL_RUN", failureKey=key)
+                return {**state.summary(status="failed"), "failureKey": key}
         raise
 
     _complete_thinking(emitter, state)
@@ -105,7 +126,7 @@ def run_agent_with_events(
 class _RunState:
     """一轮里要攒的东西。"""
 
-    def __init__(self) -> None:
+    def __init__(self, *, import_edit=False) -> None:
         self.text = ""
         self.candidate = ""
         self.candidate_overflow = False
@@ -122,6 +143,8 @@ class _RunState:
         self.output_tokens = 0
         # 最近一次请求里我们能数到的消息 token，用于反推固定开销
         self.last_message_tokens = 0
+        self.import_edit = import_edit
+        self.command_rejections: dict[str, int] = {}
 
     @property
     def message_id(self) -> str:
@@ -299,6 +322,12 @@ def _on_tool_end(ev: dict, emitter: Emitter, state: _RunState) -> None:
 
     text = _stringify(output)
     truncated = len(text) > PREVIEW_CHARS
+    # 只识别本项目定义的拒绝协议，不从任意工具输出猜异常原因。
+    rejection = None
+    if state.import_edit and name == "execute" and getattr(output, "status", None) == "error":
+        match = re.match(r"Error: Invalid parameter\. IMPORT_COMMAND_REJECTED:(EMPTY|QUOTING|OPERATORS|SUBSTITUTION|EXECUTABLE|DANGEROUS|PATH)。", str(getattr(output, "content", "")))
+        if match:
+            rejection = match.group(1)
 
     emitter.emit(
         Event.TOOL_FINISHED,
@@ -308,9 +337,18 @@ def _on_tool_end(ev: dict, emitter: Emitter, state: _RunState) -> None:
         durationMs=duration_ms,
         outputPreview=mask(text, PREVIEW_CHARS),
         truncated=truncated,
+        **({"failureKey": "IMPORT_COMMAND_REJECTED", "rejectionReason": rejection} if rejection else {}),
     )
     args_status = "失败" if getattr(output, "status", None) == "error" else "已返回"
     state.last_observation = f"{name} 的{args_status}结果"
+    _count_command_rejection(state, rejection)
+
+
+def _count_command_rejection(state, rejection):
+    if rejection:
+        state.command_rejections[rejection] = state.command_rejections.get(rejection, 0) + 1
+        if state.command_rejections[rejection] >= 2:
+            raise ImportEditStopped("IMPORT_EDIT_REPEATED_COMMAND_REJECTION")
 
 
 def _on_tool_error(ev: dict, emitter: Emitter, state: _RunState) -> None:
@@ -318,6 +356,8 @@ def _on_tool_error(ev: dict, emitter: Emitter, state: _RunState) -> None:
     call_id = str(ev.get("run_id") or "")
     name = str(ev.get("name") or "unknown")
     error = (ev.get("data") or {}).get("error")
+    from backends.permissions import ImportCommandRejected
+    rejection = error.reason if state.import_edit and name == "execute" and isinstance(error, ImportCommandRejected) else None
 
     started = state.tool_started_at.pop(call_id, None)
     duration_ms = int((time.monotonic() - started) * 1000) if started else 0
@@ -332,8 +372,10 @@ def _on_tool_error(ev: dict, emitter: Emitter, state: _RunState) -> None:
         durationMs=duration_ms,
         outputPreview=error_text,
         truncated=False,
+        **({"failureKey": "IMPORT_COMMAND_REJECTED", "rejectionReason": rejection} if rejection else {}),
     )
     state.last_observation = f"{name} 的失败结果"
+    _count_command_rejection(state, rejection)
 
 
 def _publish_progress(emitter: Emitter, state: _RunState) -> None:

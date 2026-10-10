@@ -16,7 +16,7 @@ class ImportStartupPreparationServiceTest {
     ImportStartupPlanService plans=mock(ImportStartupPlanService.class);
     ImportStartupPreparationRepository preparations=mock(ImportStartupPreparationRepository.class);
     ImportExecutionActions execution=mock(ImportExecutionActions.class);
-    ImportStartupPreparationService service=new ImportStartupPreparationService(plans,preparations,execution);
+    ImportStartupPreparationService service=new ImportStartupPreparationService(plans,preparations,execution,mock(ImportStartupInstallJobRepository.class));
     User user=User.builder().id(7L).build();
     UUID planId=UUID.randomUUID();
     ImportStartupPlan.Content node;
@@ -200,10 +200,74 @@ class ImportStartupPreparationServiceTest {
         verify(execution,never()).execute(any(),anyLong(),any(),any(),any(),any(),any(),any(),any(),any());
     }
 
+    @Test void firstInstallFailureStopsRemainingCommands(){
+        var web=UUID.randomUUID();var api=UUID.randomUUID();
+        var two=ImportStartupPlan.build(new ImportStartupService.Inspection(UUID.randomUUID(),"42",UUID.randomUUID(),"c".repeat(64),".","1","1",
+                new ImportStartupScanner.Result("d".repeat(64),List.of(
+                    new ImportStartupScanner.Candidate("manual:"+web,"web","web","node server.js",null,"MANUAL","web"),
+                    new ImportStartupScanner.Candidate("manual:"+api,"api","api","node app.js",null,"MANUAL","api")),List.of())),
+            Map.of("web/package.json","{\"name\":\"a\"}","api/requirements.txt","flask\n"),
+            List.of(new ImportStartupConfiguration.Manual(web,"web","web","node server.js","npm ci",null),
+                    new ImportStartupConfiguration.Manual(api,"api","api","node app.js","npm install",null)),
+            List.of("manual:"+web,"manual:"+api));
+        when(plans.get(user,42,planId)).thenReturn(view(two));
+        when(execution.admit(eq(42L),any())).thenReturn(List.of());
+        when(execution.execute(any(),eq(42L),eq(planId),anyString(),anyString(),any(),anyString(),any(),any()))
+            .thenReturn(new ImportExecutionRunner.Result(UUID.randomUUID(),"FAILED","EXIT_NONZERO",1,0,null));
+        var installed=service.install(user,42,planId,revision(two),true);
+        assertEquals("FAILED",installed.state());
+        // 首条安装命令失败后不再开始后续命令，也不自动重试。
+        verify(execution,times(1)).execute(any(),anyLong(),any(),any(),any(),any(),any(),any(),any());
+    }
+
     @Test void changedPlanCannotBeRun(){
         when(plans.get(user,42,planId)).thenReturn(new ImportStartupPlanService.View(planId,"42",node.scanId(),revision(node),"STALE","1",false,null,false,node,"PLAN_CHANGED",List.of(),null));
         assertThrows(MyException.class,()->service.run(user,42,planId,revision(node)));
         verifyNoInteractions(execution);
+    }
+
+    @Test void stopDuringStartupCancelsLateReadyAndBlocksAnotherRun() throws Exception {
+        when(plans.get(user,42,planId)).thenReturn(view(pair));
+        var entered=new java.util.concurrent.CountDownLatch(1);
+        var release=new java.util.concurrent.CountDownLatch(1);
+        var id=UUID.randomUUID();
+        when(execution.execute(eq(user),eq(42L),eq(planId),anyString(),anyString(),any(),any(),any(),any(),nullable(Integer.class)))
+            .thenAnswer(invocation->{entered.countDown();assertTrue(release.await(5,java.util.concurrent.TimeUnit.SECONDS));return new ImportExecutionRunner.Result(id,"RUNNING",null,null,0,null);});
+        when(execution.activeSlots(42L,"service:")).thenReturn(List.of(id));
+        when(execution.stopExecution(id)).thenAnswer(invocation->{release.countDown();return "STOPPED";});
+        try(var pool=java.util.concurrent.Executors.newSingleThreadExecutor()){
+            var running=pool.submit(()->service.run(user,42,planId,revision(pair)));
+            assertTrue(entered.await(5,java.util.concurrent.TimeUnit.SECONDS));
+            assertThrows(MyException.class,()->service.run(user,42,planId,revision(pair)));
+            var stopped=service.stop(user,42,planId,revision(pair));
+            assertEquals("STOPPED",stopped.reason());
+            var late=assertThrows(java.util.concurrent.ExecutionException.class,()->running.get(5,java.util.concurrent.TimeUnit.SECONDS));
+            assertInstanceOf(MyException.class,late.getCause());
+            verify(preparations,never()).save(argThat(row->"READY".equals(row.state())));
+            verify(execution,times(1)).execute(eq(user),eq(42L),eq(planId),anyString(),anyString(),any(),any(),any(),any(),nullable(Integer.class));
+        }finally{release.countDown();}
+    }
+
+    @Test void unconfirmedStartupStopRetainsFailureAndPreventsRerun() throws Exception {
+        when(plans.get(user,42,planId)).thenReturn(view(pair));
+        var saved=new java.util.concurrent.atomic.AtomicReference<ImportStartupPreparationRepository.Row>();
+        when(preparations.find(7L,42,planId,revision(pair),"RUN")).thenAnswer(invocation->saved.get());
+        when(preparations.save(any())).thenAnswer(invocation->{var row=invocation.getArgument(0,ImportStartupPreparationRepository.Row.class);saved.set(row);return row;});
+        var entered=new java.util.concurrent.CountDownLatch(1);
+        var release=new java.util.concurrent.CountDownLatch(1);
+        var id=UUID.randomUUID();
+        when(execution.execute(eq(user),eq(42L),eq(planId),anyString(),anyString(),any(),any(),any(),any(),nullable(Integer.class)))
+            .thenAnswer(invocation->{entered.countDown();assertTrue(release.await(5,java.util.concurrent.TimeUnit.SECONDS));return new ImportExecutionRunner.Result(id,"RUNNING",null,null,0,null);});
+        when(execution.activeSlots(42L,"service:")).thenReturn(List.of(id));
+        when(execution.stopExecution(id)).thenAnswer(invocation->{release.countDown();return "STOP_FAILED";});
+        try(var pool=java.util.concurrent.Executors.newSingleThreadExecutor()){
+            var running=pool.submit(()->service.run(user,42,planId,revision(pair)));
+            assertTrue(entered.await(5,java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals("STOP_FAILED",service.stop(user,42,planId,revision(pair)).reason());
+            assertThrows(java.util.concurrent.ExecutionException.class,()->running.get(5,java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals("STOP_FAILED",service.run(user,42,planId,revision(pair)).reason());
+            verify(execution,times(1)).execute(eq(user),eq(42L),eq(planId),anyString(),anyString(),any(),any(),any(),any(),nullable(Integer.class));
+        }finally{release.countDown();}
     }
 
     private ImportStartupPreparationRepository.Row row(ImportStartupPlan.Content content,String kind,String decision,String state,String reason,List<ImportStartupPreparation.ServiceView> services){

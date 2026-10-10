@@ -21,33 +21,89 @@ public class ImportStartupPreparationService {
     private final ImportStartupPlanService plans;
     private final ImportStartupPreparationRepository preparations;
     private final ImportExecutionActions execution;
-    public ImportStartupPreparationService(ImportStartupPlanService plans,ImportStartupPreparationRepository preparations,ImportExecutionActions execution){
-        this.plans=plans;this.preparations=preparations;this.execution=execution;
+    private final ImportStartupInstallJobRepository jobs;
+    private final java.util.concurrent.ConcurrentHashMap<Long,RunControl> running=new java.util.concurrent.ConcurrentHashMap<>();
+    private static final class RunControl {
+        final java.util.concurrent.atomic.AtomicBoolean stopped=new java.util.concurrent.atomic.AtomicBoolean();
+        final java.util.concurrent.CompletableFuture<Void> finished=new java.util.concurrent.CompletableFuture<>();
+    }
+    public ImportStartupPreparationService(ImportStartupPlanService plans,ImportStartupPreparationRepository preparations,ImportExecutionActions execution,ImportStartupInstallJobRepository jobs){
+        this.plans=plans;this.preparations=preparations;this.execution=execution;this.jobs=jobs;
     }
 
-    public View install(User user,long appId,UUID planId,String planRevision,boolean approved){
-        var plan=confirmed(user,appId,planId,planRevision);
+    /** 安装进度回调：安装任务服务用来推进任务状态、接收脱敏阶段摘要并检查取消意图。 */
+    public interface InstallProgress {
+        String jobId();
+        java.util.function.Consumer<ImportStartupInstallJob.Stage> stages();
+        void advance(ImportStartupInstallJob.State state);
+        boolean cancelled();
+        default void check(){if(cancelled())throw new MyException(ErrorCode.CONFLICT_ERROR,"INSTALL_CANCELLED");}
+        default void execution(UUID id){ }
+        default void probe(String name,String id){ }
+        default View complete(java.util.function.Supplier<View> save){return save.get();}
+    }
+
+    public View install(User user,long appId,UUID planId,String planRevision,boolean approved){return install(user,appId,planId,planRevision,approved,null);}
+
+    public View install(User user,long appId,UUID planId,String planRevision,boolean approved,InstallProgress progress){
+        try(var control=new ImportInstallControl(progress);var diagnostic=ImportInstallDiagnostics.open(appId,progress==null?null:progress.jobId(),progress==null?null:progress.stages())){
+            try{
+                var result=installObserved(user,appId,planId,planRevision,approved,progress);
+                diagnostic.result(result.state(),result.reason());
+                return result;
+            }catch(RuntimeException error){
+                diagnostic.result("FAILED",error.getClass().getSimpleName());
+                throw error;
+            }
+        }
+    }
+
+    private View installObserved(User user,long appId,UUID planId,String planRevision,boolean approved,InstallProgress progress){
+        if(progress!=null)progress.advance(ImportStartupInstallJob.State.PREPARING);
+        ImportInstallControl.check();
+        var plan=ImportInstallDiagnostics.call("PLAN_VALIDATE",()->confirmed(user,appId,planId,planRevision));
+        ImportInstallControl.check();
         var assessment=ImportStartupPreparation.assess(plan.plan());
-        if(!approved)return view(plan,save(user,plan,"INSTALL","REJECTED","REJECTED","INSTALL_DECLINED",List.of()),assessment);
+        if(!approved)return completeInstall(progress,()->view(plan,save(user,plan,"INSTALL","REJECTED","REJECTED","INSTALL_DECLINED",List.of()),assessment));
         var existing=preparations.find(user.getId(),appId,planId,planRevision,"INSTALL");
-        if(existing!=null&&"SUCCEEDED".equals(existing.state()))return view(plan,existing,assessment);
-        if(!assessment.installRequired())return view(plan,save(user,plan,"INSTALL","APPROVED","NOT_REQUIRED",null,List.of()),assessment);
+        if(existing!=null&&"SUCCEEDED".equals(existing.state()))return completeInstall(progress,()->view(plan,existing,assessment));
+        if(!assessment.installRequired())return completeInstall(progress,()->view(plan,save(user,plan,"INSTALL","APPROVED","NOT_REQUIRED",null,List.of()),assessment));
         if(assessment.installCommands().isEmpty())
-            return view(plan,save(user,plan,"INSTALL","APPROVED","BLOCKED","DEPENDENCY_UNKNOWN",List.of()),assessment);
+            return completeInstall(progress,()->view(plan,save(user,plan,"INSTALL","APPROVED","BLOCKED","DEPENDENCY_UNKNOWN",List.of()),assessment));
         // 1. 先准入。内存硬上限无法保证时不执行安装命令，也不启动服务。
-        var refused=execution.admit(appId,ImportExecutionSandbox.Limits.defaults());
-        if(!refused.isEmpty())return view(plan,save(user,plan,"INSTALL","APPROVED","REFUSED",String.join(",",refused),List.of()),assessment);
+        var refused=ImportInstallDiagnostics.call("ADMISSION",()->execution.admit(appId,ImportExecutionSandbox.Limits.defaults()));
+        if(!refused.isEmpty())return completeInstall(progress,()->view(plan,save(user,plan,"INSTALL","APPROVED","REFUSED",String.join(",",refused),List.of()),assessment));
         // 2. 只执行计划写明的安装命令，使用仅出站网络。失败不继续启动。产物留在执行副本。
         String failure=null;
+        commands:
         for(var dependency:plan.plan().dependencies())for(String command:dependency.installs()){
+            // 每条命令启动前检查取消意图；取消后不再开始新命令。
+            if(progress!=null&&progress.cancelled()){failure="INSTALL_CANCELLED";break commands;}
+            if(progress!=null)progress.advance(ImportStartupInstallJob.State.INSTALLING);
+            // 命令阶段名由命令本身决定。commandStage 会优先读执行者写入的上下文，
+            // 在 execute 之前求值会读到上一条命令留下的值，把 pip 命令标成 NPM_INSTALL。
+            ImportInstallDiagnostics.execution(null);
             var result=execution.execute(user,appId,planId,dependency.directory(),command,ImportExecutionSandbox.Limits.defaults(),"install",ImportExecutionSandbox.Network.EGRESS,ImportExecutionSandbox.Lifetime.FINISH);
-            if(!"SUCCEEDED".equals(result.state())){failure=result.reason()==null?result.state():result.reason();break;}
+            if(!"SUCCEEDED".equals(result.state())){failure=result.reason()==null?result.state():result.reason();break commands;}
         }
         String state=failure==null?"SUCCEEDED":"REFUSED".equals(failure)||failure.contains("MEMORY")?"REFUSED":"FAILED";
-        return view(plan,save(user,plan,"INSTALL","APPROVED",state,failure,List.of()),assessment);
+        String finalFailure=failure;
+        if(progress!=null&&!progress.cancelled())ImportInstallDiagnostics.call("VERIFY",()->confirmed(user,appId,planId,planRevision));
+        return completeInstall(progress,()->view(plan,save(user,plan,"INSTALL","APPROVED",state,finalFailure,List.of()),assessment));
+    }
+
+    private View completeInstall(InstallProgress progress,java.util.function.Supplier<View> save){
+        if(progress==null)return save.get();
+        progress.check();progress.advance(ImportStartupInstallJob.State.VERIFYING);
+        return progress.complete(save);
     }
 
     public View run(User user,long appId,UUID planId,String planRevision){
+        return runOperation(appId,()->runObserved(user,appId,planId,planRevision));
+    }
+
+    private View runObserved(User user,long appId,UUID planId,String planRevision){
+        requireInstallIdle(user,appId,planId);
         var plan=confirmed(user,appId,planId,planRevision);
         var assessment=ImportStartupPreparation.assess(plan.plan());
         var install=preparations.find(user.getId(),appId,planId,planRevision,"INSTALL");
@@ -69,6 +125,11 @@ public class ImportStartupPreparationService {
 
     /** 只重试未就绪的服务。已就绪的执行编号保持不变，不重复启动。 */
     public View retry(User user,long appId,UUID planId,String planRevision){
+        return runOperation(appId,()->retryObserved(user,appId,planId,planRevision));
+    }
+
+    private View retryObserved(User user,long appId,UUID planId,String planRevision){
+        requireInstallIdle(user,appId,planId);
         var plan=confirmed(user,appId,planId,planRevision);
         var assessment=ImportStartupPreparation.assess(plan.plan());
         var current=preparations.find(user.getId(),appId,planId,planRevision,"RUN");
@@ -89,14 +150,39 @@ public class ImportStartupPreparationService {
     public View stop(User user,long appId,UUID planId,String planRevision){
         var plan=confirmed(user,appId,planId,planRevision);
         var assessment=ImportStartupPreparation.assess(plan.plan());
+        var idle=new RunControl();idle.finished.complete(null);
+        var control=running.compute(appId,(id,active)->{
+            var selected=active==null?idle:active;
+            selected.stopped.set(true);
+            return selected;
+        });
+        try{
+            // 1. 先阻止新命令，再停止尚未写入准备结果的构建和服务槽位。
+            boolean stopped=true;
+            for(String prefix:List.of("build:","service:"))for(var id:execution.activeSlots(appId,prefix))
+                stopped&=terminal(execution.stopExecution(id));
+            try{control.finished.get(60,java.util.concurrent.TimeUnit.SECONDS);}
+            catch(InterruptedException error){Thread.currentThread().interrupt();stopped=false;}
+            catch(java.util.concurrent.ExecutionException|java.util.concurrent.TimeoutException error){stopped=false;}
+            if(!stopped)return view(plan,save(user,plan,"RUN","APPROVED","FAILED","STOP_FAILED",List.of()),assessment);
+            return stopObserved(user,appId,planId,planRevision,control!=idle);
+        }finally{
+            // 未确认命令结束时保留占用，后续必须继续停止确认，不能立即重新运行。
+            if(control.finished.isDone())running.remove(appId,control);
+        }
+    }
+
+    private View stopObserved(User user,long appId,UUID planId,String planRevision,boolean interruptedRun){
+        var plan=confirmed(user,appId,planId,planRevision);
+        var assessment=ImportStartupPreparation.assess(plan.plan());
         var current=preparations.find(user.getId(),appId,planId,planRevision,"RUN");
-        if(current==null)return view(plan,save(user,plan,"RUN","APPROVED","FAILED","NOT_RUNNING",List.of()),assessment);
+        if(current==null)return view(plan,save(user,plan,"RUN","APPROVED","FAILED",interruptedRun?"STOPPED":"NOT_RUNNING",List.of()),assessment);
         boolean failed=false;
         var services=new ArrayList<ImportStartupPreparation.ServiceView>();
         for(var service:current.services()){
             // 1. 只有已确认终态才算停下；仍在停止或结果不明时继续保留资源边界。
             String state=service.executionId()==null?"STOPPED":execution.stopExecution(service.executionId());
-            boolean stopped=List.of("STOPPED","SUCCEEDED","FAILED","REFUSED","INTERRUPTED").contains(state==null?"UNKNOWN":state);
+            boolean stopped=terminal(state);
             failed|=!stopped;
             services.add(new ImportStartupPreparation.ServiceView(service.serviceId(),"STOP",stopped?"STOPPED":"STOP_FAILED",
                 stopped?"STOP_REQUESTED":"CONTAINER_NOT_CONFIRMED_GONE",service.executionId(),null));
@@ -112,6 +198,12 @@ public class ImportStartupPreparationService {
         if(run!=null)return view(plan,refresh(user,plan,run),assessment);
         var install=preparations.find(user.getId(),appId,plan.planId(),plan.planRevision(),"INSTALL");
         return install==null?null:view(plan,install,assessment);
+    }
+
+    /** 最终安装结果的只读摘要；只读登记表，不读取会复制项目的计划视图。 */
+    public ImportStartupInstallJob.PreparationSummary installation(long ownerId,long appId,UUID planId,String planRevision){
+        var row=preparations.find(ownerId,appId,planId,planRevision,"INSTALL");
+        return row==null?null:new ImportStartupInstallJob.PreparationSummary(row.id().toString(),row.kind(),row.decision(),row.state(),row.reason());
     }
 
     private ImportStartupPreparationRepository.Row refresh(User user,ImportStartupPlanService.View plan,ImportStartupPreparationRepository.Row row){
@@ -141,6 +233,7 @@ public class ImportStartupPreparationService {
     }
 
     private View executeRun(User user,ImportStartupPlanService.View plan,ImportStartupPreparation.Assessment assessment,List<ImportStartupPreparation.ServiceView> kept){
+        checkRun(Long.parseLong(plan.appId()));
         var refused=execution.admit(Long.parseLong(plan.appId()),ImportExecutionSandbox.Limits.defaults());
         if(!refused.isEmpty()){
             var blocked=new java.util.HashMap<String,ImportStartupPreparation.ServiceView>();
@@ -157,17 +250,20 @@ public class ImportStartupPreparationService {
         var services=new ArrayList<ImportStartupPreparation.ServiceView>();
         // 2. 共享构建只执行一次。失败只挡住依赖它的服务，已就绪的服务不重新启动。
         for(var service:plan.plan().services()){
+            checkRun(Long.parseLong(plan.appId()));
             var keptReady=ready.get(service.id());
             if(keptReady!=null){services.add(keptReady);continue;}
             if(service.build()!=null){
                 var step=plan.plan().builds().stream().filter(item->item.id().equals(service.build())).findFirst().orElse(null);
                 if(step==null){services.add(new ImportStartupPreparation.ServiceView(service.id(),"BUILD","FAILED","BUILD_MISSING",null));continue;}
                 var build=builds.computeIfAbsent(step.id(),id->execution.execute(user,Long.parseLong(plan.appId()),plan.planId(),step.directory(),step.command(),ImportExecutionSandbox.Limits.defaults(),slot("build",step.id()),ImportExecutionSandbox.Network.EGRESS,ImportExecutionSandbox.Lifetime.FINISH));
+                checkRunResult(Long.parseLong(plan.appId()),build);
                 if(!"SUCCEEDED".equals(build.state())){services.add(new ImportStartupPreparation.ServiceView(service.id(),"BUILD","FAILED",build.reason(),build.executionId()));continue;}
             }
             if(service.command()==null){services.add(new ImportStartupPreparation.ServiceView(service.id(),"READY","READY","STATIC_ENTRY",null));continue;}
             var network=service.port()==null?ImportExecutionSandbox.Network.NONE:ImportExecutionSandbox.Network.LOOPBACK;
             var result=execution.execute(user,Long.parseLong(plan.appId()),plan.planId(),service.directory(),service.command(),ImportExecutionSandbox.Limits.defaults(),slot("service",service.id()),network,ImportExecutionSandbox.Lifetime.SERVE,service.port());
+            checkRunResult(Long.parseLong(plan.appId()),result);
             // 3. 只有容器仍在运行才算就绪。写明端口时还必须拿到本次执行记下的本机地址。进程正常退出不算已启动。
             boolean staying="RUNNING".equals(result.state())&&(service.port()==null||result.address()!=null);
             String failure=staying?null:"SUCCEEDED".equals(result.state())?"NOT_READY":result.reason();
@@ -175,7 +271,46 @@ public class ImportStartupPreparationService {
         }
         String state=ImportStartupPreparation.aggregate(services);
         String reason="READY".equals(state)?null:"PARTIAL".equals(state)?"PARTIAL_FAILURE":services.stream().filter(item->item.reason()!=null).map(ImportStartupPreparation.ServiceView::reason).findFirst().orElse(state);
+        checkRun(Long.parseLong(plan.appId()));
         return view(plan,save(user,plan,"RUN","APPROVED",state,reason,services),assessment);
+    }
+
+    private View runOperation(long appId,java.util.function.Supplier<View> action){
+        var control=new RunControl();
+        if(running.putIfAbsent(appId,control)!=null)throw new MyException(ErrorCode.CONFLICT_ERROR,"运行或停止尚未结束。");
+        try{return action.get();}
+        finally{
+            control.finished.complete(null);
+            running.computeIfPresent(appId,(id,active)->active==control&&!control.stopped.get()?null:active);
+        }
+    }
+
+    private void checkRun(long appId){
+        var control=running.get(appId);
+        if(control!=null&&control.stopped.get())throw new MyException(ErrorCode.CONFLICT_ERROR,"RUN_STOP_REQUESTED");
+    }
+
+    private void checkRunResult(long appId,ImportExecutionRunner.Result result){
+        var control=running.get(appId);
+        if(control!=null&&control.stopped.get()){
+            if(result.executionId()!=null)execution.stopExecution(result.executionId());
+            checkRun(appId);
+        }
+    }
+
+    private static boolean terminal(String state){
+        return state!=null&&List.of("STOPPED","SUCCEEDED","FAILED","REFUSED","INTERRUPTED").contains(state);
+    }
+
+    private void requireInstallIdle(User user,long appId,UUID planId){
+        if(jobs.activeByApp(appId)!=null)throw new MyException(ErrorCode.CONFLICT_ERROR,"安装尚未结束。");
+        var latest=jobs.current(user.getId(),appId,planId);
+        // 用户拒绝和安装失败已经是终态。运行接口会分别返回等待安装或失败，并且不启动服务。
+        // 取消等尚未收口的结果仍不能接着运行。
+        if(latest!=null&&latest.state()!=ImportStartupInstallJob.State.SUCCEEDED
+                &&latest.state()!=ImportStartupInstallJob.State.REJECTED
+                &&latest.state()!=ImportStartupInstallJob.State.FAILED)
+            throw new MyException(ErrorCode.CONFLICT_ERROR,"安装尚未成功。");
     }
 
     private static String slot(String kind,String id){return kind+":"+ImportExecutionRunner.sha(id).substring(0,32);}

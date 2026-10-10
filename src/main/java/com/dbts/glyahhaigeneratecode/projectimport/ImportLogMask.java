@@ -1,7 +1,12 @@
 package com.dbts.glyahhaigeneratecode.projectimport;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 /**
  * 执行日志落盘前的秘密遮盖。
@@ -21,8 +26,9 @@ final class ImportLogMask {
     private static final Pattern GIT_TOKEN = Pattern.compile("\\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_\\-]{16,})\\b");
     private static final Pattern BEARER = Pattern.compile("(Bearer\\s+)[A-Za-z0-9._\\-]{8,}", Pattern.CASE_INSENSITIVE);
     private static final Pattern ENV_ASSIGN = Pattern.compile(
-            "\\b([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)[A-Z0-9_]*)\\s*=\\s*([^\\s\"']+)",
+            "\\b([A-Z0-9_]+)[\"']?\\s*[:=]\\s*(?:\"[^\"\\r\\n]*(?:\"|$)|'[^'\\r\\n]*(?:'|$)|[^\\s,;}]+)",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern SECRET_NAME = Pattern.compile("KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL", Pattern.CASE_INSENSITIVE);
 
     private ImportLogMask() {
     }
@@ -46,17 +52,62 @@ final class ImportLogMask {
         masked = GENERIC_KEY.matcher(masked).replaceAll("***");
         masked = GIT_TOKEN.matcher(masked).replaceAll("***");
         masked = BEARER.matcher(masked).replaceAll("$1***");
-        masked = ENV_ASSIGN.matcher(masked).replaceAll("$1=***");
-        return masked;
+        // 先识别赋值，再判断键名；避免两个重叠的贪婪匹配在长日志上反复回溯。
+        Matcher assignments = ENV_ASSIGN.matcher(masked);
+        var result = new StringBuilder();
+        while (assignments.find()) {
+            if (SECRET_NAME.matcher(assignments.group(1)).find()) {
+                assignments.appendReplacement(result, Matcher.quoteReplacement(assignments.group(1) + "=***"));
+            } else {
+                // 非敏感赋值必须原样保留，不能因为扫描过就把匹配前的日志片段丢掉。
+                assignments.appendReplacement(result, Matcher.quoteReplacement(assignments.group()));
+            }
+        }
+        assignments.appendTail(result);
+        return result.toString();
     }
 
     /**
-     * 判断内容是否为合法 UTF-8 且可安全回写。
-     *
-     * 容器输出可能是任意字节；不是合法 UTF-8 时不做字符串往返，避免遮盖破坏原始内容。
+     * 每条流独立拼行，完整行遮盖后才交给落盘出口；关闭时处理最后一行。
+     * 非 UTF-8 字节用替换字符呈现，不能因此跳过秘密保护。原始工程文件不受影响。
      */
-    static boolean roundTrips(byte[] raw) {
-        String text = new String(raw, java.nio.charset.StandardCharsets.UTF_8);
-        return java.util.Arrays.equals(text.getBytes(java.nio.charset.StandardCharsets.UTF_8), raw);
+    static OutputStream lines(OutputStream output) {
+        return new OutputStream() {
+            // 总输入由 reader 按执行输出限额控制；不完整行只占用本次限额内的内存，不落原文。
+            private final ByteArrayOutputStream pending = new ByteArrayOutputStream();
+            private boolean closed;
+
+            @Override public synchronized void write(int value) throws IOException {
+                write(new byte[]{(byte) value}, 0, 1);
+            }
+
+            @Override public synchronized void write(byte[] bytes, int offset, int length) throws IOException {
+                java.util.Objects.checkFromIndexSize(offset, length, bytes.length);
+                if (closed) throw new IOException("日志流已关闭。");
+                // 1. UTF-8 和秘密可以跨读取分块；只在真正的换行处分开。
+                int start = offset;
+                for (int index = offset; index < offset + length; index++) {
+                    if (bytes[index] != '\n') continue;
+                    pending.write(bytes, start, index - start + 1);
+                    emit();
+                    start = index + 1;
+                }
+                pending.write(bytes, start, offset + length - start);
+            }
+
+            private void emit() throws IOException {
+                // 2. 无论是否包含非法字节，落盘出口只接收遮盖后的文本。
+                output.write(mask(pending.toString(StandardCharsets.UTF_8)).getBytes(StandardCharsets.UTF_8));
+                output.flush();
+                pending.reset();
+            }
+
+            @Override public synchronized void close() throws IOException {
+                if (closed) return;
+                closed = true;
+                if (pending.size() > 0) emit();
+                // 共享文件由执行生命周期关闭，不由单条 stdout/stderr 提前关闭。
+            }
+        };
     }
 }

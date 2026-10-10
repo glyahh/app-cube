@@ -29,6 +29,8 @@ public class AgentRunService {
     private final ObjectMapper objectMapper;
     private final AppRunCoordinator coordinator;
     private final AgentRunPersistence persistence;
+    private final com.dbts.glyahhaigeneratecode.projectimport.ImportAgentEditPreparation editPreparation;
+    private final com.dbts.glyahhaigeneratecode.projectimport.ImportAgentEditExecution importExecution;
 
     /**
      * 跑一次 run，返回事件流。
@@ -62,8 +64,24 @@ public class AgentRunService {
         return coordinator.serialize(appId, () -> Flux.defer(() -> {
                     AgentRunRequest request = requestSupplier.get();
                     persistence.recordRun(request);
-                    Flux<AgentEvent> audited = persistence.tap(
-                            runOnce(request.toFrameJson(objectMapper)), request);
+                    Flux<AgentEvent> execution = Flux.defer(() -> {
+                        var prepared = editPreparation.prepare(request);
+                        if(prepared.row()!=null)return importExecution.execute(prepared);
+                        AtomicBoolean preparationSettled = new AtomicBoolean(false);
+                        return runOnce(prepared.request().toFrameJson(objectMapper))
+                                    .concatWith(Flux.defer(() -> {
+                                        if(preparationSettled.compareAndSet(false,true))editPreparation.finishNotReady(prepared, false);
+                                        return Flux.empty();
+                                    }))
+                                    .onErrorResume(error -> {
+                                        if(preparationSettled.compareAndSet(false,true))editPreparation.finishNotReady(prepared, false);
+                                        return Flux.error(error);
+                                    })
+                                    .doOnCancel(() -> {
+                                        if(preparationSettled.compareAndSet(false,true))editPreparation.finishNotReady(prepared, true);
+                                    });
+                    });
+                    Flux<AgentEvent> audited = persistence.tap(execution, request);
                     return UserFacingOutputHandler.apply(audited);
                 }))
                 .subscribeOn(Schedulers.boundedElastic());

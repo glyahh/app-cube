@@ -22,7 +22,7 @@ interface TaskView {
   status: string
   cleanup: string
   contentHash: string
-  manifest: { included: Array<{ path: string; size: string | number }> }
+  manifest: { included: Array<{ path: string; size: string | number; directory?: boolean }> }
 }
 
 async function call<T>(url: string, method: string, data?: unknown, signal?: AbortSignal, csrf?: string, binary = false): Promise<T> {
@@ -60,7 +60,7 @@ export async function submitFolderImport(request: FolderImportRequest, signal: A
     for (const [index, metadata] of task.manifest.included.entries()) {
       checkCancelled(signal)
       const entry = source.get(metadata.path)
-      if (!entry || entry.file.size !== Number(metadata.size)) throw new Error('服务端清单与所选文件不一致。')
+      if (!entry || entry.file.size !== Number(metadata.size) || !!entry.metadata.directory !== !!metadata.directory) throw new Error('服务端清单与所选文件不一致。')
       const updated: TaskView = await call<TaskView>(`/tasks/${taskId}/files/${index}?revision=${task.revision}`, 'PUT', entry.file, signal, csrf, true)
       if (updated.taskId !== taskId) throw new Error('导入任务关联错误。')
       task = updated

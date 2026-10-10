@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "feature": "project-import",
   "matrix": "docs/PLANS/project-import-test-matrix.md",
   "cases": [
@@ -19,6 +19,92 @@
         "ProjectImportStagingTest#storesActualBinaryBytesAndHashesWithoutTouchingOriginal (局部后端断言；最终应用/整组仍 NOT_RUN)",
         "ProjectImportPublicationFilesTest (真实候选副本与内容复核；未覆盖整组)",
         "scripts/verify-folder-import-real.mjs (正式浏览器与最终文件局部)"
+      ],
+      "subscenarios": [
+        {
+          "id": "normal",
+          "requirement": "普通工程相对路径和内容正确",
+          "expected": "相对路径和内容正确；目录、源码查看对应当前新应用",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "nested",
+          "requirement": "嵌套目录结构保持",
+          "expected": "相对路径和内容正确；目录、源码查看对应当前新应用",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "chinese",
+          "requirement": "中文路径和文件名保持",
+          "expected": "相对路径和内容正确；目录、源码查看对应当前新应用",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "spaces",
+          "requirement": "空格路径和文件名保持",
+          "expected": "相对路径和内容正确；目录、源码查看对应当前新应用",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "empty-file",
+          "requirement": "空文件长度为零且可查看",
+          "expected": "相对路径和内容正确；目录、源码查看对应当前新应用",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "binary",
+          "requirement": "二进制字节摘要一致",
+          "expected": "相对路径和内容正确；目录、源码查看对应当前新应用",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "empty-directory",
+          "requirement": "空目录和目录语义保持",
+          "expected": "相对路径和内容正确；目录、源码查看对应当前新应用",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -32,6 +118,48 @@
       "implementedTests": [
         "ProjectImportManifestTest#retainsDependenciesAndBuildOutputsByDefault (仅纯清单断言；整组仍 NOT_RUN)",
         "ImportTaskServiceTest#frozenSourcePersistsAndActualFilesReachWaitingConfirmationNotSuccess (局部后端断言；最终应用/整组仍 NOT_RUN)"
+      ],
+      "subscenarios": [
+        {
+          "id": "node-modules",
+          "requirement": "默认保留选定node_modules内容",
+          "expected": "`node_modules`、`.venv`、`dist`、`target` 中的选定文件实际保留，不隐式过滤",
+          "layers": [
+            "接口",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "venv",
+          "requirement": "默认保留选定.venv内容",
+          "expected": "`node_modules`、`.venv`、`dist`、`target` 中的选定文件实际保留，不隐式过滤",
+          "layers": [
+            "接口",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "dist",
+          "requirement": "默认保留选定dist内容",
+          "expected": "`node_modules`、`.venv`、`dist`、`target` 中的选定文件实际保留，不隐式过滤",
+          "layers": [
+            "接口",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "target",
+          "requirement": "默认保留选定target内容",
+          "expected": "`node_modules`、`.venv`、`dist`、`target` 中的选定文件实际保留，不隐式过滤",
+          "layers": [
+            "接口",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -45,6 +173,63 @@
       "implementedTests": [
         "ProjectImportManifestTest#appliesEveryFilterCombinationWithoutChangingInput (仅纯清单断言；整组仍 NOT_RUN)",
         "ProjectImportManifestTest#sensitiveReasonTakesPrecedenceOverDirectoryFilters (仅纯清单断言；整组仍 NOT_RUN)"
+      ],
+      "subscenarios": [
+        {
+          "id": "dependencies",
+          "requirement": "仅跳过用户选定依赖范围",
+          "expected": "仅过滤用户所选范围；摘要、排除清单与最终文件一致",
+          "layers": [
+            "单元",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "outputs",
+          "requirement": "仅跳过用户选定构建产物",
+          "expected": "仅过滤用户所选范围；摘要、排除清单与最终文件一致",
+          "layers": [
+            "单元",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "combined",
+          "requirement": "组合规则与排除原因优先级正确",
+          "expected": "仅过滤用户所选范围；摘要、排除清单与最终文件一致",
+          "layers": [
+            "单元",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "unselected",
+          "requirement": "未勾选规则不隐式过滤",
+          "expected": "仅过滤用户所选范围；摘要、排除清单与最终文件一致",
+          "layers": [
+            "单元",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "manifest",
+          "requirement": "摘要和排除清单与发布文件一致",
+          "expected": "仅过滤用户所选范围；摘要、排除清单与最终文件一致",
+          "layers": [
+            "单元",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -58,6 +243,63 @@
       "implementedTests": [
         "ProjectImportManifestTest#excludesSensitiveNames (仅纯清单断言；整组仍 NOT_RUN)",
         "ProjectImportManifestTest#preservesExamplesAndNonMatchingNames (仅纯清单断言；整组仍 NOT_RUN)"
+      ],
+      "subscenarios": [
+        {
+          "id": "default-exclude",
+          "requirement": "默认排除敏感配置",
+          "expected": "选择与文件结果一致；示例中的测试密钥标记不能泄漏到模型/日志",
+          "layers": [
+            "单元",
+            "端到端",
+            "泄漏检查"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "examples",
+          "requirement": "示例配置保留且内部测试密钥不泄漏",
+          "expected": "选择与文件结果一致；示例中的测试密钥标记不能泄漏到模型/日志",
+          "layers": [
+            "单元",
+            "端到端",
+            "泄漏检查"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "explicit-include",
+          "requirement": "明确包含配置时发布保留但模型隔离",
+          "expected": "选择与文件结果一致；示例中的测试密钥标记不能泄漏到模型/日志",
+          "layers": [
+            "单元",
+            "端到端",
+            "泄漏检查"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "secret-names",
+          "requirement": "秘密文件名不进入模型与日志",
+          "expected": "选择与文件结果一致；示例中的测试密钥标记不能泄漏到模型/日志",
+          "layers": [
+            "单元",
+            "端到端",
+            "泄漏检查"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "constant-secrets",
+          "requirement": "源码常量秘密不进入模型实际请求",
+          "expected": "选择与文件结果一致；示例中的测试密钥标记不能泄漏到模型/日志",
+          "layers": [
+            "单元",
+            "端到端",
+            "泄漏检查"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -74,6 +316,85 @@
         "ProjectImportManifestTest#boundsPathLengthAndComponentLength (仅纯清单断言；整组仍 NOT_RUN)",
         "ProjectImportStagingTest#windowsJunctionRootCannotBecomeManagedStaging (局部后端断言；最终应用/整组仍 NOT_RUN)",
         "ProjectImportStagingTest#childJunctionCleanupNeverDeletesItsOutsideTarget (局部后端断言；最终应用/整组仍 NOT_RUN)"
+      ],
+      "subscenarios": [
+        {
+          "id": "traversal",
+          "requirement": "拒绝上级路径逃逸",
+          "expected": "不越出任务工作副本；拒绝或异常处理明确，不静默写入他处",
+          "layers": [
+            "单元",
+            "接口",
+            "隔离环境实测"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "absolute",
+          "requirement": "拒绝绝对路径及盘符路径",
+          "expected": "不越出任务工作副本；拒绝或异常处理明确，不静默写入他处",
+          "layers": [
+            "单元",
+            "接口",
+            "隔离环境实测"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "duplicate",
+          "requirement": "拒绝重复相对路径",
+          "expected": "不越出任务工作副本；拒绝或异常处理明确，不静默写入他处",
+          "layers": [
+            "单元",
+            "接口",
+            "隔离环境实测"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "case-alias",
+          "requirement": "拒绝大小写和规范化别名冲突",
+          "expected": "不越出任务工作副本；拒绝或异常处理明确，不静默写入他处",
+          "layers": [
+            "单元",
+            "接口",
+            "隔离环境实测"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "file-directory",
+          "requirement": "拒绝文件目录冲突",
+          "expected": "不越出任务工作副本；拒绝或异常处理明确，不静默写入他处",
+          "layers": [
+            "单元",
+            "接口",
+            "隔离环境实测"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "external-link",
+          "requirement": "拒绝工作区外符号链接",
+          "expected": "不越出任务工作副本；拒绝或异常处理明确，不静默写入他处",
+          "layers": [
+            "单元",
+            "接口",
+            "隔离环境实测"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "junction",
+          "requirement": "拒绝Windows junction和祖先链接逃逸",
+          "expected": "不越出任务工作副本；拒绝或异常处理明确，不静默写入他处",
+          "layers": [
+            "单元",
+            "接口",
+            "隔离环境实测"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -90,6 +411,78 @@
         "ProjectImportManifestTest#acceptsExactQuotaAndRejectsLongOverflow (仅纯清单断言；整组仍 NOT_RUN)",
         "ProjectImportStagingTest#rejectsShortLongAndFailingStreamsAndRemovesOnlyItsPartialFile (局部后端断言；最终应用/整组仍 NOT_RUN)",
         "ImportTaskServiceTest#truncatedUploadFailsAndCleansOnlyThisTask (局部后端断言；最终应用/整组仍 NOT_RUN)"
+      ],
+      "subscenarios": [
+        {
+          "id": "file-count",
+          "requirement": "文件数量超限拒绝且不截断成功",
+          "expected": "状态真实，不隐式截断后报成功；资源限制与最终文件可核对",
+          "layers": [
+            "接口",
+            "故障注入"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "bytes",
+          "requirement": "总字节超限拒绝且不截断成功",
+          "expected": "状态真实，不隐式截断后报成功；资源限制与最终文件可核对",
+          "layers": [
+            "接口",
+            "故障注入"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "single-file",
+          "requirement": "单文件超限拒绝",
+          "expected": "状态真实，不隐式截断后报成功；资源限制与最终文件可核对",
+          "layers": [
+            "接口",
+            "故障注入"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "interrupt",
+          "requirement": "上传中断状态和私有残留正确",
+          "expected": "状态真实，不隐式截断后报成功；资源限制与最终文件可核对",
+          "layers": [
+            "接口",
+            "故障注入"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "read-failure",
+          "requirement": "读取失败不发布半成品",
+          "expected": "状态真实，不隐式截断后报成功；资源限制与最终文件可核对",
+          "layers": [
+            "接口",
+            "故障注入"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "empty-range",
+          "requirement": "空范围拒绝",
+          "expected": "状态真实，不隐式截断后报成功；资源限制与最终文件可核对",
+          "layers": [
+            "接口",
+            "故障注入"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "duplicate-submit",
+          "requirement": "重复提交不重复发布或串任务",
+          "expected": "状态真实，不隐式截断后报成功；资源限制与最终文件可核对",
+          "layers": [
+            "接口",
+            "故障注入"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -105,6 +498,58 @@
       ],
       "implementedTests": [
         "ImportTaskServiceTest#successfulPublicationPreservesOriginalAndRetryNeverCreatesAnotherApplication (保护来源/独立 App 局部)"
+      ],
+      "subscenarios": [
+        {
+          "id": "upload",
+          "requirement": "上传不修改原工程和其他应用",
+          "expected": "原工程、既有应用保持不变；对导入副本的修改不串写来源",
+          "layers": [
+            "全流程",
+            "内容清单对比"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "install",
+          "requirement": "安装副本不修改原工程和其他应用",
+          "expected": "原工程、既有应用保持不变；对导入副本的修改不串写来源",
+          "layers": [
+            "全流程",
+            "内容清单对比"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "run",
+          "requirement": "运行副本不修改原工程和其他应用",
+          "expected": "原工程、既有应用保持不变；对导入副本的修改不串写来源",
+          "layers": [
+            "全流程",
+            "内容清单对比"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "repair",
+          "requirement": "修复只合入本应用不回写原工程",
+          "expected": "原工程、既有应用保持不变；对导入副本的修改不串写来源",
+          "layers": [
+            "全流程",
+            "内容清单对比"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "source-change",
+          "requirement": "导入中来源变化不混合内容版本",
+          "expected": "原工程、既有应用保持不变；对导入副本的修改不串写来源",
+          "layers": [
+            "全流程",
+            "内容清单对比"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -115,7 +560,64 @@
       "layers": "真实平台集成、浏览器、磁盘核对",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "default-branch",
+          "requirement": "真实公开仓库默认分支导入",
+          "expected": "真实读取、分支选择、文件接入与实际 commit 一致",
+          "layers": [
+            "真实平台集成",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "selected-branch",
+          "requirement": "真实公开仓库选定分支导入",
+          "expected": "真实读取、分支选择、文件接入与实际 commit 一致",
+          "layers": [
+            "真实平台集成",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "commit",
+          "requirement": "最终commit与平台来源相同",
+          "expected": "真实读取、分支选择、文件接入与实际 commit 一致",
+          "layers": [
+            "真实平台集成",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "files",
+          "requirement": "最终文件摘要和浏览器内容相同",
+          "expected": "真实读取、分支选择、文件接入与实际 commit 一致",
+          "layers": [
+            "真实平台集成",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "read-only",
+          "requirement": "导入不推送或更改远端",
+          "expected": "真实读取、分支选择、文件接入与实际 commit 一致",
+          "layers": [
+            "真实平台集成",
+            "浏览器",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "G02",
@@ -125,7 +627,64 @@
       "layers": "真实平台集成、浏览器、泄漏检查",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "private-source",
+          "requirement": "本轮随机标记专用私库导入成功",
+          "expected": "使用用户有权访问的凭据；文件与来源正确，未泄漏 Token",
+          "layers": [
+            "真实平台集成",
+            "浏览器",
+            "泄漏检查"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "private-branches",
+          "requirement": "私库默认与不同分支均独立导入",
+          "expected": "使用用户有权访问的凭据；文件与来源正确，未泄漏 Token",
+          "layers": [
+            "真实平台集成",
+            "浏览器",
+            "泄漏检查"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "credential",
+          "requirement": "选择的有效凭据被使用且不回退其他凭据",
+          "expected": "使用用户有权访问的凭据；文件与来源正确，未泄漏 Token",
+          "layers": [
+            "真实平台集成",
+            "浏览器",
+            "泄漏检查"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "final-state",
+          "requirement": "最终app、commit、文件、数据库和浏览器一致",
+          "expected": "使用用户有权访问的凭据；文件与来源正确，未泄漏 Token",
+          "layers": [
+            "真实平台集成",
+            "浏览器",
+            "泄漏检查"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "secret-chain",
+          "requirement": "Token不进入日志、代码、模型、进程参数和产物",
+          "expected": "使用用户有权访问的凭据；文件与来源正确，未泄漏 Token",
+          "layers": [
+            "真实平台集成",
+            "浏览器",
+            "泄漏检查"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "G03",
@@ -133,9 +692,10 @@
       "scenario": "Gitee 公开仓库",
       "expected": "同 G01，独立记录结果，不用 GitHub 结果替代",
       "layers": "真实平台集成、浏览器、磁盘核对",
-      "status": "NOT_RUN",
+      "status": "REMOVED_FROM_SCOPE",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "scopeReason": "用户明确产品移除 Gitee，保留历史数据；不表示通过。"
     },
     {
       "id": "G04",
@@ -143,9 +703,10 @@
       "scenario": "Gitee 私有仓库",
       "expected": "同 G02，独立核对该平台权限与响应",
       "layers": "真实平台集成、浏览器、泄漏检查",
-      "status": "NOT_RUN",
+      "status": "REMOVED_FROM_SCOPE",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "scopeReason": "用户明确产品移除 Gitee，保留历史数据；不表示通过。"
     },
     {
       "id": "G05",
@@ -155,7 +716,64 @@
       "layers": "单元、平台集成、浏览器",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "default",
+          "requirement": "默认分支展示和选择",
+          "expected": "有权限分支不遗漏；选中项明确，单次只有一个分支",
+          "layers": [
+            "单元",
+            "平台集成",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "nondefault",
+          "requirement": "非默认分支选择",
+          "expected": "有权限分支不遗漏；选中项明确，单次只有一个分支",
+          "layers": [
+            "单元",
+            "平台集成",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "search",
+          "requirement": "分支搜索正确",
+          "expected": "有权限分支不遗漏；选中项明确，单次只有一个分支",
+          "layers": [
+            "单元",
+            "平台集成",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "pagination",
+          "requirement": "分支分页不遗漏或混入其他来源",
+          "expected": "有权限分支不遗漏；选中项明确，单次只有一个分支",
+          "layers": [
+            "单元",
+            "平台集成",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "single",
+          "requirement": "仅一个分支的仓库正确",
+          "expected": "有权限分支不遗漏；选中项明确，单次只有一个分支",
+          "layers": [
+            "单元",
+            "平台集成",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "G06",
@@ -170,6 +788,38 @@
       ],
       "implementedTests": [
         "ImportRepositorySourceTest#branchIsOneValidatedRefNotCommandOptionsOrRevisionExpression (纯分支校验；真实路由尚未完成)"
+      ],
+      "subscenarios": [
+        {
+          "id": "multiple",
+          "requirement": "伪造多个分支选择被拒绝",
+          "expected": "后端同样遵守首期单分支入口，不绕过界面批量创建或进入未支持路径",
+          "layers": [
+            "接口负例",
+            "数据库核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "tag",
+          "requirement": "伪造tag选择被拒绝",
+          "expected": "后端同样遵守首期单分支入口，不绕过界面批量创建或进入未支持路径",
+          "layers": [
+            "接口负例",
+            "数据库核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "commit",
+          "requirement": "伪造commit选择被拒绝",
+          "expected": "后端同样遵守首期单分支入口，不绕过界面批量创建或进入未支持路径",
+          "layers": [
+            "接口负例",
+            "数据库核对"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -180,7 +830,53 @@
       "layers": "控制样本、集成、版本核对",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "branch-change",
+          "requirement": "预览后分支提交变化不混合版本",
+          "expected": "记录实际读取版本；最终文件不混用旧预览或其他分支，失败真实",
+          "layers": [
+            "控制样本",
+            "集成",
+            "版本核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "branch-gone",
+          "requirement": "预览后分支消失明确失败",
+          "expected": "记录实际读取版本；最终文件不混用旧预览或其他分支，失败真实",
+          "layers": [
+            "控制样本",
+            "集成",
+            "版本核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "access-gone",
+          "requirement": "预览后权限失效明确失败",
+          "expected": "记录实际读取版本；最终文件不混用旧预览或其他分支，失败真实",
+          "layers": [
+            "控制样本",
+            "集成",
+            "版本核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "late-preview",
+          "requirement": "旧预览结果不能覆盖新选择",
+          "expected": "记录实际读取版本；最终文件不混用旧预览或其他分支，失败真实",
+          "layers": [
+            "控制样本",
+            "集成",
+            "版本核对"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "G08",
@@ -195,6 +891,68 @@
       ],
       "implementedTests": [
         "ImportRepositorySourceTest#rejectsSecretUrlsProtocolsPortsQueriesAndForeignDestinations (纯来源校验；网络目的地尚未完成)"
+      ],
+      "subscenarios": [
+        {
+          "id": "provider",
+          "requirement": "不支持平台被拒绝",
+          "expected": "来源校验明确；Token 不发送到不应接收的地址，不落入 URL/命令参数",
+          "layers": [
+            "单元",
+            "隔离网络测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "address",
+          "requirement": "异常地址和平台错配被拒绝",
+          "expected": "来源校验明确；Token 不发送到不应接收的地址，不落入 URL/命令参数",
+          "layers": [
+            "单元",
+            "隔离网络测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "redirect",
+          "requirement": "重定向不把Token带往错误主机",
+          "expected": "来源校验明确；Token 不发送到不应接收的地址，不落入 URL/命令参数",
+          "layers": [
+            "单元",
+            "隔离网络测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "url",
+          "requirement": "Token不进入URL",
+          "expected": "来源校验明确；Token 不发送到不应接收的地址，不落入 URL/命令参数",
+          "layers": [
+            "单元",
+            "隔离网络测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "arguments",
+          "requirement": "Token不进入进程参数",
+          "expected": "来源校验明确；Token 不发送到不应接收的地址，不落入 URL/命令参数",
+          "layers": [
+            "单元",
+            "隔离网络测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "host-normalization",
+          "requirement": "地址规范化不绕过精确主机准入",
+          "expected": "来源校验明确；Token 不发送到不应接收的地址，不落入 URL/命令参数",
+          "layers": [
+            "单元",
+            "隔离网络测试"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -205,7 +963,75 @@
       "layers": "平台负例、接口、状态核对",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "invalid",
+          "requirement": "无效凭据拒绝",
+          "expected": "脱敏错误和失败状态正确，不自动尝试其他用户或其他未选凭据",
+          "layers": [
+            "平台负例",
+            "接口",
+            "状态核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "expired",
+          "requirement": "过期凭据拒绝",
+          "expected": "脱敏错误和失败状态正确，不自动尝试其他用户或其他未选凭据",
+          "layers": [
+            "平台负例",
+            "接口",
+            "状态核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "revoked",
+          "requirement": "撤销凭据拒绝",
+          "expected": "脱敏错误和失败状态正确，不自动尝试其他用户或其他未选凭据",
+          "layers": [
+            "平台负例",
+            "接口",
+            "状态核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "insufficient",
+          "requirement": "权限不足凭据拒绝",
+          "expected": "脱敏错误和失败状态正确，不自动尝试其他用户或其他未选凭据",
+          "layers": [
+            "平台负例",
+            "接口",
+            "状态核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "missing-repo",
+          "requirement": "不存在仓库拒绝",
+          "expected": "脱敏错误和失败状态正确，不自动尝试其他用户或其他未选凭据",
+          "layers": [
+            "平台负例",
+            "接口",
+            "状态核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "no-fallback",
+          "requirement": "失败不偷偷使用其他凭据",
+          "expected": "脱敏错误和失败状态正确，不自动尝试其他用户或其他未选凭据",
+          "layers": [
+            "平台负例",
+            "接口",
+            "状态核对"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "G10",
@@ -215,7 +1041,49 @@
       "layers": "故障注入、状态和磁盘核对",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "interrupt",
+          "requirement": "网络中断不产生可用半成品",
+          "expected": "无半成品可用应用，失败证据保留、残留仅清理本任务范围",
+          "layers": [
+            "故障注入",
+            "状态和磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "timeout",
+          "requirement": "下载超时明确失败",
+          "expected": "无半成品可用应用，失败证据保留、残留仅清理本任务范围",
+          "layers": [
+            "故障注入",
+            "状态和磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "transient",
+          "requirement": "临时下载失败按规则处理不无限重试",
+          "expected": "无半成品可用应用，失败证据保留、残留仅清理本任务范围",
+          "layers": [
+            "故障注入",
+            "状态和磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "cleanup",
+          "requirement": "失败只清理本任务并核对实际残留",
+          "expected": "无半成品可用应用，失败证据保留、残留仅清理本任务范围",
+          "layers": [
+            "故障注入",
+            "状态和磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "G11",
@@ -225,7 +1093,53 @@
       "layers": "平台集成、数据库、磁盘核对",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "same-branch",
+          "requirement": "重复导入同仓库同分支形成独立应用",
+          "expected": "新应用、新工作副本独立；远端无导入引起的提交/推送",
+          "layers": [
+            "平台集成",
+            "数据库",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "different-branch",
+          "requirement": "重复导入不同分支形成独立应用",
+          "expected": "新应用、新工作副本独立；远端无导入引起的提交/推送",
+          "layers": [
+            "平台集成",
+            "数据库",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "independent",
+          "requirement": "任一副本修改不影响另一副本",
+          "expected": "新应用、新工作副本独立；远端无导入引起的提交/推送",
+          "layers": [
+            "平台集成",
+            "数据库",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "no-push",
+          "requirement": "导入全过程不推送远端",
+          "expected": "新应用、新工作副本独立；远端无导入引起的提交/推送",
+          "layers": [
+            "平台集成",
+            "数据库",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "C01",
@@ -241,6 +1155,68 @@
       "implementedTests": [
         "ImportCredentialServiceTest#createProducesMetadataOnlyAndIndependentServerIds",
         "scripts/verify-import-credentials.py (多凭据与数据库局部；Git 界面联调未完成)"
+      ],
+      "subscenarios": [
+        {
+          "id": "add",
+          "requirement": "多条凭据新增和脱敏列表正确",
+          "expected": "新增不覆盖；选择、替换、删除只影响对应凭据",
+          "layers": [
+            "单元",
+            "接口",
+            "数据库",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "select",
+          "requirement": "按所选凭据使用不混用",
+          "expected": "新增不覆盖；选择、替换、删除只影响对应凭据",
+          "layers": [
+            "单元",
+            "接口",
+            "数据库",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "replace",
+          "requirement": "替换只作用目标凭据并撤销旧资格",
+          "expected": "新增不覆盖；选择、替换、删除只影响对应凭据",
+          "layers": [
+            "单元",
+            "接口",
+            "数据库",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "delete",
+          "requirement": "删除只作用目标凭据并撤销旧资格",
+          "expected": "新增不覆盖；选择、替换、删除只影响对应凭据",
+          "layers": [
+            "单元",
+            "接口",
+            "数据库",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "independent",
+          "requirement": "一条凭据变化不影响无关凭据和任务",
+          "expected": "新增不覆盖；选择、替换、删除只影响对应凭据",
+          "layers": [
+            "单元",
+            "接口",
+            "数据库",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -259,6 +1235,118 @@
         "ImportWorkspaceGateTest",
         "ImportCredentialControllerTest#csrfIdentityAndBodyLimitsApplyBeforeCredentialMutation",
         "scripts/verify-folder-import-real.mjs (私有预览/浏览器隔离局部)"
+      ],
+      "subscenarios": [
+        {
+          "id": "anonymous",
+          "requirement": "未登录不能访问导入来源与凭据",
+          "expected": "后端拒绝越权，不只依赖前端隐藏；未完成/恢复中的导入不可通过静态、预览、下载等入口读取；无跨用户状态或文件泄漏",
+          "layers": [
+            "接口",
+            "端到端",
+            "入口覆盖核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "foreign-credential",
+          "requirement": "跨用户凭据访问拒绝",
+          "expected": "后端拒绝越权，不只依赖前端隐藏；未完成/恢复中的导入不可通过静态、预览、下载等入口读取；无跨用户状态或文件泄漏",
+          "layers": [
+            "接口",
+            "端到端",
+            "入口覆盖核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "foreign-app",
+          "requirement": "跨用户应用访问拒绝",
+          "expected": "后端拒绝越权，不只依赖前端隐藏；未完成/恢复中的导入不可通过静态、预览、下载等入口读取；无跨用户状态或文件泄漏",
+          "layers": [
+            "接口",
+            "端到端",
+            "入口覆盖核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "foreign-task",
+          "requirement": "跨用户任务访问拒绝",
+          "expected": "后端拒绝越权，不只依赖前端隐藏；未完成/恢复中的导入不可通过静态、预览、下载等入口读取；无跨用户状态或文件泄漏",
+          "layers": [
+            "接口",
+            "端到端",
+            "入口覆盖核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "unpublished",
+          "requirement": "未发布内容与静态入口不可访问",
+          "expected": "后端拒绝越权，不只依赖前端隐藏；未完成/恢复中的导入不可通过静态、预览、下载等入口读取；无跨用户状态或文件泄漏",
+          "layers": [
+            "接口",
+            "端到端",
+            "入口覆盖核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "recovery",
+          "requirement": "恢复入口仍验证归属",
+          "expected": "后端拒绝越权，不只依赖前端隐藏；未完成/恢复中的导入不可通过静态、预览、下载等入口读取；无跨用户状态或文件泄漏",
+          "layers": [
+            "接口",
+            "端到端",
+            "入口覆盖核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "preview",
+          "requirement": "预览入口仍验证归属",
+          "expected": "后端拒绝越权，不只依赖前端隐藏；未完成/恢复中的导入不可通过静态、预览、下载等入口读取；无跨用户状态或文件泄漏",
+          "layers": [
+            "接口",
+            "端到端",
+            "入口覆盖核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "download",
+          "requirement": "下载入口仍验证归属",
+          "expected": "后端拒绝越权，不只依赖前端隐藏；未完成/恢复中的导入不可通过静态、预览、下载等入口读取；无跨用户状态或文件泄漏",
+          "layers": [
+            "接口",
+            "端到端",
+            "入口覆盖核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "edit-sse",
+          "requirement": "正式SSE编辑验证归属",
+          "expected": "后端拒绝越权，不只依赖前端隐藏；未完成/恢复中的导入不可通过静态、预览、下载等入口读取；无跨用户状态或文件泄漏",
+          "layers": [
+            "接口",
+            "端到端",
+            "入口覆盖核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "edit-websocket",
+          "requirement": "正式WebSocket编辑验证归属",
+          "expected": "后端拒绝越权，不只依赖前端隐藏；未完成/恢复中的导入不可通过静态、预览、下载等入口读取；无跨用户状态或文件泄漏",
+          "layers": [
+            "接口",
+            "端到端",
+            "入口覆盖核对"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -276,6 +1364,151 @@
         "ImportCredentialCipherTest (AES-GCM/AAD/篡改/换 keyId 局部；不是线上轮换)",
         "ImportCredentialKeyProviderTest (失钥/坏配置/仓库外存储)",
         "ImportCredentialControllerTest#secretInputCannotSerializeOrAppearInToString"
+      ],
+      "subscenarios": [
+        {
+          "id": "encryption",
+          "requirement": "密文持久化与解密正确",
+          "expected": "不以密码摘要存 Token；验证失败不明文回退；轮换不误作用户换 Token；浏览器持久存储、日志、模型输入、代码、URL、进程参数和下载包不含测试令牌值，helper 私有秘密协议输出不接通用事件/日志采集",
+          "layers": [
+            "集成",
+            "泄漏检查",
+            "密钥故障样本"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "aad",
+          "requirement": "跨身份AAD替换拒绝",
+          "expected": "不以密码摘要存 Token；验证失败不明文回退；轮换不误作用户换 Token；浏览器持久存储、日志、模型输入、代码、URL、进程参数和下载包不含测试令牌值，helper 私有秘密协议输出不接通用事件/日志采集",
+          "layers": [
+            "集成",
+            "泄漏检查",
+            "密钥故障样本"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "tamper",
+          "requirement": "密文篡改拒绝",
+          "expected": "不以密码摘要存 Token；验证失败不明文回退；轮换不误作用户换 Token；浏览器持久存储、日志、模型输入、代码、URL、进程参数和下载包不含测试令牌值，helper 私有秘密协议输出不接通用事件/日志采集",
+          "layers": [
+            "集成",
+            "泄漏检查",
+            "密钥故障样本"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "missing-key",
+          "requirement": "缺失密钥明确拒绝",
+          "expected": "不以密码摘要存 Token；验证失败不明文回退；轮换不误作用户换 Token；浏览器持久存储、日志、模型输入、代码、URL、进程参数和下载包不含测试令牌值，helper 私有秘密协议输出不接通用事件/日志采集",
+          "layers": [
+            "集成",
+            "泄漏检查",
+            "密钥故障样本"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "rotation",
+          "requirement": "密钥轮换兼容且不静默损坏",
+          "expected": "不以密码摘要存 Token；验证失败不明文回退；轮换不误作用户换 Token；浏览器持久存储、日志、模型输入、代码、URL、进程参数和下载包不含测试令牌值，helper 私有秘密协议输出不接通用事件/日志采集",
+          "layers": [
+            "集成",
+            "泄漏检查",
+            "密钥故障样本"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "browser-storage",
+          "requirement": "浏览器持久存储不含秘密",
+          "expected": "不以密码摘要存 Token；验证失败不明文回退；轮换不误作用户换 Token；浏览器持久存储、日志、模型输入、代码、URL、进程参数和下载包不含测试令牌值，helper 私有秘密协议输出不接通用事件/日志采集",
+          "layers": [
+            "集成",
+            "泄漏检查",
+            "密钥故障样本"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "logs",
+          "requirement": "同步及异步日志不含秘密",
+          "expected": "不以密码摘要存 Token；验证失败不明文回退；轮换不误作用户换 Token；浏览器持久存储、日志、模型输入、代码、URL、进程参数和下载包不含测试令牌值，helper 私有秘密协议输出不接通用事件/日志采集",
+          "layers": [
+            "集成",
+            "泄漏检查",
+            "密钥故障样本"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "model",
+          "requirement": "模型实际请求不含秘密",
+          "expected": "不以密码摘要存 Token；验证失败不明文回退；轮换不误作用户换 Token；浏览器持久存储、日志、模型输入、代码、URL、进程参数和下载包不含测试令牌值，helper 私有秘密协议输出不接通用事件/日志采集",
+          "layers": [
+            "集成",
+            "泄漏检查",
+            "密钥故障样本"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "code",
+          "requirement": "生成源码和下载产物不含平台秘密",
+          "expected": "不以密码摘要存 Token；验证失败不明文回退；轮换不误作用户换 Token；浏览器持久存储、日志、模型输入、代码、URL、进程参数和下载包不含测试令牌值，helper 私有秘密协议输出不接通用事件/日志采集",
+          "layers": [
+            "集成",
+            "泄漏检查",
+            "密钥故障样本"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "url",
+          "requirement": "URL不含秘密",
+          "expected": "不以密码摘要存 Token；验证失败不明文回退；轮换不误作用户换 Token；浏览器持久存储、日志、模型输入、代码、URL、进程参数和下载包不含测试令牌值，helper 私有秘密协议输出不接通用事件/日志采集",
+          "layers": [
+            "集成",
+            "泄漏检查",
+            "密钥故障样本"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "process",
+          "requirement": "进程命令行和环境暴露受控",
+          "expected": "不以密码摘要存 Token；验证失败不明文回退；轮换不误作用户换 Token；浏览器持久存储、日志、模型输入、代码、URL、进程参数和下载包不含测试令牌值，helper 私有秘密协议输出不接通用事件/日志采集",
+          "layers": [
+            "集成",
+            "泄漏检查",
+            "密钥故障样本"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "helper-channel",
+          "requirement": "辅助程序私有通道不向其他用户泄漏",
+          "expected": "不以密码摘要存 Token；验证失败不明文回退；轮换不误作用户换 Token；浏览器持久存储、日志、模型输入、代码、URL、进程参数和下载包不含测试令牌值，helper 私有秘密协议输出不接通用事件/日志采集",
+          "layers": [
+            "集成",
+            "泄漏检查",
+            "密钥故障样本"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "memory",
+          "requirement": "持久对话记忆和checkpointer不含秘密",
+          "expected": "不以密码摘要存 Token；验证失败不明文回退；轮换不误作用户换 Token；浏览器持久存储、日志、模型输入、代码、URL、进程参数和下载包不含测试令牌值，helper 私有秘密协议输出不接通用事件/日志采集",
+          "layers": [
+            "集成",
+            "泄漏检查",
+            "密钥故障样本"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -293,6 +1526,140 @@
         "ImportCredentialServiceTest (备注/替换/删除局部)",
         "ImportCredentialControllerTest#replacementStopFailureIsReturnedRatherThanClaimingCancelled",
         "scripts/verify-import-credentials.py (受控租约两个提交顺序；非真实 Git 在途停止)"
+      ],
+      "subscenarios": [
+        {
+          "id": "note",
+          "requirement": "改备注不改变秘密版本和任务资格",
+          "expected": "改备注不取消；新导入用新值，不混版本；替换终止旧值未完成任务，提供新任务入口，不自动续跑或中途换身份；共享条件决定凭据变更与提交先后；删除取消关联未完成任务，晚到结果不转成功，停止失败明确；其他任务/已完成应用不受影响",
+          "layers": [
+            "状态机",
+            "有限并发",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "replace-prepare",
+          "requirement": "替换与准备竞争旧任务撤销",
+          "expected": "改备注不取消；新导入用新值，不混版本；替换终止旧值未完成任务，提供新任务入口，不自动续跑或中途换身份；共享条件决定凭据变更与提交先后；删除取消关联未完成任务，晚到结果不转成功，停止失败明确；其他任务/已完成应用不受影响",
+          "layers": [
+            "状态机",
+            "有限并发",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "replace-fetch",
+          "requirement": "替换与下载竞争晚到结果拒绝",
+          "expected": "改备注不取消；新导入用新值，不混版本；替换终止旧值未完成任务，提供新任务入口，不自动续跑或中途换身份；共享条件决定凭据变更与提交先后；删除取消关联未完成任务，晚到结果不转成功，停止失败明确；其他任务/已完成应用不受影响",
+          "layers": [
+            "状态机",
+            "有限并发",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "replace-confirm",
+          "requirement": "替换与确认竞争旧资格拒绝",
+          "expected": "改备注不取消；新导入用新值，不混版本；替换终止旧值未完成任务，提供新任务入口，不自动续跑或中途换身份；共享条件决定凭据变更与提交先后；删除取消关联未完成任务，晚到结果不转成功，停止失败明确；其他任务/已完成应用不受影响",
+          "layers": [
+            "状态机",
+            "有限并发",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "replace-commit",
+          "requirement": "替换与提交竞争不能发布旧版本",
+          "expected": "改备注不取消；新导入用新值，不混版本；替换终止旧值未完成任务，提供新任务入口，不自动续跑或中途换身份；共享条件决定凭据变更与提交先后；删除取消关联未完成任务，晚到结果不转成功，停止失败明确；其他任务/已完成应用不受影响",
+          "layers": [
+            "状态机",
+            "有限并发",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "delete-prepare",
+          "requirement": "删除与准备竞争旧任务撤销",
+          "expected": "改备注不取消；新导入用新值，不混版本；替换终止旧值未完成任务，提供新任务入口，不自动续跑或中途换身份；共享条件决定凭据变更与提交先后；删除取消关联未完成任务，晚到结果不转成功，停止失败明确；其他任务/已完成应用不受影响",
+          "layers": [
+            "状态机",
+            "有限并发",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "delete-fetch",
+          "requirement": "删除与下载竞争晚到结果拒绝",
+          "expected": "改备注不取消；新导入用新值，不混版本；替换终止旧值未完成任务，提供新任务入口，不自动续跑或中途换身份；共享条件决定凭据变更与提交先后；删除取消关联未完成任务，晚到结果不转成功，停止失败明确；其他任务/已完成应用不受影响",
+          "layers": [
+            "状态机",
+            "有限并发",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "delete-confirm",
+          "requirement": "删除与确认竞争旧资格拒绝",
+          "expected": "改备注不取消；新导入用新值，不混版本；替换终止旧值未完成任务，提供新任务入口，不自动续跑或中途换身份；共享条件决定凭据变更与提交先后；删除取消关联未完成任务，晚到结果不转成功，停止失败明确；其他任务/已完成应用不受影响",
+          "layers": [
+            "状态机",
+            "有限并发",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "delete-commit",
+          "requirement": "删除与提交竞争不能发布旧版本",
+          "expected": "改备注不取消；新导入用新值，不混版本；替换终止旧值未完成任务，提供新任务入口，不自动续跑或中途换身份；共享条件决定凭据变更与提交先后；删除取消关联未完成任务，晚到结果不转成功，停止失败明确；其他任务/已完成应用不受影响",
+          "layers": [
+            "状态机",
+            "有限并发",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "no-restart",
+          "requirement": "凭据变化不自动重新执行",
+          "expected": "改备注不取消；新导入用新值，不混版本；替换终止旧值未完成任务，提供新任务入口，不自动续跑或中途换身份；共享条件决定凭据变更与提交先后；删除取消关联未完成任务，晚到结果不转成功，停止失败明确；其他任务/已完成应用不受影响",
+          "layers": [
+            "状态机",
+            "有限并发",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "stop-failed",
+          "requirement": "停止失败保留待恢复且不释放槽位",
+          "expected": "改备注不取消；新导入用新值，不混版本；替换终止旧值未完成任务，提供新任务入口，不自动续跑或中途换身份；共享条件决定凭据变更与提交先后；删除取消关联未完成任务，晚到结果不转成功，停止失败明确；其他任务/已完成应用不受影响",
+          "layers": [
+            "状态机",
+            "有限并发",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "isolation",
+          "requirement": "竞争不影响其他应用和凭据",
+          "expected": "改备注不取消；新导入用新值，不混版本；替换终止旧值未完成任务，提供新任务入口，不自动续跑或中途换身份；共享条件决定凭据变更与提交先后；删除取消关联未完成任务，晚到结果不转成功，停止失败明确；其他任务/已完成应用不受影响",
+          "layers": [
+            "状态机",
+            "有限并发",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -303,7 +1670,108 @@
       "layers": "集成、Agent 防护、端到端",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "included-config",
+          "requirement": "明确包含秘密配置仅执行者可读而模型不可读",
+          "expected": "文件保存/沙箱使用与模型读取/日志分开；脱敏有效，不吞掉定位所需信息",
+          "layers": [
+            "集成",
+            "Agent 防护",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "source-constant",
+          "requirement": "源码常量秘密隔离",
+          "expected": "文件保存/沙箱使用与模型读取/日志分开；脱敏有效，不吞掉定位所需信息",
+          "layers": [
+            "集成",
+            "Agent 防护",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "error",
+          "requirement": "安装运行错误中的秘密不泄漏",
+          "expected": "文件保存/沙箱使用与模型读取/日志分开；脱敏有效，不吞掉定位所需信息",
+          "layers": [
+            "集成",
+            "Agent 防护",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "encoded",
+          "requirement": "多层编码输出不进入实际模型请求",
+          "expected": "文件保存/沙箱使用与模型读取/日志分开；脱敏有效，不吞掉定位所需信息",
+          "layers": [
+            "集成",
+            "Agent 防护",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "split",
+          "requirement": "拆分输出不进入实际模型请求",
+          "expected": "文件保存/沙箱使用与模型读取/日志分开；脱敏有效，不吞掉定位所需信息",
+          "layers": [
+            "集成",
+            "Agent 防护",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "async",
+          "requirement": "异步输出和日志不泄漏",
+          "expected": "文件保存/沙箱使用与模型读取/日志分开；脱敏有效，不吞掉定位所需信息",
+          "layers": [
+            "集成",
+            "Agent 防护",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "file-tools",
+          "requirement": "文件读取搜索下载不绕过秘密隔离",
+          "expected": "文件保存/沙箱使用与模型读取/日志分开；脱敏有效，不吞掉定位所需信息",
+          "layers": [
+            "集成",
+            "Agent 防护",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "shell",
+          "requirement": "Shell间接读取不能取得原秘密",
+          "expected": "文件保存/沙箱使用与模型读取/日志分开；脱敏有效，不吞掉定位所需信息",
+          "layers": [
+            "集成",
+            "Agent 防护",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "persistent-memory",
+          "requirement": "模型记忆不含秘密且平台恢复原配置",
+          "expected": "文件保存/沙箱使用与模型读取/日志分开；脱敏有效，不吞掉定位所需信息",
+          "layers": [
+            "集成",
+            "Agent 防护",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "U01",
@@ -316,6 +1784,52 @@
       "implementedTests": [
         "ImportPreferenceServiceTest#absentPreferencesUseConfirmedDefaults (局部后端断言；最终应用/整组仍 NOT_RUN)",
         "ProjectImportControllerTest#preferencesAreSessionOwnedAndExplicitSaveRequiresCsrfAndCompleteFields (局部后端断言；最终应用/整组仍 NOT_RUN)"
+      ],
+      "subscenarios": [
+        {
+          "id": "defaults",
+          "requirement": "默认偏好正确",
+          "expected": "默认值正确，保存后恢复；不同用户不共享偏好",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "save",
+          "requirement": "保存偏好生效",
+          "expected": "默认值正确，保存后恢复；不同用户不共享偏好",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "relogin",
+          "requirement": "重新登录仍保留个人偏好",
+          "expected": "默认值正确，保存后恢复；不同用户不共享偏好",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "cross-owner",
+          "requirement": "不同用户偏好互不覆盖",
+          "expected": "默认值正确，保存后恢复；不同用户不共享偏好",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -328,6 +1842,41 @@
       "evidence": [],
       "implementedTests": [
         "ImportTaskServiceTest#defaultsReadSavedPreferenceOnlyAtCreationAndExplicitOptionsNeverSaveIt (局部后端断言；最终应用/整组仍 NOT_RUN)"
+      ],
+      "subscenarios": [
+        {
+          "id": "temporary",
+          "requirement": "本次临时选择不改变未来偏好",
+          "expected": "本次按临时值执行，下次仍取已保存偏好，旧应用文件不变",
+          "layers": [
+            "单元",
+            "端到端",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "future",
+          "requirement": "设置未来偏好只影响未来导入",
+          "expected": "本次按临时值执行，下次仍取已保存偏好，旧应用文件不变",
+          "layers": [
+            "单元",
+            "端到端",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "old-app",
+          "requirement": "已导入应用内容不因偏好变化改变",
+          "expected": "本次按临时值执行，下次仍取已保存偏好，旧应用文件不变",
+          "layers": [
+            "单元",
+            "端到端",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -340,6 +1889,85 @@
       "evidence": [],
       "implementedTests": [
         "ProjectImportManifestTest#appliesEveryFilterCombinationWithoutChangingInput (仅纯清单断言；整组仍 NOT_RUN)"
+      ],
+      "subscenarios": [
+        {
+          "id": "folder-summary",
+          "requirement": "文件夹入口摘要正确",
+          "expected": "文件数/大小/排除项由实际范围产生，修改后更新，最终文件匹配",
+          "layers": [
+            "单元",
+            "端到端",
+            "内容清单"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "git-summary",
+          "requirement": "GitHub入口摘要正确",
+          "expected": "文件数/大小/排除项由实际范围产生，修改后更新，最终文件匹配",
+          "layers": [
+            "单元",
+            "端到端",
+            "内容清单"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "detail",
+          "requirement": "详情内容清单正确",
+          "expected": "文件数/大小/排除项由实际范围产生，修改后更新，最终文件匹配",
+          "layers": [
+            "单元",
+            "端到端",
+            "内容清单"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "rule-change",
+          "requirement": "改规则后重新计算",
+          "expected": "文件数/大小/排除项由实际范围产生，修改后更新，最终文件匹配",
+          "layers": [
+            "单元",
+            "端到端",
+            "内容清单"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "count",
+          "requirement": "文件数量与实际选择一致",
+          "expected": "文件数/大小/排除项由实际范围产生，修改后更新，最终文件匹配",
+          "layers": [
+            "单元",
+            "端到端",
+            "内容清单"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "bytes",
+          "requirement": "字节数量与实际选择一致",
+          "expected": "文件数/大小/排除项由实际范围产生，修改后更新，最终文件匹配",
+          "layers": [
+            "单元",
+            "端到端",
+            "内容清单"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "excluded",
+          "requirement": "排除清单与最终文件一致",
+          "expected": "文件数/大小/排除项由实际范围产生，修改后更新，最终文件匹配",
+          "layers": [
+            "单元",
+            "端到端",
+            "内容清单"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -352,6 +1980,52 @@
       "evidence": [],
       "implementedTests": [
         "ProjectImportManifestTest#validatesExcludedFilesTooAndDoesNotSilentlyTruncate (仅纯清单断言；整组仍 NOT_RUN)"
+      ],
+      "subscenarios": [
+        {
+          "id": "failure",
+          "requirement": "统计失败明确显示失败",
+          "expected": "明确异常，不当作完整扫描或零文件成功",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "partial",
+          "requirement": "统计不完整明确显示不完整",
+          "expected": "明确异常，不当作完整扫描或零文件成功",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "limit",
+          "requirement": "超限不显示为零或正常",
+          "expected": "明确异常，不当作完整扫描或零文件成功",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "stale",
+          "requirement": "旧统计不能覆盖当前规则",
+          "expected": "明确异常，不当作完整扫描或零文件成功",
+          "layers": [
+            "单元",
+            "接口",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -362,7 +2036,53 @@
       "layers": "单元、端到端、数据库",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "folder-name",
+          "requirement": "默认文件夹名称正确",
+          "expected": "名称正确保存；应用身份及来源独立，无重名覆盖",
+          "layers": [
+            "单元",
+            "端到端",
+            "数据库"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "repo-name",
+          "requirement": "默认仓库名称正确",
+          "expected": "名称正确保存；应用身份及来源独立，无重名覆盖",
+          "layers": [
+            "单元",
+            "端到端",
+            "数据库"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "manual-name",
+          "requirement": "手工名称保持",
+          "expected": "名称正确保存；应用身份及来源独立，无重名覆盖",
+          "layers": [
+            "单元",
+            "端到端",
+            "数据库"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "duplicate-name",
+          "requirement": "同名应用独立且不覆盖",
+          "expected": "名称正确保存；应用身份及来源独立，无重名覆盖",
+          "layers": [
+            "单元",
+            "端到端",
+            "数据库"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "U06",
@@ -372,7 +2092,108 @@
       "layers": "浏览器、真实业务状态、归属/权限负例",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "success-route",
+          "requirement": "仅导入成功进入正确app聊天页且不自动发送",
+          "expected": "仅最终成功进入本次独立应用的 `/app/:id/chat`，名称和归属正确；不携带 autoSend 或自动生成提示；失败/取消不进入工作台，失效任务或其他应用标识不能串写；安装提示在工作台内，刷新/返回遵守权威任务和应用资格",
+          "layers": [
+            "浏览器",
+            "真实业务状态",
+            "归属/权限负例"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "failure-route",
+          "requirement": "失败不跳转成功页",
+          "expected": "仅最终成功进入本次独立应用的 `/app/:id/chat`，名称和归属正确；不携带 autoSend 或自动生成提示；失败/取消不进入工作台，失效任务或其他应用标识不能串写；安装提示在工作台内，刷新/返回遵守权威任务和应用资格",
+          "layers": [
+            "浏览器",
+            "真实业务状态",
+            "归属/权限负例"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "cancel-route",
+          "requirement": "取消不跳转成功页",
+          "expected": "仅最终成功进入本次独立应用的 `/app/:id/chat`，名称和归属正确；不携带 autoSend 或自动生成提示；失败/取消不进入工作台，失效任务或其他应用标识不能串写；安装提示在工作台内，刷新/返回遵守权威任务和应用资格",
+          "layers": [
+            "浏览器",
+            "真实业务状态",
+            "归属/权限负例"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "stale-result",
+          "requirement": "旧成功结果不能切到其他应用",
+          "expected": "仅最终成功进入本次独立应用的 `/app/:id/chat`，名称和归属正确；不携带 autoSend 或自动生成提示；失败/取消不进入工作台，失效任务或其他应用标识不能串写；安装提示在工作台内，刷新/返回遵守权威任务和应用资格",
+          "layers": [
+            "浏览器",
+            "真实业务状态",
+            "归属/权限负例"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "foreign-result",
+          "requirement": "跨用户结果不可展示或切换",
+          "expected": "仅最终成功进入本次独立应用的 `/app/:id/chat`，名称和归属正确；不携带 autoSend 或自动生成提示；失败/取消不进入工作台，失效任务或其他应用标识不能串写；安装提示在工作台内，刷新/返回遵守权威任务和应用资格",
+          "layers": [
+            "浏览器",
+            "真实业务状态",
+            "归属/权限负例"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "workbench",
+          "requirement": "安装与运行授权在正式工作台展示",
+          "expected": "仅最终成功进入本次独立应用的 `/app/:id/chat`，名称和归属正确；不携带 autoSend 或自动生成提示；失败/取消不进入工作台，失效任务或其他应用标识不能串写；安装提示在工作台内，刷新/返回遵守权威任务和应用资格",
+          "layers": [
+            "浏览器",
+            "真实业务状态",
+            "归属/权限负例"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "refresh",
+          "requirement": "刷新从权威状态恢复",
+          "expected": "仅最终成功进入本次独立应用的 `/app/:id/chat`，名称和归属正确；不携带 autoSend 或自动生成提示；失败/取消不进入工作台，失效任务或其他应用标识不能串写；安装提示在工作台内，刷新/返回遵守权威任务和应用资格",
+          "layers": [
+            "浏览器",
+            "真实业务状态",
+            "归属/权限负例"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "back",
+          "requirement": "返回后状态和归属仍正确",
+          "expected": "仅最终成功进入本次独立应用的 `/app/:id/chat`，名称和归属正确；不携带 autoSend 或自动生成提示；失败/取消不进入工作台，失效任务或其他应用标识不能串写；安装提示在工作台内，刷新/返回遵守权威任务和应用资格",
+          "layers": [
+            "浏览器",
+            "真实业务状态",
+            "归属/权限负例"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "error-state",
+          "requirement": "正式浏览器呈现失败、待恢复和可重试状态",
+          "expected": "仅最终成功进入本次独立应用的 `/app/:id/chat`，名称和归属正确；不携带 autoSend 或自动生成提示；失败/取消不进入工作台，失效任务或其他应用标识不能串写；安装提示在工作台内，刷新/返回遵守权威任务和应用资格",
+          "layers": [
+            "浏览器",
+            "真实业务状态",
+            "归属/权限负例"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "D01",
@@ -382,7 +2203,49 @@
       "layers": "端到端、执行记录与进程核对",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "import",
+          "requirement": "导入不自动安装构建启动",
+          "expected": "没有依赖安装、工程构建或应用启动；后台也没有隐式执行这些动作",
+          "layers": [
+            "端到端",
+            "执行记录与进程核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "preview",
+          "requirement": "预览不自动安装构建启动",
+          "expected": "没有依赖安装、工程构建或应用启动；后台也没有隐式执行这些动作",
+          "layers": [
+            "端到端",
+            "执行记录与进程核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "scan",
+          "requirement": "扫描不执行脚本插件或后台安装",
+          "expected": "没有依赖安装、工程构建或应用启动；后台也没有隐式执行这些动作",
+          "layers": [
+            "端到端",
+            "执行记录与进程核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "background",
+          "requirement": "正式操作后的后台进程记录无隐藏执行",
+          "expected": "没有依赖安装、工程构建或应用启动；后台也没有隐式执行这些动作",
+          "layers": [
+            "端到端",
+            "执行记录与进程核对"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "D02",
@@ -392,7 +2255,29 @@
       "layers": "浏览器、后台状态",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "reject",
+          "requirement": "首次安装拒绝不执行",
+          "expected": "不安装，应用内“安装依赖”仍可用",
+          "layers": [
+            "浏览器",
+            "后台状态"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "later",
+          "requirement": "拒绝后仍可主动安装",
+          "expected": "不安装，应用内“安装依赖”仍可用",
+          "layers": [
+            "浏览器",
+            "后台状态"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "D03",
@@ -402,7 +2287,49 @@
       "layers": "浏览器、真实沙箱",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "initial-success",
+          "requirement": "首次确认安装成功只安装不启动",
+          "expected": "只安装，不启动应用；成功/失败状态与实际依赖对应",
+          "layers": [
+            "浏览器",
+            "真实沙箱"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "initial-failure",
+          "requirement": "首次确认安装失败不启动",
+          "expected": "只安装，不启动应用；成功/失败状态与实际依赖对应",
+          "layers": [
+            "浏览器",
+            "真实沙箱"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "standalone-success",
+          "requirement": "独立安装成功不启动",
+          "expected": "只安装，不启动应用；成功/失败状态与实际依赖对应",
+          "layers": [
+            "浏览器",
+            "真实沙箱"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "standalone-failure",
+          "requirement": "独立安装失败不启动",
+          "expected": "只安装，不启动应用；成功/失败状态与实际依赖对应",
+          "layers": [
+            "浏览器",
+            "真实沙箱"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "D04",
@@ -412,7 +2339,29 @@
       "layers": "端到端、进程核对",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "reject",
+          "requirement": "运行缺依赖时拒绝确认不安装不启动",
+          "expected": "再次提示，未确认则不安装也不启动",
+          "layers": [
+            "端到端",
+            "进程核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "cancel",
+          "requirement": "运行缺依赖时取消确认不安装不启动",
+          "expected": "再次提示，未确认则不安装也不启动",
+          "layers": [
+            "端到端",
+            "进程核对"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "D05",
@@ -422,7 +2371,69 @@
       "layers": "全流程、命令/状态与进程核对",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "approved",
+          "requirement": "批准后按同一冻结计划安装构建启动",
+          "expected": "继续同一有效计划的必要编译/构建并启动，不重复要求独立构建按钮；已有有效依赖不静默重装；共享准备记录输入与影响范围，失败只阻塞相关服务；不启动未选项，不串应用/版本，不额外执行平台验收或生产部署",
+          "layers": [
+            "全流程",
+            "命令/状态与进程核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "selected",
+          "requirement": "只启动已选服务",
+          "expected": "继续同一有效计划的必要编译/构建并启动，不重复要求独立构建按钮；已有有效依赖不静默重装；共享准备记录输入与影响范围，失败只阻塞相关服务；不启动未选项，不串应用/版本，不额外执行平台验收或生产部署",
+          "layers": [
+            "全流程",
+            "命令/状态与进程核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "ready-deps",
+          "requirement": "依赖已就绪不重复安装",
+          "expected": "继续同一有效计划的必要编译/构建并启动，不重复要求独立构建按钮；已有有效依赖不静默重装；共享准备记录输入与影响范围，失败只阻塞相关服务；不启动未选项，不串应用/版本，不额外执行平台验收或生产部署",
+          "layers": [
+            "全流程",
+            "命令/状态与进程核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "shared",
+          "requirement": "共享准备步骤仅执行一次",
+          "expected": "继续同一有效计划的必要编译/构建并启动，不重复要求独立构建按钮；已有有效依赖不静默重装；共享准备记录输入与影响范围，失败只阻塞相关服务；不启动未选项，不串应用/版本，不额外执行平台验收或生产部署",
+          "layers": [
+            "全流程",
+            "命令/状态与进程核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "related-failure",
+          "requirement": "共享步骤失败只阻止相关服务",
+          "expected": "继续同一有效计划的必要编译/构建并启动，不重复要求独立构建按钮；已有有效依赖不静默重装；共享准备记录输入与影响范围，失败只阻塞相关服务；不启动未选项，不串应用/版本，不额外执行平台验收或生产部署",
+          "layers": [
+            "全流程",
+            "命令/状态与进程核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "not-deployment",
+          "requirement": "运行成功不冒充生产发布或完整平台验收",
+          "expected": "继续同一有效计划的必要编译/构建并启动，不重复要求独立构建按钮；已有有效依赖不静默重装；共享准备记录输入与影响范围，失败只阻塞相关服务；不启动未选项，不串应用/版本，不额外执行平台验收或生产部署",
+          "layers": [
+            "全流程",
+            "命令/状态与进程核对"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "D06",
@@ -432,7 +2443,49 @@
       "layers": "故障注入、真实沙箱",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "failure",
+          "requirement": "安装失败不标记就绪不自动启动",
+          "expected": "不启动，不把部分安装标记为就绪；残留处理范围正确",
+          "layers": [
+            "故障注入",
+            "真实沙箱"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "timeout",
+          "requirement": "安装超时不标记就绪且实际停止",
+          "expected": "不启动，不把部分安装标记为就绪；残留处理范围正确",
+          "layers": [
+            "故障注入",
+            "真实沙箱"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "cancel",
+          "requirement": "取消安装不标记就绪且实际停止",
+          "expected": "不启动，不把部分安装标记为就绪；残留处理范围正确",
+          "layers": [
+            "故障注入",
+            "真实沙箱"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "residue",
+          "requirement": "失败残留仅在本应用隔离范围且清理核对",
+          "expected": "不启动，不把部分安装标记为就绪；残留处理范围正确",
+          "layers": [
+            "故障注入",
+            "真实沙箱"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "D07",
@@ -442,7 +2495,75 @@
       "layers": "集成、真实沙箱、版本核对",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "incompatible",
+          "requirement": "不兼容依赖明确失败",
+          "expected": "就绪判定绑定实际环境、依赖清单与工具，不因目录存在或旧记录误报；也不静默重装，UNKNOWN 不当 READY",
+          "layers": [
+            "集成",
+            "真实沙箱",
+            "版本核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "lock-change",
+          "requirement": "lockfile变化使旧依赖证明失效",
+          "expected": "就绪判定绑定实际环境、依赖清单与工具，不因目录存在或旧记录误报；也不静默重装，UNKNOWN 不当 READY",
+          "layers": [
+            "集成",
+            "真实沙箱",
+            "版本核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "version-change",
+          "requirement": "运行环境版本变化使旧证明失效",
+          "expected": "就绪判定绑定实际环境、依赖清单与工具，不因目录存在或旧记录误报；也不静默重装，UNKNOWN 不当 READY",
+          "layers": [
+            "集成",
+            "真实沙箱",
+            "版本核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "valid-existing",
+          "requirement": "既有有效依赖经实际工具环境证明才就绪",
+          "expected": "就绪判定绑定实际环境、依赖清单与工具，不因目录存在或旧记录误报；也不静默重装，UNKNOWN 不当 READY",
+          "layers": [
+            "集成",
+            "真实沙箱",
+            "版本核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "unknown",
+          "requirement": "无法证明的依赖标记UNKNOWN而非READY",
+          "expected": "就绪判定绑定实际环境、依赖清单与工具，不因目录存在或旧记录误报；也不静默重装，UNKNOWN 不当 READY",
+          "layers": [
+            "集成",
+            "真实沙箱",
+            "版本核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "no-silent-install",
+          "requirement": "依赖失效不得静默重新安装",
+          "expected": "就绪判定绑定实际环境、依赖清单与工具，不因目录存在或旧记录误报；也不静默重装，UNKNOWN 不当 READY",
+          "layers": [
+            "集成",
+            "真实沙箱",
+            "版本核对"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "D08",
@@ -452,7 +2573,63 @@
       "layers": "隔离环境实测",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "child-script",
+          "requirement": "安装子进程和脚本不逃出隔离边界",
+          "expected": "固有生命周期记录为安装效果；受沙箱、权限和资源边界约束，不修改宿主原工程或其他应用，不自动合回执行副本产物或继续启动",
+          "layers": [
+            "隔离环境实测"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "files",
+          "requirement": "安装文件只写受限副本",
+          "expected": "固有生命周期记录为安装效果；受沙箱、权限和资源边界约束，不修改宿主原工程或其他应用，不自动合回执行副本产物或继续启动",
+          "layers": [
+            "隔离环境实测"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "resources",
+          "requirement": "安装受CPU内存swap进程磁盘耗时输出硬限制",
+          "expected": "固有生命周期记录为安装效果；受沙箱、权限和资源边界约束，不修改宿主原工程或其他应用，不自动合回执行副本产物或继续启动",
+          "layers": [
+            "隔离环境实测"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "source",
+          "requirement": "安装不直接修改发布源码或原工程",
+          "expected": "固有生命周期记录为安装效果；受沙箱、权限和资源边界约束，不修改宿主原工程或其他应用，不自动合回执行副本产物或继续启动",
+          "layers": [
+            "隔离环境实测"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "no-merge",
+          "requirement": "安装源码变化不得自动合入",
+          "expected": "固有生命周期记录为安装效果；受沙箱、权限和资源边界约束，不修改宿主原工程或其他应用，不自动合回执行副本产物或继续启动",
+          "layers": [
+            "隔离环境实测"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "no-start",
+          "requirement": "安装不得偷偷启动服务",
+          "expected": "固有生命周期记录为安装效果；受沙箱、权限和资源边界约束，不修改宿主原工程或其他应用，不自动合回执行副本产物或继续启动",
+          "layers": [
+            "隔离环境实测"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "S01",
@@ -462,7 +2639,49 @@
       "layers": "语料单元、集成",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "root",
+          "requirement": "根目录候选识别",
+          "expected": "候选覆盖正确，不取第一个结果冒充整个工程",
+          "layers": [
+            "语料单元",
+            "集成"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "frontend-backend",
+          "requirement": "前后端各候选完整识别",
+          "expected": "候选覆盖正确，不取第一个结果冒充整个工程",
+          "layers": [
+            "语料单元",
+            "集成"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "nested",
+          "requirement": "嵌套目录候选识别",
+          "expected": "候选覆盖正确，不取第一个结果冒充整个工程",
+          "layers": [
+            "语料单元",
+            "集成"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "multiple",
+          "requirement": "多个候选不只返回第一个",
+          "expected": "候选覆盖正确，不取第一个结果冒充整个工程",
+          "layers": [
+            "语料单元",
+            "集成"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "S02",
@@ -472,7 +2691,69 @@
       "layers": "解析单元、支持样本实跑",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "scripts",
+          "requirement": "按实际scripts识别",
+          "expected": "解析实际字段，不按整文件同名文本误判；包管理器/锁文件冲突明确；库和工具不误列服务，依据可追溯",
+          "layers": [
+            "解析单元",
+            "支持样本实跑"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "custom-script",
+          "requirement": "自定义启动脚本有证据",
+          "expected": "解析实际字段，不按整文件同名文本误判；包管理器/锁文件冲突明确；库和工具不误列服务，依据可追溯",
+          "layers": [
+            "解析单元",
+            "支持样本实跑"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "package-managers",
+          "requirement": "支持包管理器和版本匹配",
+          "expected": "解析实际字段，不按整文件同名文本误判；包管理器/锁文件冲突明确；库和工具不误列服务，依据可追溯",
+          "layers": [
+            "解析单元",
+            "支持样本实跑"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "lock-conflict",
+          "requirement": "lockfile冲突明确失败",
+          "expected": "解析实际字段，不按整文件同名文本误判；包管理器/锁文件冲突明确；库和工具不误列服务，依据可追溯",
+          "layers": [
+            "解析单元",
+            "支持样本实跑"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "library",
+          "requirement": "工具库与模块不误判服务",
+          "expected": "解析实际字段，不按整文件同名文本误判；包管理器/锁文件冲突明确；库和工具不误列服务，依据可追溯",
+          "layers": [
+            "解析单元",
+            "支持样本实跑"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "actual-run",
+          "requirement": "支持样本实际命令可运行",
+          "expected": "解析实际字段，不按整文件同名文本误判；包管理器/锁文件冲突明确；库和工具不误列服务，依据可追溯",
+          "layers": [
+            "解析单元",
+            "支持样本实跑"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "S03",
@@ -482,7 +2763,69 @@
       "layers": "语料单元、接口",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "run-json",
+          "requirement": "显式run.json合法声明按声明执行",
+          "expected": "优先级和歧义处理明确；坏声明不静默回退；扫描不执行工程脚本、插件、Python import 或外部实体读取，缺入口不盲猜",
+          "layers": [
+            "语料单元",
+            "接口"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "deploy-config",
+          "requirement": "部署声明合法范围正确",
+          "expected": "优先级和歧义处理明确；坏声明不静默回退；扫描不执行工程脚本、插件、Python import 或外部实体读取，缺入口不盲猜",
+          "layers": [
+            "语料单元",
+            "接口"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "framework-conflict",
+          "requirement": "框架与声明冲突明确提示",
+          "expected": "优先级和歧义处理明确；坏声明不静默回退；扫描不执行工程脚本、插件、Python import 或外部实体读取，缺入口不盲猜",
+          "layers": [
+            "语料单元",
+            "接口"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "invalid",
+          "requirement": "坏声明不静默回退推断",
+          "expected": "优先级和歧义处理明确；坏声明不静默回退；扫描不执行工程脚本、插件、Python import 或外部实体读取，缺入口不盲猜",
+          "layers": [
+            "语料单元",
+            "接口"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "no-execute",
+          "requirement": "扫描不执行插件、脚本或Python导入",
+          "expected": "优先级和歧义处理明确；坏声明不静默回退；扫描不执行工程脚本、插件、Python import 或外部实体读取，缺入口不盲猜",
+          "layers": [
+            "语料单元",
+            "接口"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "xxe",
+          "requirement": "解析声明拒绝XXE与外部实体",
+          "expected": "优先级和歧义处理明确；坏声明不静默回退；扫描不执行工程脚本、插件、Python import 或外部实体读取，缺入口不盲猜",
+          "layers": [
+            "语料单元",
+            "接口"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "S04",
@@ -492,7 +2835,59 @@
       "layers": "语料单元、支持样本实跑",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "dependency",
+          "requirement": "依赖目录不误判服务",
+          "expected": "不误列用户服务；工程明确声明的静态产物按正确归属处理",
+          "layers": [
+            "语料单元",
+            "支持样本实跑"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "output",
+          "requirement": "dist与构建产物不误判独立服务",
+          "expected": "不误列用户服务；工程明确声明的静态产物按正确归属处理",
+          "layers": [
+            "语料单元",
+            "支持样本实跑"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "example",
+          "requirement": "示例工程不误判主服务",
+          "expected": "不误列用户服务；工程明确声明的静态产物按正确归属处理",
+          "layers": [
+            "语料单元",
+            "支持样本实跑"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "library",
+          "requirement": "无入口库不误判服务",
+          "expected": "不误列用户服务；工程明确声明的静态产物按正确归属处理",
+          "layers": [
+            "语料单元",
+            "支持样本实跑"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "static",
+          "requirement": "声明的静态服务归属正确应用",
+          "expected": "不误列用户服务；工程明确声明的静态产物按正确归属处理",
+          "layers": [
+            "语料单元",
+            "支持样本实跑"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "S05",
@@ -502,7 +2897,117 @@
       "layers": "单元、浏览器、接口、模型调用审计",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "order",
+          "requirement": "固定规则再算法再经批准Agent",
+          "expected": "固定扫描先于算法识别；两层未识别后批准才调用 Agent，拒绝不调用且可手动补充；前端已识别/后端未识别时，允许批准补充后端，不要求全项目零结果，不无声覆盖前端；扫描失败/不完整显式显示，不偷换成未识别；Agent 只给有依据候选，不安装/运行，不能直接当成运行成功",
+          "layers": [
+            "单元",
+            "浏览器",
+            "接口",
+            "模型调用审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "unknown",
+          "requirement": "未知项目明确UNKNOWN",
+          "expected": "固定扫描先于算法识别；两层未识别后批准才调用 Agent，拒绝不调用且可手动补充；前端已识别/后端未识别时，允许批准补充后端，不要求全项目零结果，不无声覆盖前端；扫描失败/不完整显式显示，不偷换成未识别；Agent 只给有依据候选，不安装/运行，不能直接当成运行成功",
+          "layers": [
+            "单元",
+            "浏览器",
+            "接口",
+            "模型调用审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "partial",
+          "requirement": "前端已知后端未知展示部分结果",
+          "expected": "固定扫描先于算法识别；两层未识别后批准才调用 Agent，拒绝不调用且可手动补充；前端已识别/后端未识别时，允许批准补充后端，不要求全项目零结果，不无声覆盖前端；扫描失败/不完整显式显示，不偷换成未识别；Agent 只给有依据候选，不安装/运行，不能直接当成运行成功",
+          "layers": [
+            "单元",
+            "浏览器",
+            "接口",
+            "模型调用审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "reject-model",
+          "requirement": "拒绝Agent不调用模型",
+          "expected": "固定扫描先于算法识别；两层未识别后批准才调用 Agent，拒绝不调用且可手动补充；前端已识别/后端未识别时，允许批准补充后端，不要求全项目零结果，不无声覆盖前端；扫描失败/不完整显式显示，不偷换成未识别；Agent 只给有依据候选，不安装/运行，不能直接当成运行成功",
+          "layers": [
+            "单元",
+            "浏览器",
+            "接口",
+            "模型调用审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "manual",
+          "requirement": "手工补充仍可用",
+          "expected": "固定扫描先于算法识别；两层未识别后批准才调用 Agent，拒绝不调用且可手动补充；前端已识别/后端未识别时，允许批准补充后端，不要求全项目零结果，不无声覆盖前端；扫描失败/不完整显式显示，不偷换成未识别；Agent 只给有依据候选，不安装/运行，不能直接当成运行成功",
+          "layers": [
+            "单元",
+            "浏览器",
+            "接口",
+            "模型调用审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "no-overwrite",
+          "requirement": "Agent不得覆盖合法手工配置",
+          "expected": "固定扫描先于算法识别；两层未识别后批准才调用 Agent，拒绝不调用且可手动补充；前端已识别/后端未识别时，允许批准补充后端，不要求全项目零结果，不无声覆盖前端；扫描失败/不完整显式显示，不偷换成未识别；Agent 只给有依据候选，不安装/运行，不能直接当成运行成功",
+          "layers": [
+            "单元",
+            "浏览器",
+            "接口",
+            "模型调用审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "scan-failure",
+          "requirement": "扫描失败不冒充未知",
+          "expected": "固定扫描先于算法识别；两层未识别后批准才调用 Agent，拒绝不调用且可手动补充；前端已识别/后端未识别时，允许批准补充后端，不要求全项目零结果，不无声覆盖前端；扫描失败/不完整显式显示，不偷换成未识别；Agent 只给有依据候选，不安装/运行，不能直接当成运行成功",
+          "layers": [
+            "单元",
+            "浏览器",
+            "接口",
+            "模型调用审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "read-only",
+          "requirement": "Agent只读候选不执行未知命令",
+          "expected": "固定扫描先于算法识别；两层未识别后批准才调用 Agent，拒绝不调用且可手动补充；前端已识别/后端未识别时，允许批准补充后端，不要求全项目零结果，不无声覆盖前端；扫描失败/不完整显式显示，不偷换成未识别；Agent 只给有依据候选，不安装/运行，不能直接当成运行成功",
+          "layers": [
+            "单元",
+            "浏览器",
+            "接口",
+            "模型调用审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "audit",
+          "requirement": "实际模型调用和批准记录可核对",
+          "expected": "固定扫描先于算法识别；两层未识别后批准才调用 Agent，拒绝不调用且可手动补充；前端已识别/后端未识别时，允许批准补充后端，不要求全项目零结果，不无声覆盖前端；扫描失败/不完整显式显示，不偷换成未识别；Agent 只给有依据候选，不安装/运行，不能直接当成运行成功",
+          "layers": [
+            "单元",
+            "浏览器",
+            "接口",
+            "模型调用审计"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "S06",
@@ -512,7 +3017,69 @@
       "layers": "单元、端到端",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "directory",
+          "requirement": "手工目录合法并持久化",
+          "expected": "用户选择不被静默覆盖；每次运行前重新校验，越界或失效配置不执行",
+          "layers": [
+            "单元",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "services",
+          "requirement": "手工服务选择持久化",
+          "expected": "用户选择不被静默覆盖；每次运行前重新校验，越界或失效配置不执行",
+          "layers": [
+            "单元",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "commands",
+          "requirement": "手工命令持久化且执行前确认",
+          "expected": "用户选择不被静默覆盖；每次运行前重新校验，越界或失效配置不执行",
+          "layers": [
+            "单元",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "no-override",
+          "requirement": "自动识别不覆盖手工配置",
+          "expected": "用户选择不被静默覆盖；每次运行前重新校验，越界或失效配置不执行",
+          "layers": [
+            "单元",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "invalid-scope",
+          "requirement": "执行前目录或范围变化使旧授权失效",
+          "expected": "用户选择不被静默覆盖；每次运行前重新校验，越界或失效配置不执行",
+          "layers": [
+            "单元",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "refresh",
+          "requirement": "刷新仍显示当前有效配置",
+          "expected": "用户选择不被静默覆盖；每次运行前重新校验，越界或失效配置不执行",
+          "layers": [
+            "单元",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "S07",
@@ -522,7 +3089,89 @@
       "layers": "内容级回归、端到端",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "source-bytes",
+          "requirement": "源码内容变化使旧计划失效",
+          "expected": "当前内容、配置与计划版本对应；过期确认和迟到候选不改当前计划，不能用旧指纹证明有效；已有 dist 不代表对应当前源码",
+          "layers": [
+            "内容级回归",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "mtime",
+          "requirement": "仅mtime变化按明确内容及属性语义处理",
+          "expected": "当前内容、配置与计划版本对应；过期确认和迟到候选不改当前计划，不能用旧指纹证明有效；已有 dist 不代表对应当前源码",
+          "layers": [
+            "内容级回归",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "run-json",
+          "requirement": "run.json变化使旧计划失效",
+          "expected": "当前内容、配置与计划版本对应；过期确认和迟到候选不改当前计划，不能用旧指纹证明有效；已有 dist 不代表对应当前源码",
+          "layers": [
+            "内容级回归",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "manual-config",
+          "requirement": "手工配置变化使旧计划失效",
+          "expected": "当前内容、配置与计划版本对应；过期确认和迟到候选不改当前计划，不能用旧指纹证明有效；已有 dist 不代表对应当前源码",
+          "layers": [
+            "内容级回归",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "candidate",
+          "requirement": "旧候选不可合入新版本",
+          "expected": "当前内容、配置与计划版本对应；过期确认和迟到候选不改当前计划，不能用旧指纹证明有效；已有 dist 不代表对应当前源码",
+          "layers": [
+            "内容级回归",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "approval",
+          "requirement": "旧批准不可执行新版本",
+          "expected": "当前内容、配置与计划版本对应；过期确认和迟到候选不改当前计划，不能用旧指纹证明有效；已有 dist 不代表对应当前源码",
+          "layers": [
+            "内容级回归",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "late",
+          "requirement": "旧结果不能晚到修改当前版本",
+          "expected": "当前内容、配置与计划版本对应；过期确认和迟到候选不改当前计划，不能用旧指纹证明有效；已有 dist 不代表对应当前源码",
+          "layers": [
+            "内容级回归",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "old-dist",
+          "requirement": "旧产物不冒充当前内容版本",
+          "expected": "当前内容、配置与计划版本对应；过期确认和迟到候选不改当前计划，不能用旧指纹证明有效；已有 dist 不代表对应当前源码",
+          "layers": [
+            "内容级回归",
+            "端到端"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "R01",
@@ -532,7 +3181,53 @@
       "layers": "浏览器、真实容器、进程核对",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "subset",
+          "requirement": "选择服务子集仅运行子集",
+          "expected": "只有已选服务启动；聚合脚本不可偷偷启动未选服务，扩大范围须重确认；工程模块构建不等于启动模块，其他应用无副作用",
+          "layers": [
+            "浏览器",
+            "真实容器",
+            "进程核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "cancel",
+          "requirement": "取消选择不启动",
+          "expected": "只有已选服务启动；聚合脚本不可偷偷启动未选服务，扩大范围须重确认；工程模块构建不等于启动模块，其他应用无副作用",
+          "layers": [
+            "浏览器",
+            "真实容器",
+            "进程核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "aggregate",
+          "requirement": "聚合脚本不得隐藏启动未选服务",
+          "expected": "只有已选服务启动；聚合脚本不可偷偷启动未选服务，扩大范围须重确认；工程模块构建不等于启动模块，其他应用无副作用",
+          "layers": [
+            "浏览器",
+            "真实容器",
+            "进程核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "build-module",
+          "requirement": "构建模块不得启动其他应用或服务",
+          "expected": "只有已选服务启动；聚合脚本不可偷偷启动未选服务，扩大范围须重确认；工程模块构建不等于启动模块，其他应用无副作用",
+          "layers": [
+            "浏览器",
+            "真实容器",
+            "进程核对"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "R02",
@@ -549,6 +3244,80 @@
         "ImportStartupPlanTest#declaredHealthPathIsFrozenAndChangesPlanRevision",
         "ImportExecutionServiceTest#servingCannotBorrowAnotherServicesDirectoryPortOrCommand",
         "scripts/verify-startup-lifetime-api.py (新增健康路径真实场景；本轮结果以证据记录为准，整组仍 NOT_RUN)"
+      ],
+      "subscenarios": [
+        {
+          "id": "static",
+          "requirement": "静态页构建和实际页面内容正确",
+          "expected": "各自就绪、地址/日志归属正确，真实业务请求正常，不只看端口",
+          "layers": [
+            "真实全栈端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "vue",
+          "requirement": "Vue安装构建和实际页面内容正确",
+          "expected": "各自就绪、地址/日志归属正确，真实业务请求正常，不只看端口",
+          "layers": [
+            "真实全栈端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "spring",
+          "requirement": "Spring Boot安装构建和实际接口业务正确",
+          "expected": "各自就绪、地址/日志归属正确，真实业务请求正常，不只看端口",
+          "layers": [
+            "真实全栈端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "flask",
+          "requirement": "Flask安装和实际接口业务正确",
+          "expected": "各自就绪、地址/日志归属正确，真实业务请求正常，不只看端口",
+          "layers": [
+            "真实全栈端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "express",
+          "requirement": "Express安装和实际接口业务正确",
+          "expected": "各自就绪、地址/日志归属正确，真实业务请求正常，不只看端口",
+          "layers": [
+            "真实全栈端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "vue-java",
+          "requirement": "Vue加Java真实页面访问本应用Java后端并验证业务",
+          "expected": "各自就绪、地址/日志归属正确，真实业务请求正常，不只看端口",
+          "layers": [
+            "真实全栈端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "vue-python",
+          "requirement": "Vue加Python真实页面访问本应用Python后端并验证业务",
+          "expected": "各自就绪、地址/日志归属正确，真实业务请求正常，不只看端口",
+          "layers": [
+            "真实全栈端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "dual-service",
+          "requirement": "双服务独立就绪、地址日志归属和业务内容正确",
+          "expected": "各自就绪、地址/日志归属正确，真实业务请求正常，不只看端口",
+          "layers": [
+            "真实全栈端到端"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -559,7 +3328,97 @@
       "layers": "故障注入、真实容器、执行审计",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "build-fail",
+          "requirement": "构建失败不启动不跳过构建",
+          "expected": "必要构建未成功不启动对应服务；构建成功、容器 alive 均不被等同于运行或业务成功；构建下载依赖不绕过安装确认，不擅自追加 skipTests；逐服务就绪与错误可核对，计划变化使原批准失效",
+          "layers": [
+            "故障注入",
+            "真实容器",
+            "执行审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "cancel",
+          "requirement": "取消构建或启动实际停止",
+          "expected": "必要构建未成功不启动对应服务；构建成功、容器 alive 均不被等同于运行或业务成功；构建下载依赖不绕过安装确认，不擅自追加 skipTests；逐服务就绪与错误可核对，计划变化使原批准失效",
+          "layers": [
+            "故障注入",
+            "真实容器",
+            "执行审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "not-ready",
+          "requirement": "进程活着但未就绪不能成功",
+          "expected": "必要构建未成功不启动对应服务；构建成功、容器 alive 均不被等同于运行或业务成功；构建下载依赖不绕过安装确认，不擅自追加 skipTests；逐服务就绪与错误可核对，计划变化使原批准失效",
+          "layers": [
+            "故障注入",
+            "真实容器",
+            "执行审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "dynamic-deps",
+          "requirement": "动态缺依赖不得未批准安装",
+          "expected": "必要构建未成功不启动对应服务；构建成功、容器 alive 均不被等同于运行或业务成功；构建下载依赖不绕过安装确认，不擅自追加 skipTests；逐服务就绪与错误可核对，计划变化使原批准失效",
+          "layers": [
+            "故障注入",
+            "真实容器",
+            "执行审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "timeout",
+          "requirement": "启动超时明确失败并核对资源",
+          "expected": "必要构建未成功不启动对应服务；构建成功、容器 alive 均不被等同于运行或业务成功；构建下载依赖不绕过安装确认，不擅自追加 skipTests；逐服务就绪与错误可核对，计划变化使原批准失效",
+          "layers": [
+            "故障注入",
+            "真实容器",
+            "执行审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "port",
+          "requirement": "端口冲突不误认其他进程成功",
+          "expected": "必要构建未成功不启动对应服务；构建成功、容器 alive 均不被等同于运行或业务成功；构建下载依赖不绕过安装确认，不擅自追加 skipTests；逐服务就绪与错误可核对，计划变化使原批准失效",
+          "layers": [
+            "故障注入",
+            "真实容器",
+            "执行审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "no-skip-tests",
+          "requirement": "不通过skipTests掩盖构建错误",
+          "expected": "必要构建未成功不启动对应服务；构建成功、容器 alive 均不被等同于运行或业务成功；构建下载依赖不绕过安装确认，不擅自追加 skipTests；逐服务就绪与错误可核对，计划变化使原批准失效",
+          "layers": [
+            "故障注入",
+            "真实容器",
+            "执行审计"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "version",
+          "requirement": "错误后的版本和批准正确失效",
+          "expected": "必要构建未成功不启动对应服务；构建成功、容器 alive 均不被等同于运行或业务成功；构建下载依赖不绕过安装确认，不擅自追加 skipTests；逐服务就绪与错误可核对，计划变化使原批准失效",
+          "layers": [
+            "故障注入",
+            "真实容器",
+            "执行审计"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "R04",
@@ -569,7 +3428,36 @@
       "layers": "真实多服务故障测试",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "single-failure",
+          "requirement": "单项失败保留成功服务",
+          "expected": "成功项保留，整体“部分失败”；错误与日志可核对",
+          "layers": [
+            "真实多服务故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "partial",
+          "requirement": "整体显示部分成功而非全成功",
+          "expected": "成功项保留，整体“部分失败”；错误与日志可核对",
+          "layers": [
+            "真实多服务故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "logs",
+          "requirement": "失败与成功日志归属正确且可查看",
+          "expected": "成功项保留，整体“部分失败”；错误与日志可核对",
+          "layers": [
+            "真实多服务故障测试"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "R05",
@@ -579,7 +3467,54 @@
       "layers": "真实进程/端口与状态对比",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "failed-only",
+          "requirement": "只重试失败服务",
+          "expected": "不重复启动成功项；失败残留清理正确；版本变化重新确认，不将新失败项和旧成功项假称同版本；其他应用不受影响",
+          "layers": [
+            "真实进程/端口与状态对比"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "no-duplicate",
+          "requirement": "成功服务不重复启动或安装",
+          "expected": "不重复启动成功项；失败残留清理正确；版本变化重新确认，不将新失败项和旧成功项假称同版本；其他应用不受影响",
+          "layers": [
+            "真实进程/端口与状态对比"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "source-change",
+          "requirement": "工作区变化后旧重试资格拒绝",
+          "expected": "不重复启动成功项；失败残留清理正确；版本变化重新确认，不将新失败项和旧成功项假称同版本；其他应用不受影响",
+          "layers": [
+            "真实进程/端口与状态对比"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "version",
+          "requirement": "重试运行版本正确",
+          "expected": "不重复启动成功项；失败残留清理正确；版本变化重新确认，不将新失败项和旧成功项假称同版本；其他应用不受影响",
+          "layers": [
+            "真实进程/端口与状态对比"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "cleanup",
+          "requirement": "重试仅清理失败服务残留不影响成功项",
+          "expected": "不重复启动成功项；失败残留清理正确；版本变化重新确认，不将新失败项和旧成功项假称同版本；其他应用不受影响",
+          "layers": [
+            "真实进程/端口与状态对比"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "R06",
@@ -592,6 +3527,58 @@
       "implementedTests": [
         "ImportTaskServiceTest#cancellationClosesActualBlockedStreamAndLateCompletionCannotSucceed (局部后端断言；最终应用/整组仍 NOT_RUN)",
         "ImportTaskServiceTest#unresponsiveInputStaysStopFailedUntilActualExitAndRetryCleanup (局部后端断言；最终应用/整组仍 NOT_RUN)"
+      ],
+      "subscenarios": [
+        {
+          "id": "repeat-click",
+          "requirement": "重复点击不重复执行",
+          "expected": "无串写、无未授权重复执行，结果绑定正确任务和版本；策略须先明确",
+          "layers": [
+            "受限功能并发",
+            "集成"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "parallel-import",
+          "requirement": "并发导入不串任务和应用",
+          "expected": "无串写、无未授权重复执行，结果绑定正确任务和版本；策略须先明确",
+          "layers": [
+            "受限功能并发",
+            "集成"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "parallel-install",
+          "requirement": "并发安装按准入串行且不重复",
+          "expected": "无串写、无未授权重复执行，结果绑定正确任务和版本；策略须先明确",
+          "layers": [
+            "受限功能并发",
+            "集成"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "parallel-run",
+          "requirement": "并发运行按准入串行且不重复",
+          "expected": "无串写、无未授权重复执行，结果绑定正确任务和版本；策略须先明确",
+          "layers": [
+            "受限功能并发",
+            "集成"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "stale-events",
+          "requirement": "旧事件不能覆盖当前执行状态",
+          "expected": "无串写、无未授权重复执行，结果绑定正确任务和版本；策略须先明确",
+          "layers": [
+            "受限功能并发",
+            "集成"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -615,6 +3602,78 @@
         "ImportExecutionRunnerTest#supervisorFinalizesOnlyItsExecutionAndLateCallbackCannotOverwriteTerminal",
         "ImportExecutionRunnerTest#queryLosingCasToSupervisorReturnsAuthoritativeTerminalInsteadOfUnknown",
         "ImportExecutionSandboxTest#supervisorKeepsLateOutputAndStopsOnOutputLimit (持续日志/监督局部，整组仍 NOT_RUN)"
+      ],
+      "subscenarios": [
+        {
+          "id": "stop-fail",
+          "requirement": "停止失败保留STOP_FAILED或RECOVERY_REQUIRED",
+          "expected": "stop/rm 返回与实际资源对账，杀 CLI 不当容器停止；STOP_FAILED 不释放相关恢复资格；重启不凭 DB 假运行或擅自重跑；迟到就绪不覆盖新状态，不误杀他人服务",
+          "layers": [
+            "生命周期",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "start-stop-race",
+          "requirement": "启动停止竞争资格正确",
+          "expected": "stop/rm 返回与实际资源对账，杀 CLI 不当容器停止；STOP_FAILED 不释放相关恢复资格；重启不凭 DB 假运行或擅自重跑；迟到就绪不覆盖新状态，不误杀他人服务",
+          "layers": [
+            "生命周期",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "unexpected-exit",
+          "requirement": "异常退出有明确失败和实际资源核对",
+          "expected": "stop/rm 返回与实际资源对账，杀 CLI 不当容器停止；STOP_FAILED 不释放相关恢复资格；重启不凭 DB 假运行或擅自重跑；迟到就绪不覆盖新状态，不误杀他人服务",
+          "layers": [
+            "生命周期",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "restart",
+          "requirement": "平台重启撤销旧资格不自动续跑",
+          "expected": "stop/rm 返回与实际资源对账，杀 CLI 不当容器停止；STOP_FAILED 不释放相关恢复资格；重启不凭 DB 假运行或擅自重跑；迟到就绪不覆盖新状态，不误杀他人服务",
+          "layers": [
+            "生命周期",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "late-result",
+          "requirement": "重启或停止后的晚到结果不能覆盖",
+          "expected": "stop/rm 返回与实际资源对账，杀 CLI 不当容器停止；STOP_FAILED 不释放相关恢复资格；重启不凭 DB 假运行或擅自重跑；迟到就绪不覆盖新状态，不误杀他人服务",
+          "layers": [
+            "生命周期",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "other-app",
+          "requirement": "生命周期操作不杀其他应用",
+          "expected": "stop/rm 返回与实际资源对账，杀 CLI 不当容器停止；STOP_FAILED 不释放相关恢复资格；重启不凭 DB 假运行或擅自重跑；迟到就绪不覆盖新状态，不误杀他人服务",
+          "layers": [
+            "生命周期",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "release",
+          "requirement": "实际资源消失才释放槽位和额度",
+          "expected": "stop/rm 返回与实际资源对账，杀 CLI 不当容器停止；STOP_FAILED 不释放相关恢复资格；重启不凭 DB 假运行或擅自重跑；迟到就绪不覆盖新状态，不误杀他人服务",
+          "layers": [
+            "生命周期",
+            "故障测试"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -640,6 +3699,118 @@
         "scripts/verify-import-disk-volume.py (v2 17 条 journal/预分配/正常重挂载局部真实断言，不证明掉电/业务恢复)",
         "scripts/tests/test_import_disk_volume.py (seed 增量 21 项原生测试，含清单、摘要、链接、容器门禁和复用；业务未接)",
         "scripts/verify-import-disk-volume.py (seed 增量 22 条真实局部检查，非 Java 冻结快照或正式业务端到端)"
+      ],
+      "subscenarios": [
+        {
+          "id": "cpu",
+          "requirement": "实际CPU硬限制",
+          "expected": "达到边界时状态明确，资源受控，原工程及其他应用仍完整",
+          "layers": [
+            "受限资源测试",
+            "真实隔离环境"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "memory",
+          "requirement": "实际内存超限保护",
+          "expected": "达到边界时状态明确，资源受控，原工程及其他应用仍完整",
+          "layers": [
+            "受限资源测试",
+            "真实隔离环境"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "swap",
+          "requirement": "实际swap强制限制不可强制时拒绝",
+          "expected": "达到边界时状态明确，资源受控，原工程及其他应用仍完整",
+          "layers": [
+            "受限资源测试",
+            "真实隔离环境"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "pids",
+          "requirement": "实际进程数量超限保护",
+          "expected": "达到边界时状态明确，资源受控，原工程及其他应用仍完整",
+          "layers": [
+            "受限资源测试",
+            "真实隔离环境"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "disk",
+          "requirement": "实际固定容量卷写满保护",
+          "expected": "达到边界时状态明确，资源受控，原工程及其他应用仍完整",
+          "layers": [
+            "受限资源测试",
+            "真实隔离环境"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "wall-time",
+          "requirement": "实际耗时超限停止",
+          "expected": "达到边界时状态明确，资源受控，原工程及其他应用仍完整",
+          "layers": [
+            "受限资源测试",
+            "真实隔离环境"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "output",
+          "requirement": "实际输出超限保护",
+          "expected": "达到边界时状态明确，资源受控，原工程及其他应用仍完整",
+          "layers": [
+            "受限资源测试",
+            "真实隔离环境"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "other-app",
+          "requirement": "资源耗尽不影响其他应用",
+          "expected": "达到边界时状态明确，资源受控，原工程及其他应用仍完整",
+          "layers": [
+            "受限资源测试",
+            "真实隔离环境"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "serial-reservation",
+          "requirement": "按实际分配空间串行预留并保留宿主安全余量",
+          "expected": "达到边界时状态明确，资源受控，原工程及其他应用仍完整",
+          "layers": [
+            "受限资源测试",
+            "真实隔离环境"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "durable-resources",
+          "requirement": "容器卷副本候选备份持久登记真实身份",
+          "expected": "达到边界时状态明确，资源受控，原工程及其他应用仍完整",
+          "layers": [
+            "受限资源测试",
+            "真实隔离环境"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "stop-release",
+          "requirement": "停止未确认不得释放资源额度",
+          "expected": "达到边界时状态明确，资源受控，原工程及其他应用仍完整",
+          "layers": [
+            "受限资源测试",
+            "真实隔离环境"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -657,6 +3828,88 @@
         "ImportTaskServiceTest#foreignOrPriorExecutorCannotBeClaimedStoppedAfterRestart (局部后端断言；最终应用/整组仍 NOT_RUN)",
         "ImportTaskServiceTest#databaseFailureKeepsFilesUnreadableAndExplicitRecoveryReusesSameApplicationId",
         "scripts/verify-import-publication-recovery.py (受控 journal/真实字节/旧进程资格局部；非断电验收)"
+      ],
+      "subscenarios": [
+        {
+          "id": "folder-failure",
+          "requirement": "文件夹中途失败不发布半成品",
+          "expected": "失败记录保留；半提交/恢复中内容不被静态或其他入口读取；journal 对应实际文件和状态，重启不假成功；仅清理本任务未完成副本，清理失败不得报已清理",
+          "layers": [
+            "故障注入",
+            "数据库和磁盘/入口核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "git-failure",
+          "requirement": "GitHub中途失败不发布半成品",
+          "expected": "失败记录保留；半提交/恢复中内容不被静态或其他入口读取；journal 对应实际文件和状态，重启不假成功；仅清理本任务未完成副本，清理失败不得报已清理",
+          "layers": [
+            "故障注入",
+            "数据库和磁盘/入口核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "file-publish",
+          "requirement": "文件发布中断有持久阶段和恢复",
+          "expected": "失败记录保留；半提交/恢复中内容不被静态或其他入口读取；journal 对应实际文件和状态，重启不假成功；仅清理本任务未完成副本，清理失败不得报已清理",
+          "layers": [
+            "故障注入",
+            "数据库和磁盘/入口核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "db-publish",
+          "requirement": "数据库发布中断有持久阶段和恢复",
+          "expected": "失败记录保留；半提交/恢复中内容不被静态或其他入口读取；journal 对应实际文件和状态，重启不假成功；仅清理本任务未完成副本，清理失败不得报已清理",
+          "layers": [
+            "故障注入",
+            "数据库和磁盘/入口核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "cleanup-failure",
+          "requirement": "清理失败不得标记完成",
+          "expected": "失败记录保留；半提交/恢复中内容不被静态或其他入口读取；journal 对应实际文件和状态，重启不假成功；仅清理本任务未完成副本，清理失败不得报已清理",
+          "layers": [
+            "故障注入",
+            "数据库和磁盘/入口核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "closed-read",
+          "requirement": "未完成发布对文件路由和静态入口关闭",
+          "expected": "失败记录保留；半提交/恢复中内容不被静态或其他入口读取；journal 对应实际文件和状态，重启不假成功；仅清理本任务未完成副本，清理失败不得报已清理",
+          "layers": [
+            "故障注入",
+            "数据库和磁盘/入口核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "restart-recovery",
+          "requirement": "重启核对未决发布且不续跑未知脚本",
+          "expected": "失败记录保留；半提交/恢复中内容不被静态或其他入口读取；journal 对应实际文件和状态，重启不假成功；仅清理本任务未完成副本，清理失败不得报已清理",
+          "layers": [
+            "故障注入",
+            "数据库和磁盘/入口核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "candidate-backup",
+          "requirement": "候选与旧目录备份同文件系统持久登记",
+          "expected": "失败记录保留；半提交/恢复中内容不被静态或其他入口读取；journal 对应实际文件和状态，重启不假成功；仅清理本任务未完成副本，清理失败不得报已清理",
+          "layers": [
+            "故障注入",
+            "数据库和磁盘/入口核对"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     },
     {
@@ -667,7 +3920,45 @@
       "layers": "全流程",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "folder-reimport",
+          "requirement": "文件夹失败后新任务重新导入独立成功",
+          "expected": "新任务独立，成功结果不使用失败残留；旧应用和凭据不受误删影响",
+          "layers": [
+            "全流程"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "git-reimport",
+          "requirement": "GitHub失败后新任务重新导入独立成功",
+          "expected": "新任务独立，成功结果不使用失败残留；旧应用和凭据不受误删影响",
+          "layers": [
+            "全流程"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "old-residue",
+          "requirement": "新任务不继承旧任务残留",
+          "expected": "新任务独立，成功结果不使用失败残留；旧应用和凭据不受误删影响",
+          "layers": [
+            "全流程"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "other-state",
+          "requirement": "重新导入不更改无关应用与凭据",
+          "expected": "新任务独立，成功结果不使用失败残留；旧应用和凭据不受误删影响",
+          "layers": [
+            "全流程"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "E03",
@@ -677,7 +3968,39 @@
       "layers": "全流程、磁盘核对",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "install-fail",
+          "requirement": "导入成功后安装失败保留源码",
+          "expected": "保留已导入工程文件，不能误走导入失败清理",
+          "layers": [
+            "全流程",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "run-fail",
+          "requirement": "导入成功后运行失败保留源码",
+          "expected": "保留已导入工程文件，不能误走导入失败清理",
+          "layers": [
+            "全流程",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "no-import-cleanup",
+          "requirement": "后续失败不触发导入失败清理",
+          "expected": "保留已导入工程文件，不能误走导入失败清理",
+          "layers": [
+            "全流程",
+            "磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "E04",
@@ -687,7 +4010,179 @@
       "layers": "真实调试闭环、内容与业务核对",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "sse",
+          "requirement": "正式SSE真实模型复现缺陷并最小修复合入后才成功",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "websocket",
+          "requirement": "正式WebSocket真实模型修复合入后才成功",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "fullstack",
+          "requirement": "至少一个前后端组合完成正式真实模型修复和业务回归",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "identity",
+          "requirement": "拿到应用资格后冻结owner/app/run来源完整内容和上下文",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "bounded-view",
+          "requirement": "模型只访问固定容量秘密隔离副本不回退原目录或普通Shell",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "authorized",
+          "requirement": "合法文件编辑才进入授权修改清单",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "shell-change",
+          "requirement": "Shell源码变化不得自动授权合入",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "artifacts",
+          "requirement": "测试产物独立保留并绑定run与内容版本",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "stopped",
+          "requirement": "实际停止容器后才生成候选",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "java-verify",
+          "requirement": "Java独立校验身份取消原版本和候选修改清单",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "secrets",
+          "requirement": "合入恢复原秘密且保留未修改文件目录语义",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "conflict",
+          "requirement": "来源变化版本冲突和占位符破坏拒绝不覆盖",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "atomic",
+          "requirement": "应用写锁内同文件系统原子目录替换并保留恢复信息",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "cancel",
+          "requirement": "取消失败无部分发布且旧任务不继续写入",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "success",
+          "requirement": "模型自评或Python结束不代替Java发布成功",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "root-cause",
+          "requirement": "修复根因与最小补丁可核对",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "business",
+          "requirement": "业务回归使用正式执行副本而非协议夹具",
+          "expected": "错误、根因依据、补丁、原失败用例转绿及相关回归均有证据",
+          "layers": [
+            "真实调试闭环",
+            "内容与业务核对"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "E05",
@@ -697,7 +4192,72 @@
       "layers": "干净基线回放",
       "status": "NOT_RUN",
       "evidence": [],
-      "implementedTests": []
+      "implementedTests": [],
+      "subscenarios": [
+        {
+          "id": "clean-source",
+          "requirement": "未修复干净来源重新导入复现缺陷",
+          "expected": "可重现基线与修复结果；最终文件、业务状态和证据版本一致",
+          "layers": [
+            "干净基线回放"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "same-repair",
+          "requirement": "真实模型最小修复可复现同一业务结果",
+          "expected": "可重现基线与修复结果；最终文件、业务状态和证据版本一致",
+          "layers": [
+            "干净基线回放"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "invalidate",
+          "requirement": "修复后旧计划失效并重新确认",
+          "expected": "可重现基线与修复结果；最终文件、业务状态和证据版本一致",
+          "layers": [
+            "干净基线回放"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "version",
+          "requirement": "最终回放绑定冻结源码镜像依赖环境版本",
+          "expected": "可重现基线与修复结果；最终文件、业务状态和证据版本一致",
+          "layers": [
+            "干净基线回放"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "evidence",
+          "requirement": "补丁日志退出码前后摘要和实际模型调用可回放",
+          "expected": "可重现基线与修复结果；最终文件、业务状态和证据版本一致",
+          "layers": [
+            "干净基线回放"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "cleanup",
+          "requirement": "回放资源逐项精确删除并确认",
+          "expected": "可重现基线与修复结果；最终文件、业务状态和证据版本一致",
+          "layers": [
+            "干净基线回放"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "post-fix",
+          "requirement": "最终修复改变源码后重跑受影响验收及最终闭环",
+          "expected": "可重现基线与修复结果；最终文件、业务状态和证据版本一致",
+          "layers": [
+            "干净基线回放"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
     },
     {
       "id": "E06",
@@ -712,7 +4272,185 @@
       ],
       "implementedTests": [
         "scripts/verify-import-publication-recovery.py (合法保存后历史来源身份不变；旧 App 可用入口回归局部)"
+      ],
+      "subscenarios": [
+        {
+          "id": "new-generation",
+          "requirement": "非导入新项目真实模型生成回归",
+          "expected": "无本期变更引起的回归；新生成主线用真实链路验收，Mock 不冒充真实模型链路",
+          "layers": [
+            "现有自动化回归",
+            "真实端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "history",
+          "requirement": "历史应用仍可读取使用",
+          "expected": "无本期变更引起的回归；新生成主线用真实链路验收，Mock 不冒充真实模型链路",
+          "layers": [
+            "现有自动化回归",
+            "真实端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "file-view",
+          "requirement": "已有文件查看回归",
+          "expected": "无本期变更引起的回归；新生成主线用真实链路验收，Mock 不冒充真实模型链路",
+          "layers": [
+            "现有自动化回归",
+            "真实端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "file-edit",
+          "requirement": "已有文件编辑回归",
+          "expected": "无本期变更引起的回归；新生成主线用真实链路验收，Mock 不冒充真实模型链路",
+          "layers": [
+            "现有自动化回归",
+            "真实端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "legacy-run",
+          "requirement": "旧运行入口真实业务回归",
+          "expected": "无本期变更引起的回归；新生成主线用真实链路验收，Mock 不冒充真实模型链路",
+          "layers": [
+            "现有自动化回归",
+            "真实端到端"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "cross-feature",
+          "requirement": "其他既有联动门禁无回归",
+          "expected": "无本期变更引起的回归；新生成主线用真实链路验收，Mock 不冒充真实模型链路",
+          "layers": [
+            "现有自动化回归",
+            "真实端到端"
+          ],
+          "status": "NOT_RUN"
+        }
+      ]
+    },
+    {
+      "id": "G12",
+      "suite": "retired-provider",
+      "scenario": "Gitee 下线与历史兼容",
+      "expected": "新来源/凭据/重建/晚到提交拒绝；历史成功应用可读，旧凭据仅可删除，未完成任务取消与清理明确",
+      "layers": "单元、接口、数据库、浏览器、状态和磁盘核对",
+      "status": "NOT_RUN",
+      "evidence": [],
+      "subscenarios": [
+        {
+          "id": "new-source",
+          "requirement": "正式入口拒绝 Gitee 新来源和平台错配 URL",
+          "layers": [
+            "单元",
+            "接口",
+            "数据库",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "new-credential",
+          "requirement": "正式入口拒绝 Gitee 新凭据，GitHub 凭据继续可创建",
+          "layers": [
+            "单元",
+            "接口",
+            "数据库",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "legacy-read",
+          "requirement": "历史 Gitee 来源和脱敏凭据仍可读取，不返回秘密",
+          "layers": [
+            "单元",
+            "接口",
+            "数据库",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "legacy-credential-delete",
+          "requirement": "历史凭据仅可删除，密文版本兼容且关联未完成任务核对清理",
+          "layers": [
+            "单元",
+            "接口",
+            "数据库",
+            "浏览器",
+            "状态和磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "legacy-credential-mutate",
+          "requirement": "旧凭据不可替换或改名，不可重新激活和使用",
+          "layers": [
+            "单元",
+            "接口",
+            "数据库",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "legacy-source-resume",
+          "requirement": "历史未完成来源不可选分支、重建范围、提交或重新执行",
+          "layers": [
+            "单元",
+            "接口",
+            "数据库",
+            "浏览器"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "late-result",
+          "requirement": "取消或停用后的晚到来源和主任务成功写入被拒绝",
+          "layers": [
+            "单元",
+            "接口",
+            "数据库",
+            "状态和磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "legacy-app",
+          "requirement": "历史成功 Gitee 应用仍正常读取和运行，不误删历史数据",
+          "layers": [
+            "接口",
+            "浏览器",
+            "状态和磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        },
+        {
+          "id": "retired-task-cleanup",
+          "requirement": "已有未完成 Gitee 任务取消并核对进程及副本清理，失败明确保留待恢复状态",
+          "layers": [
+            "单元",
+            "接口",
+            "数据库",
+            "状态和磁盘核对"
+          ],
+          "status": "NOT_RUN"
+        }
       ]
     }
-  ]
+  ],
+  "scopeRevision": "2026-10-06-github-only",
+  "supportedProviders": [
+    "GitHub"
+  ],
+  "requirementsRevision": "2026-10-07-item1-full-subscenarios-v1",
+  "evidencePolicy": "历史指针仅供定位；每个必测子场景的每个要求层必须有当前版本PASS及实际资源清理证据。"
 }

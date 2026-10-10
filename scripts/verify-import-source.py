@@ -12,7 +12,7 @@ import psycopg
 
 
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument("--output", required=True); parser.add_argument("--commit-provider", choices=["GitHub", "Gitee"])
+    parser = argparse.ArgumentParser(); parser.add_argument("--output", required=True); parser.add_argument("--commit-provider", choices=["GitHub"])
     parser.add_argument("--rebuild-range", action="store_true")
     args = parser.parse_args(); evidence = Path(args.output).resolve(); evidence.mkdir(parents=True, exist_ok=False)
     checks, fixtures, tasks = [], [], []
@@ -50,7 +50,9 @@ def main():
         call(prefix, {**baseline, "ownerId": foreign}, expected=40900)
         call(prefix, {**baseline, "credentialId": str(uuid.uuid4()), "credentialVersion": 1}, expected=40900)
         call(prefix, {**baseline, "repositoryUrl": "https://127.0.0.1/a/b"}, expected=40000)
-        for provider, url in [("GitHub", "https://github.com/octocat/Hello-World"), ("Gitee", "https://gitee.com/sdk/gitee5j")]:
+        call(prefix, payload("Gitee", "https://gitee.com/sdk/gitee5j"), expected=40000)
+        # 保留两条同时占用的来源任务，平台下线不缩减跨入口准入测试。
+        for provider, url in [("GitHub", "https://github.com/octocat/Hello-World")]*2:
             task = call(prefix, payload(provider, url)); tasks.append(task["taskId"])
             other(prefix + "/" + task["taskId"], expected=40400)
             deadline = time.monotonic() + 75
@@ -145,6 +147,9 @@ def main():
             workspace = Path("temp/code_output") / ("project_" + str(imported["appId"]))
             for receipt in receipts:
                 final = workspace / receipt["path"]
+                if receipt.get("directory"):
+                    assert final.is_dir()
+                    continue
                 assert final.is_file() and final.stat().st_size == int(receipt["size"])
                 assert hashlib.sha256(final.read_bytes()).hexdigest() == receipt["sha256"]
             assert not (workspace / ".git").exists()

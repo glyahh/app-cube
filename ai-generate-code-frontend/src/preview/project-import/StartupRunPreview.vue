@@ -2,9 +2,10 @@
 import {computed,onBeforeUnmount,ref,watch} from 'vue'
 import {Button as AButton,Modal as AModal,Checkbox as ACheckbox,Input as AInput,Select as ASelect,Alert as AAlert,Tag as ATag} from 'ant-design-vue'
 import {UserLoginStore} from '@/stores/UserLogin'
-import {activeApproval,activeScan,agentDirectories,attemptAllowed,cancelApproval,cancelScan,confirmPlan,createPlan,createScan,currentPlan,decideApproval,decideInstall,executionAllowed,stopRun,
+import {activeApproval,activeScan,agentDirectories,attemptAllowed,cancelApproval,cancelInstallJob,cancelScan,confirmPlan,createPlan,createScan,currentInstallJob,currentPlan,decideApproval,decideInstall,executionAllowed,installJobByRequest,installJobTerminal,loadInstallJob,stopRun,
  loadApproval,loadConfiguration,loadInspection,loadPlan,loadScan,retryRun,saveConfiguration,selectableCandidates,startRun,StartupError,
- type InspectionRecord,type ManualService,type StartupApproval,type StartupConfiguration,type StartupPlan,type StartupPreparation,type StartupScan} from '@/features/project-import/startup'
+ currentPreparation,loadExecutionLog,
+ type InspectionRecord,type ManualService,type StartupApproval,type StartupConfiguration,type StartupInstallJob,type StartupPlan,type StartupPreparation,type StartupScan,type StartupExecutionLog} from '@/features/project-import/startup'
 const props=defineProps<{appId:string}>()
 const user=UserLoginStore()
 const ownerId=computed(()=>String(user.userLogin?.id??''))
@@ -12,6 +13,9 @@ const open=ref(false),loading=ref(false),working=ref(false),error=ref(''),notice
 const configuration=ref<StartupConfiguration>(),scope=ref('.'),scan=ref<StartupScan>(),record=ref<InspectionRecord>(),selected=ref<string[]>([])
 const followingScan=ref(false),followingApproval=ref(false)
 const approval=ref<StartupApproval>(),agentDirectory=ref<string>(),plan=ref<StartupPlan>(),acknowledged=ref(false),preparation=ref<StartupPreparation>(),installPrompt=ref(false)
+const executionLog=ref<StartupExecutionLog>(),logBusy=ref(false)
+const installJob=ref<StartupInstallJob>(),followingInstall=ref(false),installNotice=ref(''),installUnknown=ref(false)
+const pendingInstall=ref<{requestId:string;planId:string;planRevision:string;approved:boolean}>(),installNotReceived=ref(false)
 const manual=ref(false),manualName=ref(''),manualDirectory=ref('.'),manualCommand=ref(''),manualInstall=ref(''),manualBuild=ref(''),manualPort=ref(''),editing=ref<string|null>(null),manualError=ref('')
 const scanLabels:Record<string,string>={QUEUED:'排队中',SCANNING:'识别中',CANCELLING:'取消中',CANCELLED:'已取消',SUCCEEDED:'已完成',FAILED:'失败',STALE:'已过期',STOP_FAILED:'停止未确认',RECOVERY_REQUIRED:'待恢复'}
 const scopeLabels:Record<string,string>={IDENTIFIED:'已识别',UNIDENTIFIED:'未识别',INCOMPLETE:'不完整',FAILED:'失败',AMBIGUOUS:'有歧义'}
@@ -29,22 +33,27 @@ const diagnostics=computed(()=>record.value?.status==='SUCCEEDED'?(record.value.
 const scanning=computed(()=>followingScan.value&&!!scan.value&&activeScan.includes(scan.value.status))
 const approving=computed(()=>followingApproval.value&&!!approval.value&&activeApproval.includes(approval.value.state))
 const busy=computed(()=>loading.value||working.value||scanning.value||approving.value)
+// 安装未到服务端终态就不算完成；期间禁止重复安装和运行。
+const installing=computed(()=>installUnknown.value||!!installJob.value&&!installJobTerminal(installJob.value.state))
+const installStage=computed(()=>{const stages=installJob.value?.stages??[];for(let i=stages.length-1;i>=0;i--){const stage=stages[i];if(stage&&stage.status!=='NOT_STARTED')return stage.stage}return undefined})
 const directories=computed(()=>[...new Set(['.',scope.value,...(record.value?.inspection?.result.scopes??[]).map(row=>row.directory),
  ...candidates.value.map(row=>row.directory),...(configuration.value?.services??[]).map(row=>row.directory)])].map(value=>({value,label:value==='.'?'整个工程':value})))
 // 已确认后可以发起安装或运行。服务端拒绝时按钮仍在，但不会显示已启动。
-const attempt=computed(()=>attemptAllowed(plan.value)&&!busy.value)
+const attempt=computed(()=>attemptAllowed(plan.value)&&!busy.value&&!installing.value)
 const runnable=computed(()=>executionAllowed(plan.value,preparation.value?.runPermitted===true))
 const aggregates=computed(()=>plan.value?.plan.aggregates??[])
 function serviceName(id:string){const key=id.replace(/^service:/,'');return plan.value?.plan.available.find(row=>row.id===key)?.name??key}
 const canConfirm=computed(()=>plan.value?.state==='DRAFT'&&(!aggregates.value.length||acknowledged.value)&&!busy.value)
 const storageKey=computed(()=>`project-import-startup-approval:${ownerId.value}:${props.appId}`)
+const installStorageKey=computed(()=> 'project-import-install-request:'+ownerId.value+':'+props.appId)
 let generation=0
 const timers=new Set<ReturnType<typeof setTimeout>>()
 // 1. 每次切换应用/账号或卸载都换代，迟到响应不写入当前界面。
 function current(){const value=generation;return ()=>value===generation}
 function delay(ms:number){return new Promise<void>(resolve=>{const timer=setTimeout(()=>{timers.delete(timer);resolve()},ms);timers.add(timer)})}
 function reset(){generation++;for(const timer of timers)clearTimeout(timer);timers.clear();followingScan.value=followingApproval.value=false
- configuration.value=scan.value=record.value=approval.value=plan.value=preparation.value=undefined;selected.value=[];error.value=notice.value='';acknowledged.value=false;installPrompt.value=false;scope.value='.';loading.value=working.value=false}
+ configuration.value=scan.value=record.value=approval.value=plan.value=preparation.value=undefined;selected.value=[];executionLog.value=undefined;error.value=notice.value='';acknowledged.value=false;installPrompt.value=false;scope.value='.';loading.value=working.value=logBusy.value=false
+ installJob.value=undefined;followingInstall.value=false;installNotice.value='';installUnknown.value=false;pendingInstall.value=undefined;installNotReceived.value=false}
 function fail(cause:unknown){if((cause as Error)?.name!=='AbortError')error.value=cause instanceof Error?cause.message:'操作失败，请重试。'}
 async function guarded(action:(alive:()=>boolean)=>Promise<void>){
  if(working.value)return
@@ -56,12 +65,26 @@ async function openPanel(){
  if(loading.value)return
  const alive=current();loading.value=true;error.value=''
  try{
+  const pending=sessionStorage.getItem(installStorageKey.value)
+  if(pending){
+   installUnknown.value=true
+   let requestId=pending
+   try{const saved=JSON.parse(pending);if(typeof saved.requestId==='string'&&typeof saved.approved==='boolean'){pendingInstall.value=saved;requestId=saved.requestId}}catch{ /* 兼容已保存的旧请求身份，只查询、不猜测原安装决定。 */ }
+   try{const restored=await installJobByRequest(context(),requestId);if(!alive())return;installJob.value=restored;installUnknown.value=false}
+   catch{if(alive())installNotice.value='受理状态尚未确认，请刷新后查看。'}
+  }
   configuration.value=await loadConfiguration(context())
   if(!alive())return
   scope.value=configuration.value.scope||'.'
   const latest=await currentPlan(context())
   if(!alive())return
-  plan.value=latest??undefined
+   plan.value=latest??undefined
+   if(latest&&['CONFIRMED','STALE'].includes(latest.state)){
+    try{preparation.value=(await currentPreparation(context(),latest))??undefined}catch(cause){if(cause instanceof StartupError&&cause.code===40400)preparation.value=undefined;else throw cause}
+    // 页面刷新后恢复该计划的安装任务；只读任务登记，不重新发起安装。
+    try{const restored=await currentInstallJob(context(),latest);if(alive()&&restored&&(!pendingInstall.value||restored.requestId===pendingInstall.value.requestId)){installJob.value=restored;installUnknown.value=false}}
+    catch(cause){if(alive()&&(cause as Error).name!=='AbortError'){installNotice.value='安装状态暂时无法读取，可重新打开面板重试。';installUnknown.value=true}}
+   }
   // 2. 有效计划所依据的识别重新读取；识别失效时不恢复候选。
   if(latest&&['DRAFT','CONFIRMED'].includes(latest.state)){
    const [restoredScan,restored]=await Promise.all([loadScan(context(),latest.scanId),loadInspection(context(),latest.scanId)])
@@ -74,6 +97,25 @@ async function openPanel(){
    catch(cause){if(cause instanceof StartupError&&cause.code===40400)sessionStorage.removeItem(storageKey.value);else throw cause}
   }
  }catch(cause){if(alive())fail(cause)}finally{if(alive())loading.value=false}
+ if(alive()&&installJob.value&&!installUnknown.value)void followInstall(alive).catch(cause=>{if(alive())fail(cause)})
+}
+/** 受理未知先只读找回；明确未受理后由用户按原请求身份提交。 */
+function recoverInstall(resubmit=false){
+ return guarded(async alive=>{
+  const saved=pendingInstall.value;if(!saved)return
+  let job:StartupInstallJob
+  try{job=await installJobByRequest(context(),saved.requestId)}
+  catch(cause){
+   if(!(cause instanceof StartupError)||cause.code!==40400)throw cause
+   if(!resubmit){if(alive()){installNotReceived.value=true;installNotice.value='未查到任务，可按原请求重新提交。'}return}
+   const value=plan.value
+   if(!value||value.planId!==saved.planId||value.planRevision!==saved.planRevision)throw new Error('原计划已变化，不能重新提交。')
+   job=await decideInstall(context(),value,saved.approved,saved.requestId)
+  }
+  if(!alive())return
+  installJob.value=job;installUnknown.value=false;installNotReceived.value=false;working.value=false
+  await followInstall(alive)
+ })
 }
 function scanMessage(value:StartupScan){
  if(value.status==='CANCELLED')notice.value='已取消识别，未产生候选。'
@@ -203,10 +245,56 @@ function showPreparation(value:StartupPreparation){
  if(value.reason)error.value=value.state==='SUCCEEDED'||value.state==='READY'||value.state==='NOT_REQUIRED'?'':`${preparationLabels[value.state]??value.state}：${preparationLabels[value.reason]??value.reason}`
 }
 function askInstall(){if(plan.value)installPrompt.value=true}
+const installLabels:Record<string,string>={PENDING:'已受理',PREPARING:'准备中',INSTALLING:'安装中',VERIFYING:'核对中',SUCCEEDED:'完成',FAILED:'失败',REJECTED:'已拒绝',CANCELLING:'正在取消',CANCELLED:'已取消',STOP_FAILED:'停止未确认',RECOVERY_REQUIRED:'待恢复'}
+const installStageLabels:Record<string,string>={PLAN_VALIDATE:'核对计划',ADMISSION:'准入检查',COPY_PROJECT:'复制工程',PREPARE_WORKSPACE:'准备工作区',PREPARE_VOLUME:'准备磁盘卷',CREATE_CONTAINER:'创建容器',START_CONTAINER:'启动容器',NPM_INSTALL:'安装前端依赖',PIP_INSTALL:'安装 Python 依赖',BUILD_PREPARE:'准备构建',VERIFY:'核对结果',CLEANUP:'清理'}
+/** 提交安装只受理；POST 响应丢失时按同一 requestId 找回任务，不重复提交。 */
 function chooseInstall(approved:boolean){
  installPrompt.value=false
  const value=plan.value;if(!value)return
- return guarded(async alive=>{const next=await decideInstall(context(),value,approved);if(alive())showPreparation(next)})
+ return guarded(async alive=>{
+  const requestId=crypto.randomUUID()
+  pendingInstall.value={requestId,planId:value.planId,planRevision:value.planRevision,approved}
+  sessionStorage.setItem(installStorageKey.value,JSON.stringify(pendingInstall.value));installUnknown.value=true;installNotReceived.value=false
+  let job:StartupInstallJob
+  try{job=await decideInstall(context(),value,approved,requestId)}
+  catch(cause){
+   if(cause instanceof StartupError){
+    try{job=await installJobByRequest(context(),requestId)}
+    catch{if(alive())installNotice.value='受理状态尚未确认，请刷新后查看。';throw new Error('安装受理状态未知，请刷新查看。')}
+   }else throw cause
+  }
+  if(!alive())return
+  installJob.value=job;installNotice.value='';installUnknown.value=false
+  working.value=false
+  await followInstall(alive)
+ })
+}
+async function followInstall(alive:()=>boolean){
+ followingInstall.value=true
+ try{
+  // 只按真实任务状态推进；读不到状态时保持未知，不显示安装失败也不重新发起安装。
+  while(alive()&&installJob.value&&!installJobTerminal(installJob.value.state)){
+   await delay(2000)
+   if(!alive()||!installJob.value)return
+   try{installJob.value=await loadInstallJob(context(),installJob.value.jobId);installNotice.value=''}
+   catch(cause){if((cause as Error).name==='AbortError')throw cause;installNotice.value='状态暂时无法读取，正在重试。'}
+  }
+ }finally{if(alive())followingInstall.value=false}
+ if(!alive()||!installJob.value)return
+ installMessage(installJob.value)
+}
+function installMessage(job:StartupInstallJob){
+ if(installJobTerminal(job.state)){installUnknown.value=false;pendingInstall.value=undefined;sessionStorage.removeItem(installStorageKey.value)}
+ if(job.state==='SUCCEEDED'){notice.value='安装完成。';return}
+ if(job.state==='REJECTED'){notice.value='已拒绝安装，未执行任何步骤。';return}
+ if(job.state==='CANCELLED'){notice.value='安装已取消。';return}
+ if(job.state==='STOP_FAILED'||job.state==='RECOVERY_REQUIRED'){error.value='安装停止或资源清理未确认，现场已保留，请稍后重试。';return}
+ if(job.state==='FAILED')error.value=`安装失败${job.failureStage?`（${installStageLabels[job.failureStage]??job.failureStage}）`:''}${job.failureReason?`：${job.failureReason}`:''}。`
+}
+/** 取消只登记意图；真正停止由后台确认，未确认前不宣称已取消。 */
+function cancelInstall(){
+ const job=installJob.value;if(!job||installJobTerminal(job.state))return
+ return guarded(async alive=>{try{installJob.value=await cancelInstallJob(context(),job)}catch(cause){if(alive())fail(cause)}})
 }
 function launch(){
  const value=plan.value;if(!value)return
@@ -219,6 +307,12 @@ function halt(){
 function retry(){
  const value=plan.value;if(!value)return
  return guarded(async alive=>{const next=await retryRun(context(),value);if(alive())showPreparation(next)})
+}
+async function showLog(executionId:string){
+ const value=plan.value;if(!value||logBusy.value)return
+ const alive=current();logBusy.value=true;error.value=''
+ try{executionLog.value=await loadExecutionLog(context(),value,executionId);if(alive())executionLog.value=executionLog.value}
+ catch(cause){if(alive())fail(cause)}finally{if(alive())logBusy.value=false}
 }
 watch(()=>[props.appId,ownerId.value],()=>{reset();if(open.value)void openPanel()})
 onBeforeUnmount(()=>{generation++;for(const timer of timers)clearTimeout(timer);timers.clear()})
@@ -233,6 +327,7 @@ onBeforeUnmount(()=>{generation++;for(const timer of timers)clearTimeout(timer);
    <div class="scope"><label for="startup-directory">运行目录</label><a-select id="startup-directory" v-model:value="scope" aria-label="运行目录" :disabled="busy" :options="directories" /><a-button :disabled="busy||!configuration" data-testid="startup-scan" @click="inspect">{{record?'重新识别':'识别'}}</a-button></div>
    <a-alert v-if="error" type="error" show-icon :message="error" data-testid="startup-error" />
    <a-alert v-if="notice" type="info" :message="notice" data-testid="startup-notice" />
+   <div v-if="installUnknown" data-testid="startup-install-unknown"><span>{{installNotice||'安装受理状态未知。'}}</span><a-button v-if="pendingInstall" :disabled="busy" data-testid="startup-install-recover" @click="recoverInstall(false)">查询安装</a-button><a-button v-if="pendingInstall&&installNotReceived" :disabled="busy" data-testid="startup-install-resubmit" @click="recoverInstall(true)">重新提交原请求</a-button></div>
    <div v-if="loading" role="status">正在读取…</div>
    <div v-if="scan" class="status-line" data-testid="startup-scan-status"><span>识别 · {{scanLabels[scan.status]??scan.status}}</span><a-button v-if="scanning&&scan.status!=='CANCELLING'" size="small" @click="stopScan">取消识别</a-button></div>
    <div v-for="row in candidates" :key="row.id" class="service" data-testid="startup-candidate">
@@ -258,13 +353,17 @@ onBeforeUnmount(()=>{generation++;for(const timer of timers)clearTimeout(timer);
      <span v-for="row in aggregates" :key="row.id">{{serviceName(row.id)}}：{{row.reasons.map(item=>reasonLabels[item]??item).join('、')}}{{row.unselected.length?` · 将带上未选服务 ${row.unselected.map(serviceName).join('、')}`:''}}</span>
      <a-checkbox v-if="plan.state==='DRAFT'" :checked="acknowledged" @change="(event:{target:{checked:boolean}})=>acknowledged=event.target.checked">我已核对展开范围</a-checkbox></div>
     <div v-if="plan.diff.length" class="diff" data-testid="startup-diff"><strong>与上次确认的差异</strong><code v-for="row in plan.diff" :key="row.path">{{row.path}}：{{row.before??'无'}} → {{row.after??'无'}}</code></div>
-    <div v-if="preparation" class="services" data-testid="startup-services"><div v-for="row in preparation.services" :key="row.serviceId" class="command"><span>{{row.serviceId}} · {{preparationLabels[row.state]??row.state}}</span><code v-if="row.address">{{row.address}}</code><span v-else-if="row.state==='READY'">未声明端口，不提供访问地址</span><span v-if="row.reason">{{preparationLabels[row.reason]??row.reason}}</span></div></div>
+   <div v-if="installJob" class="status-line" data-testid="startup-install-job"><span>安装 · {{installLabels[installJob.state]??installJob.state}}<template v-if="installing&&installStage"> · {{installStageLabels[installStage]??installStage}}</template></span><a-button v-if="installing&&!installJob.cancelRequested" size="small" data-testid="startup-install-cancel" @click="cancelInstall">取消安装</a-button></div>
+   <a-alert v-if="installNotice" type="warning" show-icon :message="installNotice" data-testid="startup-install-notice" />
+   <dl v-if="installJob&&installJob.stages.length" class="evidence" data-testid="startup-install-stages"><template v-for="(row,index) in installJob.stages" :key="index"><dt>{{installStageLabels[row.stage]??row.stage}}</dt><dd>{{row.status}}{{row.durationMs!==null?` · ${row.durationMs}ms`:''}}{{row.exitCode!==null?` · exit ${row.exitCode}`:''}}{{row.reason?` · ${row.reason}`:''}}</dd></template></dl>
+   <div v-if="preparation" class="services" data-testid="startup-services"><div v-for="row in preparation.services" :key="row.serviceId" class="command"><span>{{row.serviceId}} · {{preparationLabels[row.state]??row.state}}</span><code v-if="row.address">{{row.address}}</code><span v-else-if="row.state==='READY'">未声明端口，不提供访问地址</span><span v-if="row.reason">{{preparationLabels[row.reason]??row.reason}}</span><a-button v-if="row.executionId" type="link" size="small" :loading="logBusy" @click="showLog(row.executionId)">查看日志</a-button></div></div>
     <div class="footer"><a-button :disabled="busy" @click="refreshPlan">刷新计划</a-button><a-button v-if="plan.state==='DRAFT'" type="primary" :disabled="!canConfirm" data-testid="startup-confirm" @click="confirm">确认计划</a-button><a-button v-if="preparation?.servicesStarted" :disabled="busy" data-testid="startup-stop" @click="halt">停止</a-button><a-button v-if="preparation&&['PARTIAL','FAILED','NONE_READY'].includes(preparation.state)&&preparation.reason!=='STOP_FAILED'" :disabled="busy" data-testid="startup-retry" @click="retry">重试失败项</a-button></div>
-   </section>
+ </section>
    <div class="footer"><a-button :disabled="busy||!configuration" @click="editService()">添加服务</a-button><a-button :disabled="busy||!selected.length||!candidates.length" data-testid="startup-plan-create" @click="makePlan">生成运行计划</a-button><a-button type="primary" :disabled="!attempt" data-testid="startup-run" @click="launch">运行所选</a-button></div>
    <span class="hint">{{runnable?'所选服务已就绪。':'安装只执行计划中写明的步骤，不会因此启动。依赖未核对、拒绝安装或执行被拒绝时，服务不会启动。'}}</span>
   </div>
  </a-modal>
+ <a-modal :open="!!executionLog" title="执行日志" :footer="null" @cancel="executionLog=undefined"><pre class="execution-log" data-testid="startup-execution-log">{{executionLog?.content}}</pre></a-modal>
  <a-modal :open="installPrompt" :z-index="1100" title="是否安装依赖？" @cancel="installPrompt=false">
   <p>只执行计划里已经写明的安装步骤，不会启动服务。目录里已有文件不代表依赖就绪。</p>
   <template #footer><a-button data-testid="startup-install-reject" @click="chooseInstall(false)">暂不安装</a-button><a-button type="primary" data-testid="startup-install-approve" @click="chooseInstall(true)">安装依赖</a-button></template>
@@ -285,6 +384,7 @@ onBeforeUnmount(()=>{generation++;for(const timer of timers)clearTimeout(timer);
 .service,.plan{display:flex;flex-direction:column;gap:12px;padding:20px;background:var(--bg-soft);border:1px solid var(--border-color);border-radius:12px;min-width:0}
 .command,.startup-content>label,.aggregate,.diff{display:flex;flex-direction:column;gap:8px;min-width:0}
 code{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+.execution-log{max-height:60vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg-soft);padding:12px;border-radius:6px;font-size:12px}
 .command span,.evidence,.hint,.muted,.unknown small{color:var(--text-muted);font-size:13px}.evidence{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:0}.evidence dd{margin:0;overflow-wrap:anywhere}
 .unknown{padding:16px 0;border-bottom:1px solid var(--border-color)}.unknown>div{display:flex;gap:8px;flex-wrap:wrap}.unknown span{overflow-wrap:anywhere}.unknown small{margin-left:8px}.phase{margin-left:8px}.footer{padding-top:4px}
 @media(max-width:560px){.service,.plan{padding:16px}.scope{align-items:stretch}.scope label{width:100%}}

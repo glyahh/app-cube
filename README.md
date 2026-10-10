@@ -5,7 +5,7 @@ Agent 驱动的应用开发工作台。
 [GitHub](https://github.com/glyahh/app-cube) · [命名与改名说明](docs/PROJECT_BRANDING.md)
 
 围绕代码生成与调试，帮助开发者把 Demo 逐步改造成满足实际业务与部署要求的可交付项目。
-保留新项目生成能力；已有项目接入和可回放的修复验证闭环是后续主线，不把生成成功、编译通过或容器启动等同于交付完成。
+保留新项目生成能力；已有项目导入、受限安装运行与模型编辑发布闭环已完成本期交付。支持范围见[第一项最终范围](docs/PLANS/project-import-item1-final-scope-20261009.md)。
 
 > 本文按当前源码整理。能力状态、差距及第一阶段验收见 [当前项目状态与开发主线](docs/CURRENT_PROJECT_STATUS.md)。本次文档同步未运行服务或测试，不代表新的运行验收。
 

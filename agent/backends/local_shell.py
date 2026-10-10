@@ -29,6 +29,7 @@ from deepagents.backends.protocol import ExecuteResponse
 
 from backends.permissions import CommandRejected, ensure_safe_command
 from core.masking import mask
+from backends.secret_files import SecretSafeFilesMixin
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 MAX_OUTPUT_CHARS = 30_000
 
 
-class GuardedShellBackend(LocalShellBackend):
+class GuardedShellBackend(SecretSafeFilesMixin, LocalShellBackend):
     """框架 backend + 命令白名单 + 编码安全 + 输出脱敏 + 检索留痕。
 
     **检索留痕为什么放在 backend 而不是中间件**：glob / grep / read 这些调用
@@ -78,6 +79,7 @@ class GuardedShellBackend(LocalShellBackend):
         # 白名单不过就直接拒。这是可恢复错误：Python 侧会把它转成 ToolMessage，
         # 模型能看到原因并换一种做法，而不是以为工具坏了。
         ensure_safe_command(command, self.workspace)
+        self._refresh_secrets()
 
         effective_timeout = timeout or getattr(self, "_default_timeout", 120)
         if effective_timeout <= 0:
@@ -115,11 +117,11 @@ class GuardedShellBackend(LocalShellBackend):
             ))
 
         output = "".join(parts)
+        output = self._mask_output(output)
         truncated = len(output) > MAX_OUTPUT_CHARS
         if truncated:
             output = output[:MAX_OUTPUT_CHARS] + "\n…（输出已截断）"
 
-        output = mask(output)
         if truncated or proc.returncode != 0:
             output += f"\n\nExit code: {proc.returncode}"
 

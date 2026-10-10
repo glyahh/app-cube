@@ -46,8 +46,19 @@ class ImportLogMaskTest {
     }
 
     @Test
-    void 只对合法UTF8内容做遮盖回写() {
-        assertTrue(ImportLogMask.roundTrips("正常输出".getBytes(StandardCharsets.UTF_8)));
-        assertFalse(ImportLogMask.roundTrips(new byte[]{(byte) 0xff, (byte) 0xfe, 0x00}));
+    void 引号赋值与JSON值均遮盖() {
+        String text = "PASSWORD='private secret'\n{\"api_key\":\"fake_json_secret\",\"errno\":28}";
+        String masked = ImportLogMask.mask(text);
+        assertFalse(masked.contains("private secret"));
+        assertFalse(masked.contains("fake_json_secret"));
+        assertTrue(masked.contains("\"errno\":28"));
+    }
+
+    @Test void 不完整引号值遮盖且重复键名不导致长时间回溯() {
+        assertEquals("PASSWORD=***", ImportLogMask.mask("PASSWORD='unfinished private value"));
+        String harmless = "TOKEN".repeat(20000);
+        org.junit.jupiter.api.Assertions.assertTimeout(java.time.Duration.ofSeconds(2), () ->
+                assertEquals(harmless, ImportLogMask.mask(harmless)));
+        assertEquals("COUNT=28 TOKEN=***", ImportLogMask.mask("COUNT=28 TOKEN=private"));
     }
 }

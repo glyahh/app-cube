@@ -44,6 +44,7 @@ public final class UserFacingOutputHandler {
 
     public static String errorMessage(String code) {
         return switch (code == null ? "" : code) {
+            case "IMPORT_EDIT_NOT_READY" -> "导入项目编辑尚未就绪，本次未执行";
             case "MODEL_QUOTA_EXCEEDED" -> "生成服务额度不足，请稍后重试";
             case "RUN_DEADLINE_EXCEEDED", "SANDBOX_TIMEOUT" -> "处理超时，请稍后重试";
             case "SANDBOX_BUSY" -> "当前任务正在处理中，请稍后重试";
@@ -119,6 +120,8 @@ public final class UserFacingOutputHandler {
                         out.put("code", "GENERATION_FAILED");
                         out.put("message", errorMessage(event.errorCode()));
                         out.put("retryable", in.path("retryable").asBoolean(false));
+                        String failureKey=in.path("failureKey").asText();
+                        if(failureKey.matches("IMPORT_[A-Z_]{1,70}"))out.put("failureKey",failureKey);
                     }
                     case AgentEvent.RUN_COMPLETED -> {
                         out.put("status", "succeeded".equals(event.status()) ? "succeeded" : "failed");
@@ -128,6 +131,19 @@ public final class UserFacingOutputHandler {
                         out.put("fromRoute", "proxy");
                         out.put("toRoute", "direct");
                         out.put("reason", "connect_error");
+                    }
+                    case "import.edit.model.audit" -> {
+                        // 审计帧只包含编辑身份、数量和请求摘要；通过白名单转发，不能把内部请求正文带出。
+                        String editId = in.path("editId").asText();
+                        int count = in.path("count").asInt(-1);
+                        int blocked = in.path("blocked").asInt(-1);
+                        JsonNode digests = in.path("digests");
+                        // ImportAgentEditExecution 已在发布前完成完整格式校验；这里仅复制白名单字段，
+                        // 避免展示层的重复校验把已确认的审计事件静默吞掉。
+                        if (!editId.matches("[0-9a-fA-F-]{36}") || count < 1 || blocked != 0
+                                || !digests.isArray() || digests.size() != count) return result;
+                        out.put("editId", editId).put("count", count).put("blocked", blocked);
+                        out.set("digests", digests.deepCopy());
                     }
                     case AgentEvent.RUN_STARTED, AgentEvent.HEARTBEAT, AgentEvent.END -> { }
                     case AgentEvent.ARTIFACT_CHANGED, AgentEvent.ARTIFACT_MANIFEST -> {

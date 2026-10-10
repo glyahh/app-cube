@@ -9,7 +9,34 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ImportStartupSnapshotStoreTest {
+    @Test void readOnlyDescriptionMatchesCapturedVersionWithoutCreatingPayload()throws Exception {
+        Path work=workspace();Files.writeString(work.resolve("中文 空格.txt"),"fixture");
+        Files.write(work.resolve("binary.bin"),new byte[]{0,1,-1});Files.writeString(work.resolve(".env"),"test-secret");
+        Files.createDirectories(work.resolve("empty"));var store=store(work);UUID id=UUID.randomUUID();
+        var description=store.describe(id,work,()->true);
+        assertTrue(store.inputAbsent(id));assertEquals(3,description.files().stream().filter(file->!file.directory()).count());
+        assertTrue(description.attributes().containsKey("empty"));
+        var captured=store.capture(UUID.randomUUID(),work,()->true);
+        assertEquals(captured.contentHash(),description.contentHash());
+        Files.writeString(work.resolve(".env"),"next-secret");
+        assertThrows(java.io.IOException.class,()->store.verify(description,work,()->true));
+        assertTrue(store.inputAbsent(id));
+    }
+    @Test void readOnlyDescriptionRefusesRevocationAndLimitsWithoutCreatingPayload()throws Exception {
+        Path work=workspace();Files.writeString(work.resolve("one.txt"),"fixture");var store=store(work);UUID id=UUID.randomUUID();
+        assertThrows(java.io.IOException.class,()->store.describe(id,work,()->false));assertTrue(store.inputAbsent(id));
+        var limited=new ImportStartupSnapshotStore(root.resolve("limited"),List.of(work),1,1);
+        assertThrows(java.io.IOException.class,()->limited.describe(id,work,()->true));assertTrue(limited.inputAbsent(id));
+    }
     @TempDir Path root;
+    @Test void preparesExecutionCopyWithNestedEmptyDirectories() throws Exception {
+        Path work=workspace();Files.writeString(work.resolve("index.html"),"fixture");
+        Files.createDirectories(work.resolve("中文 空目录/子目录"));var store=store(work);
+        var snapshot=store.capture(UUID.randomUUID(),work,()->true);
+        Path copy=store.materialize(snapshot,()->true);
+        assertTrue(Files.isDirectory(copy.resolve("中文 空目录/子目录")));
+        assertEquals("fixture",Files.readString(copy.resolve("index.html")));
+    }
     Path workspace() throws Exception {return Files.createDirectory(root.resolve("workspace"));}
     ImportStartupSnapshotStore store(Path workspace) throws Exception {
         return new ImportStartupSnapshotStore(root.resolve("snapshots"),List.of(workspace),100,1024*1024);
@@ -19,7 +46,7 @@ class ImportStartupSnapshotStoreTest {
         Files.writeString(work.resolve(".env"),"fixture-private");Files.createDirectories(work.resolve(".glyahh"));
         Files.writeString(work.resolve(".glyahh/run.json"),"{}");
         var store=store(work);var snapshot=store.capture(UUID.randomUUID(),work,()->true);
-        assertEquals(3,snapshot.files().size());assertEquals(java.util.Map.of(".glyahh/run.json","{}"),store.parserInput(snapshot));
+        assertEquals(3,snapshot.files().stream().filter(file->!file.directory()).count());assertEquals(java.util.Map.of(".glyahh/run.json","{}"),store.parserInput(snapshot));
         assertTrue(Files.exists(work.resolve("image.bin")));assertEquals("fixture-private",Files.readString(work.resolve(".env")));
     }
     @Test void agentProjectionReadsSealedSourcesAndReadmeButNotProtectedOrHistoricalFiles()throws Exception{
@@ -85,7 +112,7 @@ class ImportStartupSnapshotStoreTest {
     @Test void dependenciesAreInFullIdentityButNotParserInput() throws Exception {
         Path work=workspace();Files.writeString(work.resolve("index.html"),"fixture");Files.createDirectories(work.resolve("node_modules/pkg"));
         Files.writeString(work.resolve("node_modules/pkg/package.json"),"{}");var store=store(work);
-        var first=store.capture(UUID.randomUUID(),work,()->true);assertEquals(2,first.files().size());
+        var first=store.capture(UUID.randomUUID(),work,()->true);assertEquals(2,first.files().stream().filter(file->!file.directory()).count());
         assertEquals(java.util.Map.of("index.html","fixture"),store.parserInput(first));
         Files.writeString(work.resolve("node_modules/pkg/package.json"),"[]");assertThrows(java.io.IOException.class,()->store.verify(first,work,()->true));
     }

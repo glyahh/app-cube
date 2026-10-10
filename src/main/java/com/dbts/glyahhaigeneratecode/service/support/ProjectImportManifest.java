@@ -21,7 +21,9 @@ public final class ProjectImportManifest {
 
     private ProjectImportManifest() { }
 
-    public record FileEntry(String path, long size) { }
+    public record FileEntry(String path, long size, boolean directory) {
+        public FileEntry(String path,long size){this(path,size,false);}
+    }
     public record Options(boolean skipDependencies, boolean skipBuildOutputs, boolean includeSensitive) {
         public static Options defaults() { return new Options(false, false, false); }
     }
@@ -47,11 +49,14 @@ public final class ProjectImportManifest {
         if (files.size() > limits.maxFiles()) throw new IllegalArgumentException("文件数量超过导入额度，未截断清单。");
         Set<String> filePaths = new HashSet<>();
         Set<String> directoryPaths = new HashSet<>();
+        Set<String> entries = new HashSet<>();
         Map<String, String> canonicalPaths = new HashMap<>();
         long sourceBytes = 0;
         for (FileEntry file : files) {
             if (file == null || file.size() < 0) throw new IllegalArgumentException("文件大小无效。");
+            if(file.directory()&&file.size()!=0)throw new IllegalArgumentException("目录不能携带文件内容。");
             validatePath(file.path());
+            if(!entries.add(file.path().toLowerCase(Locale.ROOT)))throw new IllegalArgumentException("路径重复。");
             if (file.size() > limits.maxSourceBytes() - sourceBytes) {
                 throw new IllegalArgumentException("来源大小超过导入额度，未生成部分清单。");
             }
@@ -65,7 +70,7 @@ public final class ProjectImportManifest {
                 if (previous != null && !previous.equals(prefix)) {
                     throw new IllegalArgumentException("文件路径存在大小写冲突。");
                 }
-                if (i < parts.length - 1) directoryPaths.add(key);
+                if (i < parts.length - 1 || file.directory()) directoryPaths.add(key);
                 else if (!filePaths.add(key)) throw new IllegalArgumentException("文件路径重复。");
             }
         }
@@ -78,7 +83,7 @@ public final class ProjectImportManifest {
         List<ExcludedFile> excluded = new ArrayList<>();
         long includedBytes = 0;
         for (FileEntry file : files) {
-            ExclusionReason reason = exclusion(file.path(), options);
+            ExclusionReason reason = exclusion(file.directory()?file.path()+"/":file.path(), options);
             if (reason == null) {
                 included.add(file);
                 includedBytes += file.size();
@@ -113,8 +118,8 @@ public final class ProjectImportManifest {
     }
 
     private static ExclusionReason exclusion(String path, Options options) {
-        String[] parts = path.split("/");
-        boolean sensitive = isSensitivePath(path);
+        String[] parts = path.split("/", -1);
+        boolean sensitive = isSensitivePath(path.endsWith("/") ? path.substring(0,path.length()-1) : path);
         if (!options.includeSensitive() && sensitive) return ExclusionReason.SENSITIVE;
         for (int i = 0; i < parts.length - 1; i++) {
             if (options.skipDependencies() && DEPENDENCIES.contains(parts[i])) return ExclusionReason.DEPENDENCY;

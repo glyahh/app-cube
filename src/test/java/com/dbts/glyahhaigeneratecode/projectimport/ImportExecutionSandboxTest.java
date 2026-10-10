@@ -33,6 +33,7 @@ class ImportExecutionSandboxTest {
         var fake=new Fake();
         fake.answers.put("info",args->new ImportExecutionSandbox.Engine.Result(true,0,"true|true|true|"+swapLimit+"\n",""));
         fake.answers.put("run",args->new ImportExecutionSandbox.Engine.Result(true,0,swapTotal+"\n",""));
+        fake.answers.put("inspect",args->new ImportExecutionSandbox.Engine.Result(false,1,"","Error: No such object"));
         return fake;
     }
 
@@ -96,12 +97,22 @@ class ImportExecutionSandboxTest {
         var fake=engine("false","4194304");
         assertEquals(List.of("MEMORY_LIMIT_UNENFORCEABLE"),new ImportExecutionSandbox(fake,"img").preflight(LIMITS));
         // 1. 探测容器本身也无网络、只读、非特权，不挂载工程。
-        var probe=fake.calls.stream().filter(call->call.get(0).equals("run")).findFirst().orElseThrow();
+        var probe=fake.calls.stream().filter(call->call.get(0).equals("create")).findFirst().orElseThrow();
         assertTrue(probe.containsAll(List.of("--network","none","--read-only","--cap-drop","ALL")));assertFalse(String.join(" ",probe).contains("-v"));
-        assertEquals(List.of(),new ImportExecutionSandbox(engine("false","0"),"img").preflight(LIMITS));
+        assertEquals(List.of("MEMORY_LIMIT_UNENFORCEABLE"),new ImportExecutionSandbox(engine("false","0"),"img").preflight(LIMITS));
         assertEquals(List.of(),new ImportExecutionSandbox(engine("true","4194304"),"img").preflight(LIMITS));
         var verification=new ImportExecutionSandbox.Limits(0.5,128L<<20,32,32L<<20,8L<<20,Duration.ofSeconds(20),4096,ImportExecutionSandbox.Memory.VERIFICATION_ONLY_UNGUARANTEED);
         assertEquals(List.of(),new ImportExecutionSandbox(engine("false","4194304"),"img").preflight(verification));
+    }
+    @Test void probeCleanupMustBeConfirmedBeforeReportingHardSwapReady(){
+        var fake=engine("false","0");
+        fake.answers.put("create",args->new ImportExecutionSandbox.Engine.Result(true,0,ID,""));
+        fake.answers.put("inspect",args->new ImportExecutionSandbox.Engine.Result(false,1,"","engine unavailable"));
+        assertEquals(List.of("MEMORY_PROBE_STOP_UNCONFIRMED"),new ImportExecutionSandbox(fake,"img").preflight(LIMITS));
+    }
+    @Test void hardMemoryGuardNeverAcceptsHostNoSwapInsteadOfCgroupLimit(){
+        assertTrue(ImportExecutionSandbox.GUARD.contains("[ \"$s\" = 0 ] || fail MEMORY_SWAP"));
+        assertFalse(ImportExecutionSandbox.GUARD.contains("SwapTotal"));
     }
     @Test void hardSwapPinLetsPreflightPassAndUnpinRefusesBeforeGo()throws IOException{
         var ready=engine("false","4194304");
@@ -115,6 +126,17 @@ class ImportExecutionSandboxTest {
             dir.resolve("g.sh"),dir.resolve("e.env"),dir.resolve("o.log"),journal(new ArrayList<>()),()->false);
         assertEquals("REFUSED",outcome.state());assertEquals("MEMORY_LIMIT_UNENFORCEABLE",outcome.reason());
         assertTrue(blocked.calls.stream().noneMatch(call->call.get(0).equals("attach")));
+    }
+    @Test void 每次限额探针独占身份且不会删除其他请求的探针(){
+        var ready=engine("false","4194304");
+        ready.answers.put("create",args->new ImportExecutionSandbox.Engine.Result(true,0,ID+"\n",""));
+        var sandbox=new ImportExecutionSandbox(ready,"img");
+        assertEquals(List.of(),sandbox.preflight(LIMITS));
+        assertEquals(List.of(),sandbox.preflight(LIMITS));
+        var names=ready.calls.stream().filter(args->"create".equals(args.getFirst()))
+            .map(args->args.get(args.indexOf("--name")+1)).toList();
+        assertEquals(2,new HashSet<>(names).size());
+        assertFalse(ready.calls.contains(List.of("rm","-f",ImportExecutionSandbox.PREFIX+"pinprobe")));
     }
     @Test void liveHardMemoryRunsSmallCommandAndKillsOversize()throws Exception{
         Assumptions.assumeTrue(Boolean.getBoolean("import.exec.pin")||"1".equals(System.getenv("IMPORT_EXEC_PIN")),"未要求真实钉交换区核对");
@@ -167,6 +189,32 @@ class ImportExecutionSandboxTest {
             var live=ImportExecutionSandbox.docker(docker).run(List.of("inspect","--format","{{.State.Running}}|{{json .HostConfig.PortBindings}}",servedId),30);
             assertTrue(live.ok());assertTrue(live.stdout().startsWith("true|"));assertTrue(live.stdout().contains("{}")||live.stdout().contains("null"));
         }finally{if(servedId!=null)assertTrue(sandbox.removed(servedId));}
+    }
+    @Test void liveGuardRejectsUnboundedSwapEvenWhenHostHasNone()throws Exception{
+        Assumptions.assumeTrue(Boolean.getBoolean("import.exec.pin"),"未要求真实容器守卫反例");
+        var docker=new DockerCli(new RuntimeProperties());
+        Assumptions.assumeTrue(docker.commandPrefix()!=null,"docker 不可用");
+        var actual=ImportExecutionSandbox.docker(docker);
+        var capability=actual.run(List.of("info","--format","{{.SwapLimit}}"),30);
+        Assumptions.assumeTrue(capability.ok()&&"false".equals(capability.stdout().strip()),"本反例要求引擎不自动施加 swap 限额");
+        // 故意让平台适配器谎报成功，证明容器守卫仍会独立拒绝未生效的限制。
+        var faulty=new ImportExecutionSandbox.Engine(){
+            @Override public Result run(List<String> args,int timeout){return actual.run(args,timeout);}
+            @Override public Process attach(List<String> args)throws IOException{return actual.attach(args);}
+            @Override public String path(Path host){return actual.path(host);}
+            @Override public boolean pinHardSwap(String id){return true;}
+        };
+        Files.createDirectories(dir.resolve("copy"));
+        var sandbox=new ImportExecutionSandbox(faulty,"glyahh-sandbox-runtime:24.04");
+        var outcome=sandbox.execute(new ImportExecutionSandbox.Request(UUID.randomUUID(),7,dir.resolve("copy"),".",
+                "echo UNBOUNDED_SWAP_MUST_NOT_EXECUTE",ImportExecutionSandbox.Limits.defaults()),
+            dir.resolve("guard.sh"),dir.resolve("guard.env"),dir.resolve("refused.log"),journal(new ArrayList<>()),()->false);
+        assertEquals("REFUSED",outcome.state(),outcome.reason());
+        assertEquals("GUARD_MEMORY_SWAP",outcome.reason());
+        assertFalse(Files.readString(dir.resolve("refused.log")).contains("UNBOUNDED_SWAP_MUST_NOT_EXECUTE"));
+        var absent=actual.run(List.of("inspect","--format","{{.Id}}",outcome.containerId()),30);
+        assertFalse(absent.ok());
+        assertTrue((absent.stderr()+absent.stdout()).toLowerCase(Locale.ROOT).contains("no such"));
     }
     @Test void unavailableOrIncapableEngineFailsClosed(){
         var down=new Fake();down.answers.put("info",args->new ImportExecutionSandbox.Engine.Result(false,1,"","no daemon"));
@@ -302,7 +350,7 @@ class ImportExecutionSandboxTest {
     }
     @Test void managedContainersAreReadWithoutQuotedFormat(){
         var fake=new Fake();String other="b".repeat(64);
-        fake.answers.put("ps",args->new ImportExecutionSandbox.Engine.Result(true,0,ID+"|glyahh.import.app=7,glyahh.import.execution=e1\n"+other+"|glyahh.import.execution=probe\nbad|x\n",""));
+        fake.answers.put("ps",args->new ImportExecutionSandbox.Engine.Result(true,0,ID+"|glyahh.import.app=7,glyahh.import.execution=e1\n"+other+"|glyahh.import.execution=probe\n"+"c".repeat(64)+"|glyahh.import.execution=pinprobe,glyahh.import.install-job=job\nbad|x\n",""));
         assertEquals(Map.of(ID,"e1",other,"probe"),new ImportExecutionSandbox(fake,"img").managed());
         assertTrue(fake.calls.getFirst().stream().noneMatch(arg->arg.contains("\"")));
         fake.answers.put("ps",args->new ImportExecutionSandbox.Engine.Result(false,1,"",""));

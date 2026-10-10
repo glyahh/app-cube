@@ -19,6 +19,12 @@ from backends.docker_sandbox import (
 )
 
 
+@pytest.fixture(autouse=True)
+def kernel_swap_readback(monkeypatch):
+    # 生命周期夹具不模拟内核；硬 swap 正反例另见 test_docker_hard_swap.py。
+    monkeypatch.setattr(DockerSandboxManager, "_swap_is_zero", lambda self, cid: True)
+
+
 def _make_inspect_json(
     name: str,
     session_id: str,
@@ -336,6 +342,7 @@ def test_8_workspace_mount_and_container_name(monkeypatch, tmp_path):
     assert create_args[create_args.index("-v") + 1] == expected_mount
     assert "--label" in create_args
     assert f"glyahh.session_id=session-contract" in create_args
+    assert create_args[create_args.index("--memory-swap") + 1] == create_args[create_args.index("--memory") + 1]
 
     manager.shutdown()
 

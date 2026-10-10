@@ -174,7 +174,17 @@ async function restoreSource() {
     working(true,'正在读取任务…')
     creationUnconfirmed = true
     task.value = await getGitByRequest(context,requestId); creationUnconfirmed = false
-    provider.value = task.value.definition.source.provider; url.value = task.value.definition.source.cloneUrl
+    if(task.value.definition.source.provider !== 'GitHub') {
+      if(task.value.status === 'SUCCEEDED') {
+        const result = await getGitResult(context,task.value)
+        finishSourceRequest(context.ownerId,requestId); emit('completed',result)
+      } else {
+        error.value = '该来源已停用，请取消旧任务后重新导入。'
+        emit('failure',error.value)
+      }
+      return
+    }
+    url.value = task.value.definition.source.cloneUrl
     credential.value = task.value.credentialId === null ? 'public' : credentials.value.find(row => row.id === task.value!.credentialId && row.version === task.value!.credentialVersion)?.id
     if(task.value.status === 'CANCELLED' && task.value.cleanup === 'DONE') {
       finishSourceRequest(context.ownerId,requestId); task.value = undefined; return
@@ -214,7 +224,7 @@ defineExpose({ submit,clear })
 
 <template>
   <div class="git-source">
-    <a-select v-model:value="provider" aria-label="仓库平台" :disabled="busy" :options="[{value:'GitHub'}, {value:'Gitee'}]" @change="credential = 'public'; changed()" />
+    <span aria-label="仓库平台">GitHub</span>
     <a-input v-model:value="url" aria-label="仓库地址" placeholder="HTTPS 仓库地址" :disabled="busy" @change="changed" />
     <div class="credential-row"><a-select v-model:value="credential" aria-label="仓库凭据" placeholder="选择凭据" :disabled="busy" :options="choices" @change="changed" /><a-button @click="manager = true">管理凭据</a-button></div>
     <a-button :loading="loading" :disabled="!url.trim() || busy || !credentialsReady || !credential" @click="readBranches">读取分支</a-button>
@@ -224,7 +234,7 @@ defineExpose({ submit,clear })
   <a-modal v-model:open="manager" title="仓库凭据" :footer="null">
     <div class="credential-list">
       <a-alert v-if="credentialError" type="error" :message="credentialError" show-icon />
-      <div v-for="row in visibleCredentials" :key="row.id" class="credential-item"><span>{{ row.name }}</span><div><a-button size="small" :disabled="credentialSaving" @click="edit(row,'note')">备注</a-button><a-button size="small" :disabled="credentialSaving" @click="edit(row)">替换</a-button><a-popconfirm title="删除并取消相关导入？" ok-text="删除" cancel-text="保留" @confirm="remove(row)"><a-button size="small" danger :disabled="credentialSaving">删除</a-button></a-popconfirm></div></div>
+      <div v-for="row in credentials" :key="row.id" class="credential-item"><span>{{ row.name }}<template v-if="row.provider !== 'GitHub'"> · 已停用</template></span><div><a-button size="small" :disabled="credentialSaving || row.provider !== 'GitHub'" @click="edit(row,'note')">备注</a-button><a-button size="small" :disabled="credentialSaving || row.provider !== 'GitHub'" @click="edit(row)">替换</a-button><a-popconfirm title="删除并取消相关导入？" ok-text="删除" cancel-text="保留" @confirm="remove(row)"><a-button size="small" danger :disabled="credentialSaving">删除</a-button></a-popconfirm></div></div>
       <div class="credential-actions"><a-button type="primary" :disabled="credentialSaving" @click="edit()">添加</a-button><a-button :loading="credentialSaving" @click="refreshCredentials">刷新</a-button></div>
     </div>
   </a-modal>
@@ -233,7 +243,7 @@ defineExpose({ submit,clear })
       <a-alert v-if="credentialError" type="error" :message="credentialError" show-icon />
       <a-alert v-if="mode === 'replace'" type="warning" show-icon message="使用旧 Token 的未完成导入将停止。" />
       <label>备注<a-input v-model:value="name" :maxlength="40" :disabled="mode === 'replace' || credentialSaving" /></label>
-      <div v-if="mode !== 'note'" class="token-field"><span class="token-label"><label for="import-credential-token">Token</label><a-popover trigger="click"><template #content><a :href="provider === 'GitHub' ? 'https://github.com/settings/personal-access-tokens/new' : 'https://gitee.com/profile/personal_access_tokens'" target="_blank" rel="noopener noreferrer">打开 {{ provider }}</a></template><button type="button" class="token-help" aria-label="获取 Token">?</button></a-popover></span><a-input-password id="import-credential-token" v-model:value="token" :maxlength="4096" :disabled="credentialSaving" autocomplete="off" /></div>
+      <div v-if="mode !== 'note'" class="token-field"><span class="token-label"><label for="import-credential-token">Token</label><a-popover trigger="click"><template #content><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">打开 GitHub</a></template><button type="button" class="token-help" aria-label="获取 Token">?</button></a-popover></span><a-input-password id="import-credential-token" v-model:value="token" :maxlength="4096" :disabled="credentialSaving" autocomplete="off" /></div>
     </div>
   </a-modal>
 </template>

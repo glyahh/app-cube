@@ -47,7 +47,7 @@ public final class ImportStartupSnapshotStore {
             staging.create(id);created=true;var stored=new ArrayList<StoredFile>();
             for(var entry:entries){
                 Path file=source.resolve(entry.path());ProjectImportStaging.guardManagedPath(file);
-                stored.add(staging.receive(id,stored.size(),entry,Files.newInputStream(file,LinkOption.NOFOLLOW_LINKS),qualified,TIMEOUT));
+                stored.add(staging.receive(id,stored.size(),entry,entry.directory()?java.io.InputStream.nullInputStream():Files.newInputStream(file,LinkOption.NOFOLLOW_LINKS),qualified,TIMEOUT));
             }
             String content=staging.seal(id,stored,qualified,TIMEOUT);
             var snapshot=new Snapshot(id,identity(content,attributes),stored,attributes);
@@ -56,12 +56,49 @@ public final class ImportStartupSnapshotStore {
             return snapshot;
         } catch(IOException|RuntimeException error) {
             if(created)try{staging.cleanup(id);}catch(IOException cleanup){throw new IOException("快照失败，私有副本清理未完成。");}
-            throw new IOException("快照未建立，请检查来源、额度或任务资格。");
+            // 保留内部原因供受控阶段诊断；对外仍由业务层返回稳定错误，不打印原始异常文本。
+            throw new IOException("快照未建立，请检查来源、额度或任务资格。", error);
         }
     }
 
+    /** 只读冻结完整字节和目录属性，不创建副本，也不授予模型读取原目录的权限。 */
+    public Snapshot describe(UUID id,Path workspace,BooleanSupplier eligible) throws IOException {
+        if(id==null||eligible==null)throw new IllegalArgumentException("快照身份无效。");
+        Path source=workspace.toAbsolutePath().normalize();
+        long deadline=System.nanoTime()+TIMEOUT.toNanos();
+        BooleanSupplier qualified=()->System.nanoTime()<deadline&&eligible.getAsBoolean();
+        // 1. 全量读取真实字节；敏感文件也参与版本身份，但不返回文件内容。
+        var attributes=new TreeMap<String,String>();var entries=inventory(source,attributes,qualified);
+        var stored=new ArrayList<StoredFile>();
+        for(var entry:entries){
+            Path file=source.resolve(entry.path());ProjectImportStaging.guardManagedPath(file);
+            MessageDigest hash;
+            try{hash=MessageDigest.getInstance("SHA-256");}
+            catch(java.security.NoSuchAlgorithmException error){throw new IllegalStateException("快照摘要不可用。");}
+            long count=0;byte[] buffer=new byte[64*1024];
+            try(var input=entry.directory()?java.io.InputStream.nullInputStream():Files.newInputStream(file,LinkOption.NOFOLLOW_LINKS)){
+                int length;
+                while((length=input.read(buffer))!=-1){
+                    if(!qualified.getAsBoolean()||length>entry.size()-count)throw new IOException("工作区内容变化或冻结任务失效。");
+                    hash.update(buffer,0,length);count+=length;
+                }
+            }
+            if(count!=entry.size())throw new IOException("工作区内容已变化。");
+            stored.add(new StoredFile(stored.size(),entry.path(),entry.size(),HexFormat.of().formatHex(hash.digest()),entry.directory()));
+        }
+        // 2. 重新核对完整范围和属性，拒绝读取期间变化，不留下未登记的私有副本。
+        String content=staging.verifyWorkspace(source,stored,qualified,TIMEOUT);
+        var snapshot=new Snapshot(id,identity(content,attributes),stored,attributes);
+        verify(snapshot,source,qualified);
+        return snapshot;
+    }
+
     public void verify(Snapshot snapshot,Path workspace,BooleanSupplier eligible) throws IOException {
-        var attributes=new TreeMap<String,String>();inventory(workspace.toAbsolutePath().normalize(),attributes,eligible);
+        var attributes=new TreeMap<String,String>();var entries=inventory(workspace.toAbsolutePath().normalize(),attributes,eligible);
+        var recordedDirectories=new java.util.HashSet<String>();
+        for(var file:snapshot.files())if(file.directory())recordedDirectories.add(file.path());
+        for(var entry:entries)if(entry.directory()&&!recordedDirectories.contains(entry.path()))
+            throw new IOException("旧快照未记录完整目录，请重新扫描并批准。");
         String content=staging.verifyWorkspace(workspace,snapshot.files(),eligible,TIMEOUT);
         if(!snapshot.contentHash().equals(identity(content,attributes)))throw new IOException("工作区内容或属性已变化。");
     }
@@ -80,6 +117,7 @@ public final class ImportStartupSnapshotStore {
         staging.seal(snapshot.id(),snapshot.files(),()->true,TIMEOUT);
         var texts=new TreeMap<String,String>();long total=0;
         for(var file:snapshot.files()){
+            if(file.directory())continue;
             String path=file.path();String name=path.substring(path.lastIndexOf('/')+1);
             // 模型只读批准目录内的文件；同级或上级目录不是本次授权的相关上下文。
             if(ProjectImportManifest.isSensitivePath(path)||!(agent?agentFile(path,name)&&directories.stream().anyMatch(dir->within(path,dir)):parserFile(path,name)))continue;
@@ -127,7 +165,9 @@ public final class ImportStartupSnapshotStore {
                 attributes.put(relative,mode);
             }
             @Override public FileVisitResult preVisitDirectory(Path dir,BasicFileAttributes attrs) throws IOException {
-                if(++directories[0]>maxFiles+1)throw new IOException("目录数量超限。");guard(dir);return FileVisitResult.CONTINUE;
+                if(++directories[0]>maxFiles+1)throw new IOException("目录数量超限。");guard(dir);
+                if(!dir.equals(source))entries.add(new ProjectImportManifest.FileEntry(source.relativize(dir).toString().replace('\\','/'),0,true));
+                return FileVisitResult.CONTINUE;
             }
             @Override public FileVisitResult visitFile(Path file,BasicFileAttributes attrs) throws IOException {
                 guard(file);if(!attrs.isRegularFile()||entries.size()>=maxFiles||attrs.size()>maxBytes-bytes[0])throw new IOException("文件类型或快照额度无效。");

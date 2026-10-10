@@ -50,33 +50,49 @@ def _configure_logging(level: str) -> None:
     root.setLevel(level.upper())
 
 
-def handle_line(line: str, settings) -> None:
+def handle_line(line: str, settings, *, import_only=False, import_runner=None) -> None:
     """处理一行请求。异常一律收口成 error 帧，绝不让主循环退出。"""
     try:
         request = parse_request(line)
     except Exception as exc:
         # 连 runId 都拿不到，发不了协议帧，只能记日志。Java 侧会等超时。
-        logger.error("请求无法解析，已丢弃：%s | 原文=%r", exc, line[:200])
+        if import_only:
+            logger.error("原生导入请求格式无效")
+        else:
+            logger.error("请求无法解析，已丢弃：%s | 原文=%r", exc, line[:200])
         return
 
     emitter = Emitter(_PROTOCOL_OUT, request["runId"])
     try:
-        run_one(request, settings, emitter)
+        workspace = request.get("workspace")
+        if import_only and (not isinstance(workspace, dict) or not isinstance(workspace.get("importTaskId"), str)):
+            emitter.error(ErrorCode.IMPORT_EDIT_NOT_READY, "原生导入执行身份无效，未执行。", retryable=False)
+            return
+        if import_only and import_runner is not None:
+            import_runner(request, settings, emitter)
+        else:
+            run_one(request, settings, emitter)
     except Exception as exc:  # noqa: BLE001 — 主循环必须活下来
-        logger.exception("run 失败：runId=%s", request["runId"])
-        emitter.error(ErrorCode.INTERNAL, str(exc))
+        if import_only:
+            logger.error("原生导入执行失败，类型=%s", type(exc).__name__)
+            emitter.error(ErrorCode.INTERNAL, "隔离编辑执行失败，未发布。", retryable=False)
+        else:
+            logger.exception("run 失败：runId=%s", request["runId"])
+            emitter.error(ErrorCode.INTERNAL, str(exc))
     finally:
         # 终止帧必须发。漏发的话 Java 会一直阻塞在读上，只能靠超时兜底。
         emitter.end()
 
 
-def main() -> int:
+def main(*, require_persistent=False, import_only=False, on_ready=None, import_runner=None) -> int:
     settings = load_settings()
     _configure_logging(settings.log_level)
 
     # 启动预检：提前初始化持久化层，打出明确状态。
     # 不等到第一个请求 —— 那时候失败信息会和业务日志混在一起不好找。
-    _precheck_persistence(settings)
+    _precheck_persistence(settings, require_persistent=require_persistent)
+    if on_ready is not None:
+        on_ready(_PROTOCOL_OUT)
 
     logger.info("agent 运行时已就绪，等待 stdio 请求")
 
@@ -84,7 +100,7 @@ def main() -> int:
         line = line.strip()
         if not line:
             continue
-        handle_line(line, settings)
+        handle_line(line, settings, import_only=import_only, import_runner=import_runner)
 
     # 退出清理：显式关闭连接池，释放 PostgreSQL 连接。
     _shutdown_pools()
@@ -92,7 +108,7 @@ def main() -> int:
     return 0
 
 
-def _precheck_persistence(settings) -> None:
+def _precheck_persistence(settings, *, require_persistent=False) -> None:
     """启动时预热持久化层。
 
     在进入 stdin 主循环前完成 checkpointer 和 store 的初始化。
@@ -103,9 +119,11 @@ def _precheck_persistence(settings) -> None:
 
     loop = _event_loop()
     try:
-        loop.run_until_complete(get_checkpointer(settings.postgres_dsn))
-        loop.run_until_complete(get_store(settings.postgres_dsn))
+        loop.run_until_complete(get_checkpointer(settings.postgres_dsn, require_persistent=require_persistent))
+        loop.run_until_complete(get_store(settings.postgres_dsn, require_persistent=require_persistent))
     except Exception as exc:
+        if require_persistent:
+            raise RuntimeError("POSTGRES_PERSISTENCE_UNAVAILABLE") from None
         # 不阻断启动 —— 降级逻辑已在 get_checkpointer 内部处理
         logger.warning("持久化预检异常：%s", exc)
 

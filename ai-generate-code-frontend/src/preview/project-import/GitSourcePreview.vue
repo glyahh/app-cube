@@ -20,7 +20,7 @@ async function readBranches() {
   try {
     const parsed = new URL(url.value)
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash ||
-      parsed.hostname !== (provider.value === 'GitHub' ? 'github.com' : 'gitee.com') || !/^\/[\w.-]+\/[\w.-]+(?:\.git)?\/?$/.test(parsed.pathname)) throw new Error()
+      parsed.hostname !== 'github.com' || !/^\/[\w.-]+\/[\w.-]+(?:\.git)?\/?$/.test(parsed.pathname)) throw new Error()
     repositoryName.value = parsed.pathname.split('/')[2]!.replace(/\.git$/, '')
   } catch { error.value = '请输入对应平台的 HTTPS 仓库地址。'; return }
   loading.value = true
@@ -56,7 +56,7 @@ function remove(id: string) {
 </script>
 <template>
   <div class="git-source">
-    <a-select v-model:value="provider" aria-label="仓库平台" :disabled="busy" :options="[{value:'GitHub'}, {value:'Gitee'}]" @change="credential = 'public'; invalidate()" />
+    <span aria-label="仓库平台">GitHub</span>
     <a-input v-model:value="url" aria-label="仓库地址" placeholder="HTTPS 仓库地址" :disabled="busy" @change="invalidate" />
     <div class="credential-row"><a-select v-model:value="credential" aria-label="仓库凭据" :disabled="busy" :options="credentialOptions" @change="invalidate" /><a-button @click="manager = true">管理凭据</a-button></div>
     <a-button :loading="loading" :disabled="!url.trim() || busy" @click="readBranches">读取分支</a-button>
@@ -73,7 +73,7 @@ function remove(id: string) {
     <div class="credential-editor">
       <a-alert v-if="editorMode === 'replace'" type="warning" show-icon message="使用旧 Token 的未完成导入将停止。" />
       <label>备注<a-input v-model:value="name" :maxlength="40" :disabled="editorMode === 'replace'" /></label>
-      <div v-if="editorMode !== 'note'" class="token-field"><span class="token-label"><label for="preview-credential-token">Token</label><a-popover trigger="click"><template #content><a :href="provider === 'GitHub' ? 'https://github.com/settings/personal-access-tokens/new' : 'https://gitee.com/profile/personal_access_tokens'" target="_blank" rel="noopener noreferrer">打开 {{ provider }}</a></template><button type="button" class="token-help" aria-label="获取 Token">?</button></a-popover></span><a-input-password id="preview-credential-token" v-model:value="token" autocomplete="off" /></div>
+      <div v-if="editorMode !== 'note'" class="token-field"><span class="token-label"><label for="preview-credential-token">Token</label><a-popover trigger="click"><template #content><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">打开 GitHub</a></template><button type="button" class="token-help" aria-label="获取 Token">?</button></a-popover></span><a-input-password id="preview-credential-token" v-model:value="token" autocomplete="off" /></div>
     </div>
   </a-modal>
 </template>

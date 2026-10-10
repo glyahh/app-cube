@@ -48,8 +48,7 @@ public class AgentRunRequestFactory {
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
         ThrowUtils.throwIf(!Objects.equals(app.getUserId(), userId),
                 ErrorCode.NO_AUTH_ERROR, "只能操作自己的应用");
-        // Agent 编辑允许作用于已发布的导入应用副本；旧运行/发布入口另由各自的隔离通道校验。
-        importGate.requireAgentEditAllowed(appId);
+        var publication = importGate.requireAgentEditAllowed(appId);
 
         CodeGenTypeEnum type = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
         ThrowUtils.throwIf(type == null, ErrorCode.PARAMS_ERROR, "应用的生成类型不合法");
@@ -73,6 +72,7 @@ public class AgentRunRequestFactory {
                 .workspaceName(workspace.getFileName().toString())
                 .codeGenType(type.getDirPrefix())
                 .mode(isWorkspacePopulated(workspace) ? "edit" : "create")
+                .importTaskId(publication == null ? null : publication.taskId().toString())
                 .message(message)
                 .initPrompt(app.getInitPrompt())
                 .deadlineMs(agentProperties.getRunDeadline().toMillis())
@@ -89,7 +89,9 @@ public class AgentRunRequestFactory {
         ThrowUtils.throwIf(!Objects.equals(app.getUserId(), userId),
                 ErrorCode.NO_AUTH_ERROR, "只能操作自己的应用");
         var user = userService.getById(userId);
+        var publication = importGate.requireAgentEditAllowed(appId);
         return request.toBuilder()
+                .importTaskId(publication == null ? null : publication.taskId().toString())
                 .modelRoute(Boolean.TRUE.equals(app.getForceModelDirect()) ? "direct" : "configured")
                 .allowProxyFallback(user != null && Boolean.TRUE.equals(user.getAutoModelProxyFallback()))
                 .build();

@@ -24,10 +24,12 @@ public class ImportExecutionService implements ImportExecutionActions {
     private final ImportStartupPlanService plans;
     private final AppService apps;
     private final ImportExecutionRunner runner;
+    private final ImportExecutionLedger ledger;
+    private final ImportStartupInstallJobRepository jobs;
 
     public ImportExecutionService(ImportStartupPlanService plans,AppService apps,ImportExecutionLedger ledger,ImportWorkspaceCoordinator coordinator,
-                                  ImportStartupResourceGuard guard,DockerCli docker,RuntimeProperties runtime,ImportProperties properties)throws IOException{
-        this.plans=plans;this.apps=apps;
+                                  ImportStartupResourceGuard guard,DockerCli docker,RuntimeProperties runtime,ImportProperties properties,ImportStartupInstallJobRepository jobs)throws IOException{
+        this.plans=plans;this.apps=apps;this.ledger=ledger;this.jobs=jobs;
         Path root=properties.getStagingRoot().resolveSibling("project_import_exec");
         var copies=new ImportStartupSnapshotStore(root,List.of(Path.of("temp/code_output"),Path.of("temp/code_deploy"),properties.getStagingRoot(),
             properties.getStagingRoot().resolveSibling("project_startup_private")),properties.getMaxFiles(),properties.getMaxSourceBytes());
@@ -39,12 +41,14 @@ public class ImportExecutionService implements ImportExecutionActions {
     /** 只做限额准入。无法保证时返回原因，调用方不得因此启动服务。 */
     @Override public List<String> admit(long appId,ImportExecutionSandbox.Limits limits){
         if(limits==null||limits.memory()!=ImportExecutionSandbox.Memory.REQUIRE_HARD)throw new MyException(ErrorCode.PARAMS_ERROR,"执行必须保证内存硬上限。");
+        requireInstallContext(appId);
         return runner.admit(appId,limits);
     }
 
     /** 内部入口：计划须在本次读取时重新复核为 CONFIRMED，目录须是计划列出的服务、依赖或构建目录。 */
     @Override public ImportExecutionRunner.Result execute(User user,long appId,UUID planId,String directory,String command,ImportExecutionSandbox.Limits limits){
         if(limits==null||limits.memory()!=ImportExecutionSandbox.Memory.REQUIRE_HARD)throw new MyException(ErrorCode.PARAMS_ERROR,"执行必须保证内存硬上限。");
+        requireInstallContext(appId);
         var view=plans.get(user,appId,planId);
         if(!"CONFIRMED".equals(view.state()))throw new MyException(ErrorCode.CONFLICT_ERROR,"运行计划未确认或已失效。");
         var directories=new HashSet<String>();
@@ -58,6 +62,7 @@ public class ImportExecutionService implements ImportExecutionActions {
     @Override public ImportExecutionRunner.Result execute(User user,long appId,UUID planId,String directory,String command,ImportExecutionSandbox.Limits limits,
                                                          String slot,ImportExecutionSandbox.Network network,ImportExecutionSandbox.Lifetime lifetime){
         if(limits==null||limits.memory()!=ImportExecutionSandbox.Memory.REQUIRE_HARD)throw new MyException(ErrorCode.PARAMS_ERROR,"执行必须保证内存硬上限。");
+        requireInstallContext(appId);
         var view=plans.get(user,appId,planId);
         if(!"CONFIRMED".equals(view.state()))throw new MyException(ErrorCode.CONFLICT_ERROR,"运行计划未确认或已失效。");
         var directories=new HashSet<String>();
@@ -71,6 +76,7 @@ public class ImportExecutionService implements ImportExecutionActions {
     @Override public ImportExecutionRunner.Result execute(User user,long appId,UUID planId,String directory,String command,ImportExecutionSandbox.Limits limits,
                                                          String slot,ImportExecutionSandbox.Network network,ImportExecutionSandbox.Lifetime lifetime,Integer port){
         if(limits==null||limits.memory()!=ImportExecutionSandbox.Memory.REQUIRE_HARD)throw new MyException(ErrorCode.PARAMS_ERROR,"执行必须保证内存硬上限。");
+        requireInstallContext(appId);
         var view=plans.get(user,appId,planId);
         if(!"CONFIRMED".equals(view.state()))throw new MyException(ErrorCode.CONFLICT_ERROR,"运行计划未确认或已失效。");
         var directories=new HashSet<String>();
@@ -92,13 +98,35 @@ public class ImportExecutionService implements ImportExecutionActions {
             apps.resolveWorkspaceDir(user,appId),directory,command,slot,network,lifetime,port,healthPath),limits);
     }
 
+    private void requireInstallContext(long appId){
+        var job=jobs.activeByApp(appId);
+        if(job!=null&&!job.jobId().toString().equals(ImportInstallControl.job()))throw new MyException(ErrorCode.CONFLICT_ERROR,"安装尚未结束。");
+        ImportInstallControl.check();
+    }
+
     /** 删除应用前释放导入容器。返回 false 时应用和持久副本都必须保留。 */
     public boolean releaseApp(long appId){return runner.releaseApp(appId);}
 
     @Override public boolean stopOtherPlans(long appId,String planRevision){return runner.stopOtherPlans(appId,planRevision);}
+    @Override public boolean installClean(List<UUID> ids){return ids.stream().allMatch(id->{var row=ledger.find(id);return row!=null&&!row.active()&&"DONE".equals(row.cleanup())&&!"STOP_FAILED".equals(row.state());});}
+    @Override public boolean installAppClean(long appId){return ledger.unresolvedInstall(appId).isEmpty();}
+    @Override public java.util.List<UUID> activeSlots(long appId,String slotPrefix){return runner.activeSlots(appId,slotPrefix);}
     @Override public String stopExecution(UUID id){var row=runner.stop(id,Duration.ofSeconds(60));return row==null?"STOPPED":row.state();}
     @Override public String executionState(User user,long appId,UUID planId,UUID id){return runner.executionState(user.getId(),appId,planId,id);}
     @Override public String executionReason(User user,long appId,UUID planId,UUID id){return runner.executionReason(user.getId(),appId,planId,id);}
+
+    public ImportExecutionLedger.Detail detail(User user,long appId,UUID planId,UUID id){
+        return runner.detail(user.getId(),appId,planId,id);
+    }
+
+    public String log(User user,long appId,UUID planId,UUID id,int maxBytes){
+        return runner.log(user.getId(),appId,planId,id,maxBytes);
+    }
+
+    public ImportExecutionRunner.Reconciled reconcile(User user,long appId,UUID planId){
+        plans.get(user,appId,planId);
+        return runner.reconcileApp(appId);
+    }
 
     public ImportExecutionLedger.Row stop(UUID executionId){return runner.stop(executionId,Duration.ofSeconds(60));}
 

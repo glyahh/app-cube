@@ -18,6 +18,11 @@ public interface ImportExecutionActions {
     }
     /** 计划版本变化时停止其他版本仍在运行的槽位。停不掉时返回 false。 */
     default boolean stopOtherPlans(long appId,String planRevision){return true;}
+    /** 该应用当前未结束的指定前缀槽位执行；取消安装或恢复对账时按它核验资源。 */
+    default boolean installClean(List<UUID> ids){return true;}
+    /** 任务绑定前崩溃也可能留下安装槽位，收口必须一并核验。 */
+    default boolean installAppClean(long appId){return activeSlots(appId,"install").isEmpty();}
+    default List<UUID> activeSlots(long appId,String slotPrefix){return List.of();}
     /** 停止一次执行。返回停止后的状态；容器未消失时为 STOP_FAILED。 */
     default String stopExecution(UUID id){return "STOPPED";}
     /** 按应用、所有者和计划核对执行状态；无法确认时不能复用旧 READY。 */

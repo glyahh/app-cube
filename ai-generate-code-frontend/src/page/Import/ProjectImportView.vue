@@ -24,6 +24,7 @@ const state = ref<'select' | 'review' | 'importing' | 'failed' | 'cancelled'>('s
 const error = ref('')
 const notice = ref('')
 const saving = ref(false)
+const readingDirectory = ref(false)
 const preferenceReady = ref(false)
 const manifest = computed(() => createManifest(files.value, options.value))
 const busy = computed(() => state.value === 'importing' || saving.value || gitWorking.value)
@@ -45,11 +46,50 @@ function resetImport() {
   options.value = { ...savedOptions.value }
   state.value = 'select'
   saving.value = false
+  readingDirectory.value = false
   error.value = ''
   notice.value = ''
 }
 
-function selectFolder(event: Event) {
+async function selectFolder(event: Event | { directoryHandle: FileSystemDirectoryHandle }) {
+  if ('directoryHandle' in event) {
+    if (busy.value) return
+    resetImport()
+    const current = generation
+    const controller = new AbortController()
+    pending = controller
+    saving.value = true
+    readingDirectory.value = true
+    const metadata: FileMetadata[] = []
+    const selected = new Map<string, File>()
+    try {
+      async function read(directory: FileSystemDirectoryHandle, prefix = '') {
+        const iterable = directory as FileSystemDirectoryHandle & { values(): AsyncIterable<FileSystemHandle> }
+        for await (const handle of iterable.values()) {
+          if (current !== generation || controller.signal.aborted) throw new DOMException('目录读取已取消', 'AbortError')
+          const path = prefix + handle.name
+          const isDirectory = handle.kind === 'directory'
+          const file = isDirectory ? new File([], handle.name) : await (handle as FileSystemFileHandle).getFile()
+          metadata.push({ path, size: file.size, directory: isDirectory })
+          selected.set(path, file)
+          if (metadata.length > importFileLimit) throw new Error(`最多选择 ${importFileLimit} 个文件或目录，请缩小范围后重试。`)
+          if (isDirectory) await read(handle as FileSystemDirectoryHandle, path + '/')
+        }
+      }
+      await read(event.directoryHandle)
+      if (current !== generation || controller.signal.aborted) return
+      const invalid = validateFiles(metadata)
+      if (invalid) throw new Error(invalid)
+      files.value = metadata
+      selectedFiles = selected
+      folderName.value = event.directoryHandle.name
+      appName.value = folderName.value
+      state.value = 'review'
+    } catch (cause) {
+      if (current === generation) error.value = cause instanceof Error ? cause.message : '目录读取失败。'
+    } finally { if (current === generation) { saving.value = false; readingDirectory.value = false; pending = undefined } }
+    return
+  }
   const input = event.target as HTMLInputElement
   if (busy.value) { input.value = ''; return }
   resetImport()
@@ -122,7 +162,7 @@ function cancelImport() {
     return
   }
   pending?.abort()
-  notice.value = saving.value ? '保存结果未确认，请重新读取偏好。' : '正在取消…'
+  notice.value = readingDirectory.value ? '正在取消目录读取…' : saving.value ? '保存结果未确认，请重新读取偏好。' : '正在取消…'
 }
 
 function selectGit(filesFromSource: FileMetadata[], name: string, restoredOptions?: ImportOptions) {
@@ -207,9 +247,9 @@ onBeforeUnmount(resetImport)
 <template>
   <ProjectImportForm v-model:app-name="appName" v-model:options="options" :files="files"
     :folder-name="folderName" :manifest="manifest" :state="state" :busy="busy" :can-submit="canSubmit"
-    :error="error" :notice="notice" :stage-label="saving ? '正在保存…' : sourceKind === 'git' ? gitStageLabel : '正在提交…'"
-    @select-folder="selectFolder" @save-preferences="savePreferences" @start-import="startImport"
-    @cancel-import="cancelImport" @reset-import="resetSelection">
+    :error="error" :notice="notice" :stage-label="readingDirectory ? '正在读取目录…' : saving ? '正在保存…' : sourceKind === 'git' ? gitStageLabel : '正在提交…'"
+    @select-folder="selectFolder" @select-directory="handle => selectFolder({ directoryHandle: handle })" @save-preferences="savePreferences" @start-import="startImport"
+    @cancel-import="cancelImport" @reset-import="resetSelection" @failure="value => error = value">
     <template #source-switch>
       <a-radio-group :value="sourceKind" :disabled="busy" @change="switchSource"><a-radio-button value="folder">文件夹</a-radio-button><a-radio-button value="git">Git 仓库</a-radio-button></a-radio-group>
     </template>

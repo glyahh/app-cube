@@ -30,7 +30,7 @@ class ImportExecutionServiceTest {
     @BeforeEach void setUp()throws Exception{
         var properties=new ImportProperties();properties.setStagingRoot(temp.resolve("private"));
         var runtime=mock(RuntimeProperties.class);when(runtime.getImage()).thenReturn("img");
-        service=new ImportExecutionService(plans,apps,ledger,mock(ImportWorkspaceCoordinator.class),mock(ImportStartupResourceGuard.class),docker,runtime,properties);
+        service=new ImportExecutionService(plans,apps,ledger,mock(ImportWorkspaceCoordinator.class),mock(ImportStartupResourceGuard.class),docker,runtime,properties,mock(ImportStartupInstallJobRepository.class));
         when(user.getId()).thenReturn(1L);
     }
     ImportStartupPlanService.View view(String state){
@@ -50,6 +50,12 @@ class ImportExecutionServiceTest {
         when(plans.get(user,7,planId)).thenReturn(view("CONFIRMED"));
         assertThrows(MyException.class,()->service.execute(user,7,planId,"other","sh ok.sh",ImportExecutionSandbox.Limits.defaults()));
         verifyNoInteractions(apps,ledger,docker);
+    }
+    @Test void unboundOrUncleanInstallLedgerBlocksJobClosure(){
+        when(ledger.unresolvedInstall(7)).thenReturn(List.of(UUID.randomUUID()));
+        assertFalse(service.installAppClean(7));
+        when(ledger.unresolvedInstall(7)).thenReturn(List.of());
+        assertTrue(service.installAppClean(7));
     }
     @Test void serviceExposesNoControllerOrUserEndpoint(){
         assertNull(ImportExecutionService.class.getAnnotation(org.springframework.web.bind.annotation.RestController.class));

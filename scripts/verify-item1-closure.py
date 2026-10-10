@@ -113,6 +113,16 @@ def main():
             raise AssertionError(redact(path + " -> " + str(result.get("code")) + " " + str(result.get("message")), hidden))
         return result
 
+    def wait_install(opener, token, app_id, job, limit=1800):
+        """按任务查询读到终态；受理已返回但任务仍在跑时必须继续等，不能当成安装失败。"""
+        deadline = time.monotonic() + limit
+        while job["state"] not in ("SUCCEEDED", "FAILED", "REJECTED", "CANCELLED"):
+            if time.monotonic() >= deadline:
+                raise AssertionError("INSTALL_OBSERVATION_TIMED_OUT")
+            time.sleep(2)
+            job = call(opener, token, f"/project/import/apps/{app_id}/startup/install-jobs/{job['jobId']}")["data"]
+        return job
+
     def account(opener, suffix):
         name = "closure_" + secrets.token_hex(6) + suffix
         password = secrets.token_urlsafe(18)
@@ -339,12 +349,13 @@ def main():
                     {"ownerId": owner, "scanId": inspection["scanId"], "serviceIds": manual_ids})["data"]
         confirmed = call(first, token, f"/project/import/apps/{install_app['appId']}/startup/plans/{plan['planId']}/confirm",
                          {"ownerId": owner, "planRevision": plan["planRevision"], "aggregateAcknowledged": True})["data"]
-        installed = call(first, token, f"/project/import/apps/{install_app['appId']}/startup/preparations/install",
-                         {"ownerId": owner, "planId": confirmed["planId"], "planRevision": confirmed["planRevision"], "approved": True},
-                         timeout=180)["data"]
+        submitted = call(first, token, f"/project/import/apps/{install_app['appId']}/startup/preparations/install",
+                         {"ownerId": owner, "planId": confirmed["planId"], "planRevision": confirmed["planRevision"],
+                          "requestId": str(uuid.uuid4()), "approved": True})["data"]
+        installed = wait_install(first, token, install_app["appId"], submitted)
         check("F07", "安装失败后本地原件哈希不变",
               installed["state"] == "FAILED" and sha(install_source) == source_hash and sha(install_dir / "keep.txt") == project_hash,
-              installed["state"] + " " + str(installed.get("reason")))
+              installed["state"] + " " + str(installed.get("failureReason")))
         check("E03", "安装失败后导入工程目录仍在", install_dir.is_dir() and (install_dir / "keep.txt").is_file(), str(install_dir))
 
         samples = {

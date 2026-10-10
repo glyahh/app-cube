@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "scope": "item1-core-20261007",
+  "supportedProviders": [
+    "GitHub"
+  ],
+  "checkpoints": [
+    {
+      "id": "P1.1",
+      "assertions": [
+        "folder-preservation",
+        "link-escape-rejected",
+        "source-limit-rejected"
+      ]
+    },
+    {
+      "id": "P1.2",
+      "assertions": [
+        "github-public-branch-commit",
+        "duplicate-import",
+        "cross-owner-rejected"
+      ]
+    },
+    {
+      "id": "P1.3",
+      "assertions": [
+        "private-auth-implementation",
+        "credential-encryption-lease",
+        "credential-revoke-late-result"
+      ]
+    },
+    {
+      "id": "P2.1",
+      "assertions": [
+        "static-identify-install-run",
+        "vue-flask-identify-install-run"
+      ]
+    },
+    {
+      "id": "P2.2",
+      "assertions": [
+        "approval-rejection-no-execution",
+        "install-without-run",
+        "selected-service-only",
+        "shared-step-once"
+      ]
+    },
+    {
+      "id": "P2.3",
+      "assertions": [
+        "partial-failure-keeps-success",
+        "retry-failed-only",
+        "browser-own-backend"
+      ]
+    },
+    {
+      "id": "P3.1",
+      "assertions": [
+        "formal-sse-model-edit",
+        "formal-websocket-model-edit",
+        "worker-persistent-ready"
+      ]
+    },
+    {
+      "id": "P3.2",
+      "assertions": [
+        "secret-model-request",
+        "secret-tools-logs-memory",
+        "shell-source-not-authorized"
+      ]
+    },
+    {
+      "id": "P3.3",
+      "assertions": [
+        "java-published-bytes",
+        "old-plan-invalidated",
+        "reapproved-business-correct",
+        "success-after-cleanup"
+      ]
+    },
+    {
+      "id": "P4.1",
+      "assertions": [
+        "cancel-late-result",
+        "version-conflict",
+        "cross-app-isolation"
+      ]
+    },
+    {
+      "id": "P4.2",
+      "assertions": [
+        "real-old-move-interruption-recovery",
+        "deterministic-publication-windows"
+      ]
+    },
+    {
+      "id": "P4.3",
+      "assertions": [
+        "restart-stops-executors",
+        "restart-resource-reclamation",
+        "stop-failure-retains-slot"
+      ]
+    },
+    {
+      "id": "P5.1",
+      "assertions": [
+        "real-docker-cpu-memory-swap-pids",
+        "real-disk-limit",
+        "timeout-output-limit"
+      ]
+    },
+    {
+      "id": "P5.2",
+      "assertions": [
+        "gitee-new-rejected",
+        "gitee-history-preserved"
+      ]
+    },
+    {
+      "id": "P5.3",
+      "assertions": [
+        "product-browser-import-approve-run-log-error",
+        "non-import-regression"
+      ]
+    },
+    {
+      "id": "P6.1",
+      "assertions": [
+        "final-affected-checks",
+        "standard-restart-ready",
+        "post-restart-business"
+      ]
+    },
+    {
+      "id": "P6.2",
+      "assertions": [
+        "clean-source-real-model-business-replay"
+      ]
+    },
+    {
+      "id": "P6.3",
+      "assertions": [
+        "independent-resource-cleanup",
+        "replay-evidence-rollback",
+        "core-gate-negative-tests"
+      ]
+    }
+  ],
+  "deferred": [
+    "private-remote-permission-revocation-matrix",
+    "extended-frameworks",
+    "vue-java-maven",
+    "multi-browser-os",
+    "long-pressure",
+    "original-856-matrix"
+  ]
+}

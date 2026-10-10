@@ -2,18 +2,28 @@
 import { ref } from 'vue'
 import { Alert as AAlert, Button as AButton, Checkbox as ACheckbox, Input as AInput, Progress as AProgress, Steps as ASteps, Tag as ATag } from 'ant-design-vue'
 import { formatBytes, type FileMetadata, type ImportOptions, createManifest } from './manifest'
-defineProps<{
+const props = defineProps<{
   files: FileMetadata[]; folderName: string; manifest: ReturnType<typeof createManifest>
   state: 'select' | 'review' | 'importing' | 'succeeded' | 'failed' | 'cancelled'
   busy: boolean; canSubmit: boolean; error: string; notice: string
-  stageLabel?: string; progress?: number
+  stageLabel?: string; progress?: number; metadataPreview?: boolean
 }>()
 const appName = defineModel<string>('appName', { required: true })
 const options = defineModel<ImportOptions>('options', { required: true })
 const picker = ref<HTMLInputElement>()
 const emit = defineEmits<{
-  selectFolder: [event: Event]; savePreferences: []; startImport: []; cancelImport: []; resetImport: []
+  selectFolder: [event: Event]; selectDirectory: [handle: FileSystemDirectoryHandle]; failure: [message: string]; savePreferences: []; startImport: []; cancelImport: []; resetImport: []
 }>()
+async function chooseFolder() {
+  if (props.metadataPreview) { picker.value?.click(); return }
+  const choose = (window as Window & { showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker
+  if (!choose) { emit('failure', '当前浏览器不支持完整目录读取，请使用 Chromium。'); return }
+  try { emit('selectDirectory', await choose.call(window)) }
+  catch (cause) {
+    if (cause instanceof DOMException && cause.name === 'AbortError') return
+    emit('failure', '无法读取文件夹，请检查目录权限。')
+  }
+}
 </script>
 
 <template>
@@ -33,7 +43,7 @@ const emit = defineEmits<{
                 <slot name="source"><div class="folder-picker">
                   <svg aria-hidden="true" viewBox="0 0 48 48" class="folder-icon"><path d="M5 14a4 4 0 0 1 4-4h11l5 5h14a4 4 0 0 1 4 4v18a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4Z" /><path d="M5 20h38" /></svg>
                   <strong v-if="folderName">{{ folderName }}</strong>
-                  <a-button :disabled="busy" @click="picker?.click()">{{ files.length ? '重新选择' : '选择文件夹' }}</a-button>
+                  <a-button :disabled="busy" @click="chooseFolder">{{ files.length ? '重新选择' : '选择文件夹' }}</a-button>
                   <input ref="picker" type="file" webkitdirectory multiple hidden aria-label="选择工程文件夹" :disabled="busy" @change="emit('selectFolder', $event)" />
                 </div></slot>
                 <label class="field-label" for="import-name">新应用名称</label>
@@ -71,7 +81,7 @@ const emit = defineEmits<{
                 <details v-if="files.length" class="file-details">
                   <summary>查看清单详情（{{ files.length }}）</summary>
                   <div class="file-list" tabindex="0" aria-label="文件清单详情">
-                    <div v-for="file in manifest.included" :key="file.path" class="file-row"><span>{{ file.path }}</span><small>{{ formatBytes(file.size) }}</small><a-tag color="blue">拟导入</a-tag></div>
+                    <div v-for="file in manifest.included" :key="file.path" class="file-row"><span>{{ file.path }}</span><small>{{ file.directory ? '目录' : formatBytes(file.size) }}</small><a-tag color="blue">拟导入</a-tag></div>
                     <div v-for="file in manifest.excluded" :key="file.path" class="file-row excluded"><span>{{ file.path }}</span><small>{{ formatBytes(file.size) }}</small><a-tag>{{ file.reason }}</a-tag></div>
                   </div>
                 </details>

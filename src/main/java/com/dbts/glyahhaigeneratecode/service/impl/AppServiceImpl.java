@@ -80,7 +80,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Resource
     private org.springframework.beans.factory.ObjectProvider<com.dbts.glyahhaigeneratecode.projectimport.ImportExecutionService> importExecutions;
     @Resource
+    private com.dbts.glyahhaigeneratecode.projectimport.ImportAgentCleanup importAgentCleanup;
+    @Resource
     private com.dbts.glyahhaigeneratecode.projectimport.ImportTaskRepository importPublications;
+    @Resource
+    private com.dbts.glyahhaigeneratecode.projectimport.ImportStartupInstallJobRepository importInstallJobs;
 
     @Resource
     private UserService userService;
@@ -536,7 +540,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Override
     public Boolean deleteMyApp(User loginUser, Long appId) {
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "删除应用请求参数异常");
-        return importWorkspaceCoordinator.withLock(appId, () -> deleteMyAppLocked(loginUser, appId));
+        App target=this.getById(appId);
+        ThrowUtils.throwIf(target==null,ErrorCode.NOT_FOUND_ERROR,"应用不存在");
+        ThrowUtils.throwIf(!loginUser.getId().equals(target.getUserId())&&!UserConstant.ADMIN_ROLE.equals(loginUser.getUserRole()),ErrorCode.NO_AUTH_ERROR,"只能删除自己的应用");
+        requireNoActiveInstall(appId);
+        return importWorkspaceCoordinator.withLock(appId, () -> importAgentCleanup.whenIdle(appId, () -> deleteMyAppLocked(loginUser, appId)));
     }
 
     private Boolean deleteMyAppLocked(User loginUser, Long appId) {
@@ -547,6 +555,8 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
         ThrowUtils.throwIf(!loginUser.getId().equals(app.getUserId()) && !loginUser.getUserRole().equals(UserConstant.ADMIN_ROLE), ErrorCode.NO_AUTH_ERROR, "只能删除自己的应用");
 
+        // 0. 安装任务未完成或资源未核清时不能删除，先取消安装并确认停止。
+        requireNoActiveInstall(appId);
         // 1. 导入容器没确认停掉时中断，应用和持久副本都保留。
         releaseImportedExecution(appId);
         // 2. 应用记录删掉之后，再把仍可用的导入资格标成已中止。
@@ -568,8 +578,16 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         return true;
     }
 
+    /** 有未完成或资源未核清的安装任务时拒绝删除；用户需先取消安装并确认停止。 */
+    private void requireNoActiveInstall(long appId) {
+        if (importInstallJobs.activeByApp(appId) != null) {
+            throw new MyException(ErrorCode.CONFLICT_ERROR, "安装尚未结束，请先取消安装。");
+        }
+    }
+
     /** 导入容器还在时不能删应用，否则进程会继续在本机端口上提供已删除的副本。 */
     private void releaseImportedExecution(long appId) {
+        importAgentCleanup.release(appId);
         if (!importExecutions.getObject().releaseApp(appId)) {
             throw new MyException(ErrorCode.OPERATION_ERROR, "导入项目的运行容器尚未确认停止，应用未删除。");
         }
@@ -642,12 +660,14 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Override
     public Boolean deleteAppByAdmin(Long appId) {
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "删除应用请求参数异常");
-        return importWorkspaceCoordinator.withLock(appId, () -> deleteAppByAdminLocked(appId));
+        return importWorkspaceCoordinator.withLock(appId, () -> importAgentCleanup.whenIdle(appId, () -> deleteAppByAdminLocked(appId)));
     }
 
     private Boolean deleteAppByAdminLocked(Long appId) {
         ThrowUtils.throwIf(appId == null || appId <= 0,
                 ErrorCode.PARAMS_ERROR, "删除应用请求参数异常");
+        // 0. 安装任务未完成或资源未核清时不能删除，先取消安装并确认停止。
+        requireNoActiveInstall(appId);
         // 1. 导入容器没确认停掉时中断，应用和持久副本都保留。
         releaseImportedExecution(appId);
         // 2. 应用记录删掉之后，再把仍可用的导入资格标成已中止。

@@ -38,7 +38,11 @@ _store_cache: dict[str, Any] = {}
 _pools_to_close: list[Any] = []
 
 
-async def get_checkpointer(dsn: str):
+class PersistenceUnavailable(RuntimeError):
+    """要求持久化的导入执行不能转入内存；消息不携带DSN或原始数据库错误。"""
+
+
+async def get_checkpointer(dsn: str, *, require_persistent: bool = False):
     """获取 checkpointer（进程级缓存）。**必须在事件循环中调用。**
 
     首次调用时完成：
@@ -49,6 +53,10 @@ async def get_checkpointer(dsn: str):
     失败则降级为 InMemorySaver。
     """
     if dsn in _checkpointer_cache:
+        if require_persistent:
+            from langgraph.checkpoint.memory import InMemorySaver
+            if isinstance(_checkpointer_cache[dsn], InMemorySaver):
+                raise PersistenceUnavailable('POSTGRES_CHECKPOINT_REQUIRED')
         return _checkpointer_cache[dsn]
 
     if dsn:
@@ -57,12 +65,16 @@ async def get_checkpointer(dsn: str):
             _checkpointer_cache[dsn] = saver
             return saver
         except Exception as exc:
+            if require_persistent:
+                raise PersistenceUnavailable('POSTGRES_CHECKPOINT_UNAVAILABLE') from None
             logger.warning(
                 "checkpointer：内存降级\n原因：%s",
                 exc,
             )
 
     else:
+        if require_persistent:
+            raise PersistenceUnavailable('POSTGRES_CHECKPOINT_REQUIRED')
         logger.info("未配置 AGENT_POSTGRES_DSN，使用内存 checkpointer")
 
     from langgraph.checkpoint.memory import InMemorySaver
@@ -88,15 +100,16 @@ async def _init_pg_checkpointer(dsn: str):
     )
     _pools_to_close.append(pool)
 
-    # 2. 在当前事件循环中打开
-    await pool.open()
-
-    # 3. 建表（幂等）
-    saver = AsyncPostgresSaver(pool)
-    await saver.setup()
-
-    # 4. 最小读写验证：确认 setup 建的表真的能用
-    await _verify_checkpointer(saver)
+    try:
+        # 2. 在当前事件循环中打开，再建表并验证实际读取。
+        await pool.open()
+        saver = AsyncPostgresSaver(pool)
+        await saver.setup()
+        await _verify_checkpointer(saver)
+    except BaseException:
+        await pool.close()
+        _pools_to_close.remove(pool)
+        raise
 
     logger.info("checkpointer：PostgreSQL")
     logger.info("checkpointer setup：成功")
@@ -115,13 +128,17 @@ async def _verify_checkpointer(saver) -> None:
     logger.debug("checkpointer 验证通过（result=%s）", type(result).__name__ if result else "None")
 
 
-async def get_store(dsn: str):
+async def get_store(dsn: str, *, require_persistent: bool = False):
     """获取 store（进程级缓存）。
 
     store 用同步 PostgresStore —— 它不需要在事件循环中初始化，
     但为了统一入口和保证缓存语义，也走 async 接口。
     """
     if dsn in _store_cache:
+        if require_persistent:
+            from langgraph.store.memory import InMemoryStore
+            if isinstance(_store_cache[dsn], InMemoryStore):
+                raise PersistenceUnavailable('POSTGRES_STORE_REQUIRED')
         return _store_cache[dsn]
 
     if dsn:
@@ -130,7 +147,12 @@ async def get_store(dsn: str):
             _store_cache[dsn] = store
             return store
         except Exception as exc:
+            if require_persistent:
+                raise PersistenceUnavailable('POSTGRES_STORE_UNAVAILABLE') from None
             logger.warning("store：内存降级\n原因：%s", exc)
+
+    if require_persistent:
+        raise PersistenceUnavailable('POSTGRES_STORE_REQUIRED')
 
     from langgraph.store.memory import InMemoryStore
 
@@ -150,8 +172,13 @@ def _init_pg_store(dsn: str):
     )
     _pools_to_close.append(pool)
 
-    store = PostgresStore(pool)
-    store.setup()
+    try:
+        store = PostgresStore(pool)
+        store.setup()
+    except BaseException:
+        pool.close()
+        _pools_to_close.remove(pool)
+        raise
     logger.info("store：PostgreSQL")
     return store
 

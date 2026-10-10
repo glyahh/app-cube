@@ -14,6 +14,7 @@ shell 操作符。宁可严一点 —— 放开一条命令很容易，出事之
 from __future__ import annotations
 
 import re
+import shlex
 from pathlib import Path
 
 # 命令分词。手写而不用 shlex：
@@ -125,3 +126,66 @@ def _tokenize(text: str) -> list[str]:
         if token:
             tokens.append(token)
     return tokens
+
+
+class ImportCommandRejected(CommandRejected):
+    """导入拒绝使用固定类别，供每轮止损与脱敏事件使用。"""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(f"IMPORT_COMMAND_REJECTED:{reason}。请修正命令，不要重复同类操作。")
+
+
+def prepare_import_command(command: str, workspace: Path) -> str:
+    """解析导入容器的单条POSIX命令；参数重新引用，不改变Windows策略。"""
+    if not isinstance(command, str) or not command.strip():
+        raise ImportCommandRejected("EMPTY")
+    # 1. 引号里的普通字符是参数；真正的Shell操作符与命令替换拒绝。
+    quote = ""
+    escaped = False
+    for index, char in enumerate(command):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and quote != "'":
+            escaped = True
+            continue
+        if quote == "'":
+            if char == "'":
+                quote = ""
+            continue
+        if char == '"':
+            quote = "" if quote == '"' else '"'
+            continue
+        if char == "'" and not quote:
+            quote = "'"
+            continue
+        if char == "`" or (char == "$" and command[index:index + 2] == "$("):
+            raise ImportCommandRejected("SUBSTITUTION")
+        if not quote and char in ";&|<>()\n\r":
+            raise ImportCommandRejected("OPERATORS")
+    if quote or escaped:
+        raise ImportCommandRejected("QUOTING")
+    try:
+        parts = shlex.split(command, posix=True)
+    except ValueError as error:
+        raise ImportCommandRejected("QUOTING") from error
+    # 2. 复用白名单与危险片段，不为导入增加命令权限。
+    if not parts:
+        raise ImportCommandRejected("EMPTY")
+    if parts[0] not in ALLOWED_COMMANDS:
+        raise ImportCommandRejected("EXECUTABLE")
+    if any(fragment in command.lower() for fragment in FORBIDDEN_FRAGMENTS):
+        raise ImportCommandRejected("DANGEROUS")
+    root = workspace.resolve()
+    for token in parts[1:]:
+        if ".." in Path(token).parts:
+            raise ImportCommandRejected("PATH")
+        if _WINDOWS_ABS.match(token) or token.startswith(("/", "\\")):
+            try:
+                Path(token).resolve().relative_to(root)
+            except ValueError as error:
+                raise ImportCommandRejected("PATH") from error
+    # 3. 仅转换命令名，不改写Python源码等参数里的type文字。
+    parts[0] = {"type": "cat", "dir": "ls", "where": "which"}.get(parts[0], parts[0])
+    return shlex.join(parts)

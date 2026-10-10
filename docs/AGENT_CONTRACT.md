@@ -67,6 +67,16 @@ Java 是路径真相源，Python 是内容真相源。新 Auto 应用的业务�
 
 该示例对应 `AgentRunRequest.toFrameJson`。模型、Backend 和权限策略由 Worker 配置及执行侧校验决定，不由本帧中的模型或权限字段任意覆盖。`input.taskKind` 可选，缺省为可写的 `coding`；知识分析使用 `analysis`，问答使用 `qa`，由 Python 的只读 Backend 强制限制副作用。
 
+### 导入编辑准入（2026-10-07，隔离执行与合入仍待接通）
+
+SSE/WebSocket 共用请求工厂从当前发布记录取得 `workspace.importTaskId`（UUID string），拿到应用锁后再次读取。该标记不是执行授权。当前 Worker 收到导入身份后，在路径解析、占位成功、模型装配和 Docker/Shell 创建之前返回 `error/code=IMPORT_EDIT_NOT_READY/retryable=false`；Java 展示为“导入项目编辑尚未就绪，本次未执行”。不携带导入身份的新项目维持既有链路。
+
+正式 Java 展示入口在主应用锁内调用 `ImportAgentEditPreparation`，再持有工作区数据库锁，只读冻结完整内容（包括秘密文件、二进制、空目录和属性），写入 V30 账本。请求增加 `workspace.importEditId / sourceHash / configRevision / contextEpoch / importVolumePath` 和 `limits.importDiskBytes`；路径仅由平台按edit UUID生成，身份与代次均为string，秘密值和映射不进入请求。V31核对创建前登记的卷身份和实际分配容量；编辑卷独占`/var/lib/glyahh/import-disks/edit-{editId}/work`，不复用安装运行卷。
+
+正式准备现在实际创建和核对固定容量卷，但尚未生成秘密隔离视图、启动模型或生成授权候选；Worker继续明确拒绝执行。拒绝/取消后实际释放卷并核对loop消失，再终结准备记录；释放未确认保留RECOVERY_REQUIRED和活动槽位。不能用卷准备记录证明编辑成功；仍需接文件工具授权候选、Java复核、原子发布及重启恢复，之后才能替换明确拒绝分支。准备期间进程崩溃仍需核对恢复，不能自动释放或续跑。
+
+平台卷助手新增 `edit-view` 核心，但尚未由上述Java准备流程调用：受限卷内 `work/view` 是唯一容器挂载点，`work/private-state.json` 为root私有恢复映射，不进入模型请求、工具输出或receipt。当前不能据此放行Worker；须先补正式视图创建登记、隔离文件工具、候选验证和发布恢复。
+
 ### 导入启动补充内部契约（尚未接业务批准接口）
 
 `input.taskKind=startup` 在解析工作区前进入封闭只读分支。`input.message` 是服务器构造的 JSON 文本，字段必须恰为：
@@ -245,9 +255,78 @@ cd agent && uv run pytest -q
 
 ## 改动历史
 
+主 Agent Docker 准入补充（2026-10-07）：创建时 `--memory-swap` 与 `--memory` 相等；新建、复用和每次 Shell 执行均核对容器内 `memory.swap.max=0`。WSL 内核未应用 Docker 参数时，仅平台按该容器 PID 和完整 cgroup 身份补救并独立读回；不能限制则发 `SANDBOX_UNAVAILABLE`，不装配模型。停止或删除未确认时保留进程内登记并阻止同 Session 重试，释放不能清除失败资格。此增量不代表持久资源账本、硬磁盘、正式隔离合入或重启恢复已完成。
+
 | 日期 | 改动 |
 |---|---|
 | 2026-10-02 | 仅同步文档：请求示例对齐 Auto 目录、30 分钟预算及实际序列化字段，说明只读任务与配置边界；未修改协议实现或新增运行验收。 |
 | 2026-09-12 | 初版。子进程 stdio 协议、14 个事件、进程池伸缩策略（3/5/缩容冷却 5 分钟） |
 | 2026-09-12 | 旧链路下线后复验。补第 3 条硬约束「网络出口必须显式」——修 httpx 静默走系统代理导致的 `Connection error.` |
 | 2026-09-19 | 模型出口简化为直连/指定代理二选一；新增按 App 持久化的单调用自动降级。 |
+
+### 正式隔离视图准备增量（2026-10-07）
+
+Java已正式调用edit-view，V32在实际复制前登记view/私有映射路径，封存仅保留viewHash、viewSourceHash、viewStateHash。请求新增workspace.importViewPath、viewHash、viewStateHash，不携带原值或私有映射路径。实际卷释放后才能释放子账本。Worker仍拒绝模型执行；上述旧段的“尚未调用”仅属历史，实际工具、候选和发布仍待开发。
+
+### 平台工具与私有恢复增量
+
+file-edit是平台结构化文件操作，不是Shell或新模型入口；冻结身份来自平台上下文。请求1MiB、edit文件/结果16MiB，意图先APPLYING，私有授权摘要更新后READY。模型工具尚未接入，当前要求无edit容器；实际执行租约、候选Java校验与最终发布仍须实现，不能直接删除Worker拒绝分支。
+
+### 平台候选封存增量
+
+`edit-candidate`只接受冻结编辑身份及平台保存的最新`--state-hash`，不接受模型自报路径、授权列表或秘密映射。edit容器（含已停止未删除）必须全部消失且查询成功；卷内先登记SEALING，之后复用SecretFreeView恢复私有授权并产生root私有候选与manifest，sync及版本复核后才登记SEALED。失败保留未决，不覆盖重试；已有candidateState时file-edit拒绝继续修改。
+
+平台回执包含`candidatePath / candidateManifestPath / candidateHash / candidateManifestHash / authorizedStateHash`及原冻结身份，不包含文件正文。manifest绑定全部候选文件/属性摘要、目录、逐文件before/after、授权记录及保留产物摘要；原秘密只存在于root私有候选，不给模型挂载。
+
+Java平台客户端已核对回执身份、派生路径及摘要格式，但**尚未独立读取验证manifest、接正式模型结束流程或发布**。平台封存成功不是业务成功事件；完整Java资格/取消/内容/秘密复核、持久候选登记与发布恢复仍须接入。
+
+### 候选持久账本增量
+
+V33新增候选子账本，绑定既有edit_id并冻结平台派生候选/manifest路径和授权摘要；PLANNED创建前登记、SEALED只保存平台两个摘要、VERIFIED单独表示Java独立核对、RELEASED表示原卷实际消失。不能删除审计、改路径/授权摘要、覆盖已封存回执或未释放即关闭父任务。父任务COMMITTING要求VERIFIED；SUCCEEDED要求保留验证记录且候选已RELEASED，单有平台封存不能开始发布。
+
+Java已提供planCandidate/candidateReady/candidateReleased；正式准备失败的清理链在实际卷释放后核对候选登记，再释放视图和关闭准备任务。**正式模型结束尚未调用前两项，独立内容验证及VERIFIED写入方法尚未实现**；数据库中的验证阶段用例只是约束反例/协议检查，不是修复证据，不得凭SQL夹具声称Java已安全发布。
+
+### 实际候选读取与秘密字段绑定增量
+
+平台candidate-read是Java私有通道，不是公共API或模型工具。只接受平台冻结身份、state/candidate/manifest三项摘要和固定part；manifest/private-state/inventory按256KiB分块，file/view-file只能读取已登记相对路径。私有正文不得进入模型、日志或公共响应。inventory实际遍历候选目录和字节，不能以manifest文件集合替代。
+
+候选恢复除核对占位符集合及数量，还核对由冻结源重新生成的去秘密基线、绑定及秘密所在整行；改秘密字段名、注释或表达式即拒绝，不以数量不变放行。其他行仍可合法编辑。Java新增独立恢复摘要核心，从原内容、基线、授权字节及平台绑定重建原内容后计算恢复摘要，不接受候选自报恢复值。绑定对象文本只显示private。
+
+**完整Frozen构建、真实来源读取接入、正式候选校验/VERIFIED、模型与最终发布仍未接。** Java恢复核心单元不能代替正式模型或生产恢复验收，不删除Worker安全拒绝。
+
+### Java Frozen构建核心增量
+
+Java独立校验器已增加freeze：严格解析平台私有状态及完整正文SHA，核对业务身份/固定view路径/可信源路径/额度、原清单和基线清单的规范摘要。必须从独立FilesAccess实际来源和视图取得输入，读取前后复核范围及资格；授权字节重新SHA并从原内容重建去秘密基线，经独立恢复器产生恢复摘要。未授权基线源码变化或删除拒绝，执行产物单独记录，不提升为源码授权。
+
+**此为构建核心，并未接平台实际来源/完整视图FilesAccess、正式模型结束或VERIFIED写入。** 调用方还须核对Java冻结内容/属性版本与当前归属/来源/上下文，不能把Python inventory摘要当作Java完整内容版本，不删除安全拒绝。
+
+### 平台实际来源/完整视图读取增量
+
+候选封存记录新增candidateViewHash，固定结束时完整视图的文件/目录/属性摘要。candidate-read新增source-inventory、view-inventory、source-file；source根仅来自已核对摘要的root私有状态，不接受外部宿主路径。来源库存须符合冻结sourceHash，视图库存须符合封存candidateViewHash；旧记录无此字段时视图读取明确拒绝，不自动补新摘要。source-file仅读取原清单文件，view-file仍限定授权文件。
+
+Java已提供sourceAccess/viewAccess生产读桥接，动态库存正文逐块保持固定摘要、整体SHA验证后再严格解析并独立重算规范摘要。实际原内容仍在Java平台内存，不进入模型或公共接口。真实受限卷已验证生产Java Engine读取私有状态、源/视图、构建Frozen并验证实际候选字节；该联调采用合成业务身份/资格，不代替正式账本准入与原Java版本复核。
+
+**正式业务freeze/verify/VERIFIED、模型编辑、最终发布及恢复仍未接。** 不删除Worker安全拒绝，不以本次独立联调宣称正式修复完成。
+
+### 正式候选验证服务与持久准入增量
+
+Java新增ImportAgentCandidateVerification平台服务：应用协调锁内重读账本与正式来源，路径由WorkspacePathResolver生成，重新describe完整Java内容/属性并核对冻结sourceHash；先登记候选意图、平台实际确认停止并封存、登记SEALED，再以账本原库存摘要和实际源/视图读取构建Frozen、验证候选，末尾重新核对Java原版本及资格。
+
+ImportAgentEditLedger增加封存资格及candidateVerified。VERIFIED只保存source/candidate/manifest/authorization四个摘要；CAS限定SEALING、停止、未取消/关闭/过期、父版本/执行者、SEALED子记录及两个回执摘要。现有V33触发器再核对归属、来源、上下文和精确证据。失败服务记录RECOVERY_REQUIRED并保留资源，不发布文件或发送业务成功。
+
+平台私有状态声明的容量仅验证平台硬上限；实际源/视图库存仍受Java配置额度检查。避免把平台100000文件的默认上限与产品10000文件的实际额度混淆而永久拒绝正常编辑，不扩大实际输入额度。
+
+**此服务尚未由正式Worker结束调用；真实业务锁内完整服务及Java持久写入仍待联调。** 当前单元/数据库约束与真实独立Java读验证分开登记；仍不能声称正式模型修复或发布完成。
+
+### 验证服务当前执行者准入
+
+验证服务在任何候选操作前要求SEALING、未取消、已停止，且冻结executorPid/executorStart同时匹配当前Java进程。旧进程或PID复用但启动时刻不同不得重入；COMMITTING、终态、EDITING、RECOVERY_REQUIRED及取消请求直接拒绝，不触发候选平台读取或恢复写入。失败处理中只允许当前SEALING/CANCELLING登记RECOVERY_REQUIRED，不能借重复验证把已提交/已结束任务改成恢复。
+
+正常服务路径已增加单元：实际完整Java源快照，受控平台/账本，完整freeze/verify后才调用candidateVerified且顺序正确。该单元不是实际数据库写入或模型闭环；重启主动资源恢复和正式结束事件仍待实现。
+
+
+### 平台登记容器启动与实际内核准入（2026-10-07）
+
+Java已提供createdContainer/startEditContainer，ImportAgentContainerLifecycle.beginEditing在业务应用锁、当前executor PID/启动时刻及冻结资格下，先启动原登记ID、核验平台实际内核limits，再CAS EDITING。平台新增edit-container-start及固定--container-id；不新建替代容器或挂载发布目录。实际memory/CPU/pids有界、swap强制0读回，远程引擎/不可强制/未知容器均拒绝。停止失败保留STOPPING/RECOVERY，不释放。WSL MemorySwap记录不可靠时只认可实际cgroup证明，不以当前没有swap代替硬限制。
+
+实际生产Java/数据库/Docker已证明启动、四项内核读回、停止、SEALING和未编辑基线VERIFIED；正式Worker尚未调用该链、工具/真实模型/最终发布仍未接，不移除IMPORT_EDIT_NOT_READY。尚须逐执行复核资格与限额及持久Worker生命周期，不能把一次启动证明当作完整模型执行保护。

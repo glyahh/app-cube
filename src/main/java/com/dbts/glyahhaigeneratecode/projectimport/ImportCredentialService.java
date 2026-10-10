@@ -26,7 +26,8 @@ public class ImportCredentialService {
 
     @Transactional
     public View create(long owner, String provider, String name, String token) {
-        if (owner <= 0 || !("GitHub".equals(provider) || "Gitee".equals(provider))) throw invalid();
+        if (owner <= 0) throw invalid();
+        ImportProviderPolicy.requireSupported(provider);
         String note = name(name); UUID id = UUID.randomUUID();
         var secret = keys.cipher().encrypt(owner, provider, id, 1, token);
         // 1. 身份元数据与第一版密文在同一短事务中建立。
@@ -38,6 +39,7 @@ public class ImportCredentialService {
     @Transactional
     public View rename(long owner, UUID id, long revision, String name) {
         String note = name(name); var current = locked(owner,id,revision);
+        ImportProviderPolicy.requireSupported(current.provider());
         changed(jdbc.update("UPDATE biz.project_import_credential SET name=?,record_revision=record_revision+1,update_time=now() WHERE credential_id=? AND owner_id=? AND record_revision=? AND state='ACTIVE'",note,id,owner,revision));
         return new View(id.toString(), current.provider(), note, current.version(), Long.toString(revision+1), "ACTIVE");
     }
@@ -45,6 +47,7 @@ public class ImportCredentialService {
     @Transactional
     public Mutation replace(long owner, UUID id, long revision, String token) {
         var current = locked(owner,id,revision); long version = Math.addExact(Long.parseLong(current.version()),1);
+        ImportProviderPolicy.requireSupported(current.provider());
         var secret = keys.cipher().encrypt(owner,current.provider(),id,version,token);
         // 1. 与最终提交共用凭据行锁，旧版本不再签发或提交。
         changed(jdbc.update("UPDATE biz.project_import_credential SET current_version=?,record_revision=record_revision+1,update_time=now() WHERE credential_id=? AND owner_id=? AND record_revision=? AND state='ACTIVE'",version,id,owner,revision));
@@ -76,6 +79,7 @@ public class ImportCredentialService {
 
     /** 只向当前受管来源租约解密，归属、版本、执行阶段和期限由数据库核对。 */
     public String readForSource(ImportSourceTask source) {
+        ImportProviderPolicy.requireSupported(source.definition().source().provider());
         if(source.credentialId()==null || source.credentialVersion()==null)throw invalid();
         var rows=jdbc.queryForList("""
                 SELECT v.key_id,v.nonce,v.ciphertext FROM biz.project_import_source s
