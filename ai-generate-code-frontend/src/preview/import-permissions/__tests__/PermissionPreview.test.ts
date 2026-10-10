@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { Select } from 'ant-design-vue'
 import PermissionPreview from '../PermissionPreview.vue'
+import AgentComposerControls from '@/features/project-import/agent-permissions/AgentComposerControls.vue'
+import AgentPermissionCard from '@/features/project-import/agent-permissions/AgentPermissionCard.vue'
+import AgentChangeReview from '@/features/project-import/agent-permissions/AgentChangeReview.vue'
 
 const wrappers: ReturnType<typeof mount>[] = []
 function create(props = {}) {
@@ -35,8 +38,9 @@ describe('导入会话授权前端审核版', () => {
     const [, model, effort] = wrapper.findAllComponents(Select)
     expect(model!.props('value')).toBe('gpt-5.2')
     expect(effort!.props('value')).toBe('medium')
-    model!.vm.$emit('update:value', 'claude-sonnet-4-5')
-    effort!.vm.$emit('update:value', 'high')
+    model!.vm.$emit('change', 'claude-sonnet-4-5')
+    await flushPromises()
+    effort!.vm.$emit('change', 'high')
     await flushPromises()
     expect(model!.props('value')).toBe('claude-sonnet-4-5')
     expect(effort!.props('value')).toBe('high')
@@ -45,22 +49,55 @@ describe('导入会话授权前端审核版', () => {
     expect(effort!.props('disabled')).toBe(true)
   })
 
-  it('不支持思考力度的模型禁用选项，切回支持模型恢复原选择', async () => {
+  it('不支持思考力度的模型禁用选项并清除旧参数，切回只选合法力度', async () => {
     const wrapper = create()
     const [, model, effort] = wrapper.findAllComponents(Select)
-    model!.vm.$emit('update:value', 'deepseek-chat')
+    model!.vm.$emit('change', 'deepseek-chat')
     await flushPromises()
     expect(effort!.props('disabled')).toBe(true)
-    expect(effort!.props('options')).toEqual([{ value: 'medium', label: '不支持' }])
-    model!.vm.$emit('update:value', 'gpt-5.2')
+    expect(effort!.props('options')).toEqual([{ value: '', label: '不支持', description: '' }])
+    expect(wrapper.findComponent(AgentComposerControls).props('settings').effort).toBeNull()
+    model!.vm.$emit('change', 'gpt-5.2')
     await flushPromises()
     expect(effort!.props('disabled')).toBe(false)
-    expect(effort!.props('value')).toBe('medium')
+    expect(effort!.props('value')).toBe('low')
     expect(effort!.props('options').map((option: { value: string }) => option.value)).toEqual([
       'low',
       'medium',
       'high',
     ])
+  })
+
+  it('预览实际使用三个共享组件，文件差异仍由预览适配器按需加载', async () => {
+    const wrapper = create()
+    expect(wrapper.findComponent(AgentComposerControls).exists()).toBe(true)
+    await send(wrapper)
+    expect(wrapper.findComponent(AgentPermissionCard).exists()).toBe(true)
+    await approve(wrapper)
+    await approve(wrapper)
+    await approve(wrapper)
+    const review = wrapper.findComponent(AgentChangeReview)
+    expect(review.exists()).toBe(true)
+    expect(review.props('diffs')['src/components/TaskList.vue'].status).toBe('loaded')
+    expect(review.props('diffs')['README.md']).toBeUndefined()
+    const readme = review.findAll('details')[1]!
+    ;(readme.element as HTMLDetailsElement).open = true
+    await readme.trigger('toggle')
+    await flushPromises()
+    expect(review.props('diffs')['README.md'].status).toBe('loaded')
+  })
+
+  it.each(['failure', 'conflict'])('模型与力度保存 %s 不抢先更新显示值', async (saveOutcome) => {
+    const wrapper = create({ saveOutcome })
+    const [, model, effort] = wrapper.findAllComponents(Select)
+    model!.vm.$emit('change', 'deepseek-chat')
+    await flushPromises()
+    expect(model!.props('value')).toBe('gpt-5.2')
+    expect(effort!.props('value')).toBe('medium')
+    effort!.vm.$emit('change', 'high')
+    await flushPromises()
+    expect(effort!.props('value')).toBe('medium')
+    expect(wrapper.text()).toContain('当前设置未更改')
   })
 
   it('手动批准逐项询问，工具批准后仍须整批确认', async () => {

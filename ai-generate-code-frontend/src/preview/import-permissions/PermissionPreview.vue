@@ -1,8 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { Alert, Button, Input, Select, ConfigProvider } from 'ant-design-vue'
-
-type Mode = 'MANUAL' | 'GUARDED_AUTO' | 'AUTO'
+import { Alert, Button, Input, ConfigProvider } from 'ant-design-vue'
+import AgentComposerControls from '@/features/project-import/agent-permissions/AgentComposerControls.vue'
+import AgentPermissionCard from '@/features/project-import/agent-permissions/AgentPermissionCard.vue'
+import AgentChangeReview from '@/features/project-import/agent-permissions/AgentChangeReview.vue'
+import type {
+  AgentChangeCandidate,
+  AgentComposerSettings,
+  AgentFileDiff,
+  AgentModelOption,
+  AgentPermissionRequest,
+  AgentReviewDecisionEvent,
+  AgentReviewFileEvent,
+  AgentToolDecisionEvent,
+} from '@/features/project-import/agent-permissions/types'
 type Phase = 'IDLE' | 'RUNNING' | 'ASK' | 'REVIEW' | 'MERGED' | 'STOPPED' | 'FAILED'
 const props = withDefaults(
   defineProps<{
@@ -16,34 +27,25 @@ const props = withDefaults(
   { highRisk: true },
 )
 
-const options = [
-  { value: 'MANUAL', label: '手动批准' },
-  { value: 'GUARDED_AUTO', label: '自动批准' },
-  { value: 'AUTO', label: '自由发挥' },
-]
-
-// 审核页的模型与能力示例，不读取真实配置，也不作为正式请求参数。
-const modelOptions = [
-  { value: 'gpt-5.2', label: 'GPT-5.2', provider: 'OpenAI', supportsEffort: true },
+// 模型与能力仅供页面演示，不读取真实配置，也不作为正式请求参数。
+const modelOptions: AgentModelOption[] = [
+  { id: 'gpt-5.2', name: 'GPT-5.2', provider: 'OpenAI', efforts: ['low', 'medium', 'high'] },
   {
-    value: 'claude-sonnet-4-5',
-    label: 'Claude Sonnet 4.5',
+    id: 'claude-sonnet-4-5',
+    name: 'Claude Sonnet 4.5',
     provider: 'Anthropic',
-    supportsEffort: true,
+    efforts: ['low', 'medium', 'high'],
   },
-  { value: 'deepseek-chat', label: 'DeepSeek Chat', provider: 'DeepSeek', supportsEffort: false },
+  { id: 'deepseek-chat', name: 'DeepSeek Chat', provider: 'DeepSeek', efforts: [] },
 ]
-const effortOptions = [
-  { value: 'low', label: '低', description: '快速响应' },
-  { value: 'medium', label: '中', description: '速度与深度均衡' },
-  { value: 'high', label: '高', description: '更深入地思考' },
-]
-const selectedModel = ref('gpt-5.2')
-const effort = ref('medium')
-const supportsEffort = computed(
-  () => modelOptions.find((model) => model.value === selectedModel.value)?.supportsEffort === true,
-)
-const mode = ref<Mode>('MANUAL')
+const settings = ref<AgentComposerSettings>({
+  mode: 'MANUAL',
+  modelId: 'gpt-5.2',
+  effort: 'medium',
+})
+const mode = computed(() => settings.value.mode)
+const round = ref(0)
+const reviewDiffs = ref<Record<string, AgentFileDiff>>({})
 const phase = ref<Phase>('IDLE')
 const saving = ref(false)
 const deciding = ref(false)
@@ -85,6 +87,35 @@ const steps = computed(() => [
     : []),
 ])
 const current = computed(() => steps.value[step.value])
+const permission = computed<AgentPermissionRequest | null>(() =>
+  current.value
+    ? {
+        id: `preview-${round.value}-${step.value}`,
+        revision: '1',
+        actionHash: `preview-action-${round.value}-${step.value}`,
+        action: current.value.action,
+        object: current.value.object,
+        highRisk: current.value.high,
+        reason: current.value.reason,
+        detailTitle: current.value.action === '修改文件' ? '文件差异' : '命令详情',
+        detailText: current.value.preview,
+      }
+    : null,
+)
+const candidate = computed<AgentChangeCandidate>(() => ({
+  id: `preview-review-${round.value}`,
+  revision: '1',
+  reviewHash: `preview-review-${round.value}-${props.highRisk}`,
+  highRisk: props.highRisk,
+  files: steps.value
+    .filter((item) => item.action === '修改文件')
+    .map((item) => ({
+      path: item.object,
+      change: 'MODIFIED',
+      highRisk: item.high,
+      binary: false,
+    })),
+}))
 const active = computed(() => ['RUNNING', 'ASK', 'REVIEW'].includes(phase.value))
 const locked = computed(() => active.value || saving.value || deciding.value)
 const status = computed(
@@ -100,21 +131,57 @@ const status = computed(
     })[phase.value],
 )
 
-async function saveMode(value: Mode) {
+async function saveSettings(value: AgentComposerSettings) {
   if (locked.value) return
 
   saving.value = true
   error.value = ''
-  // 1. 仅演示保存回执；真实服务端策略、revision 和刷新恢复留待后端接线。
+  // 1. 仅演示保存回执；真实设置、revision 和刷新恢复留待后端接线。
   await nextTick()
+  const field = value.mode !== settings.value.mode ? '模式' : '设置'
   if (props.saveOutcome === 'conflict')
-    error.value = '其他页面已修改授权模式，请重新读取后再选择。当前模式未更改。'
+    error.value = `其他页面已修改授权设置，请重新读取后再选择。当前${field}未更改。`
   else if (props.saveOutcome === 'failure')
-    error.value = '授权模式保存失败，请重试。当前模式未更改。'
-  else {
-    mode.value = value
-  }
+    error.value = `授权设置保存失败，请重试。当前${field}未更改。`
+  else settings.value = value
   saving.value = false
+}
+
+async function loadReviewFile(event: AgentReviewFileEvent) {
+  if (event.reviewId !== candidate.value.id || event.reviewHash !== candidate.value.reviewHash)
+    return
+  const item = steps.value.find((item) => item.object === event.path)
+  if (!item) return
+  reviewDiffs.value[event.path] = { status: 'loading' }
+  await nextTick()
+  if (
+    event.reviewId !== candidate.value.id ||
+    event.reviewHash !== candidate.value.reviewHash ||
+    phase.value !== 'REVIEW'
+  )
+    return
+  const totalLines = item.preview.split('\n').length
+  reviewDiffs.value[event.path] = {
+    status: 'loaded',
+    text: item.preview,
+    startLine: 1,
+    endLine: totalLines,
+    totalLines,
+  }
+}
+
+function decideTool(event: AgentToolDecisionEvent) {
+  if (event.requestId !== permission.value?.id || event.actionHash !== permission.value.actionHash)
+    return
+  if (event.decision === 'REJECT') stop()
+  else approve(event.decision === 'APPROVE_SIMILAR')
+}
+
+function decideReview(event: AgentReviewDecisionEvent) {
+  if (event.reviewId !== candidate.value.id || event.reviewHash !== candidate.value.reviewHash)
+    return
+  if (event.decision === 'REJECT') stop()
+  else approve()
 }
 
 function sessionApprovalKey(item: (typeof steps.value)[number]) {
@@ -170,6 +237,8 @@ async function send() {
   error.value = ''
   decisions.value = []
   step.value = 0
+  round.value++
+  reviewDiffs.value = {}
   phase.value = 'RUNNING'
   await nextTick()
   if (phase.value !== 'RUNNING') return
@@ -237,53 +306,20 @@ function stop() {
             <ul v-if="decisions.length" class="audit">
               <li v-for="row in decisions" :key="row">{{ row }}</li>
             </ul>
-            <article v-if="phase === 'ASK' && current" class="approval" data-testid="tool-card">
-              <div class="card-heading">
-                <h2>允许{{ current.action }}？</h2>
-                <span class="object approval-object">{{ current.object }}</span>
-                <span v-if="current.high" class="risk">高风险操作</span>
-              </div>
-              <p v-if="current.high" class="approval-reason">{{ current.reason }}</p>
-              <details open>
-                <summary>{{ current.action === '修改文件' ? '文件差异' : '命令详情' }}</summary>
-                <pre><span v-for="(line, index) in current.preview.split('\n')" :key="index" class="diff-line" :class="{ 'diff-added': line.startsWith('+'), 'diff-removed': line.startsWith('-') }">{{ line }}{{ index < current.preview.split('\n').length - 1 ? '\n' : '' }}</span></pre>
-              </details>
-              <div class="buttons">
-                <Button danger :disabled="deciding" @click="stop">拒绝并停止本轮</Button
-                ><Button type="primary" :loading="deciding" data-testid="approve" @click="approve()"
-                  >仅批准本次</Button
-                >
-                <Button
-                  :disabled="deciding"
-                  data-testid="approve-similar"
-                  title="仅本会话内同风险、同目标范围的工具请求；不包含整批合入"
-                  @click="approve(true)"
-                  >本会话批准同类请求</Button
-                >
-              </div>
-            </article>
-            <article v-if="phase === 'REVIEW'" class="approval" data-testid="review-card">
-              <div class="card-heading">
-                <h2>确认整批代码修改</h2>
-                <span v-if="highRisk" class="risk">含高风险修改</span>
-              </div>
-              <p class="approval-reason">请核对以下候选修改，尚未合入源码。</p>
-              <details open>
-                <summary>src/components/TaskList.vue · 修改</summary>
-                <pre><span v-for="(line, index) in diff.split('\n')" :key="index" class="diff-line" :class="{ 'diff-added': line.startsWith('+'), 'diff-removed': line.startsWith('-') }">{{ line }}{{ index < diff.split('\n').length - 1 ? '\n' : '' }}</span></pre>
-              </details>
-              <details v-if="highRisk">
-                <summary>README.md · 修改 · 高风险</summary>
-                <pre><span v-for="(line, index) in steps[1]?.preview.split('\n')" :key="index" class="diff-line" :class="{ 'diff-added': line.startsWith('+'), 'diff-removed': line.startsWith('-') }">{{ line }}{{ index < (steps[1]?.preview.split('\n').length ?? 0) - 1 ? '\n' : '' }}</span></pre>
-              </details>
-              <p class="muted approval-scope">确认后合入以上全部修改；工具批准不能代替整批确认。</p>
-              <div class="buttons">
-                <Button danger :disabled="deciding" @click="stop">拒绝并停止本轮</Button
-                ><Button type="primary" :loading="deciding" data-testid="approve" @click="approve()"
-                  >确认整批合入</Button
-                >
-              </div>
-            </article>
+            <AgentPermissionCard
+              v-if="phase === 'ASK' && permission"
+              :request="permission"
+              :busy="deciding"
+              @decision="decideTool"
+            />
+            <AgentChangeReview
+              v-if="phase === 'REVIEW'"
+              :candidate="candidate"
+              :diffs="reviewDiffs"
+              :busy="deciding"
+              @decision="decideReview"
+              @load-file="loadReviewFile"
+            />
             <Alert
               v-if="phase === 'MERGED'"
               type="success"
@@ -308,105 +344,13 @@ function stop() {
               :disabled="active || saving"
             />
             <div class="composer-actions">
-              <div class="composer-controls">
-                <div class="mode-control">
-                  <label class="sr-only" for="permission-mode">会话授权模式</label>
-                  <Select
-                    id="permission-mode"
-                    :value="mode"
-                    :options="options"
-                    :disabled="locked"
-                    :loading="saving"
-                    :show-arrow="false"
-                    :bordered="false"
-                    :dropdown-match-select-width="false"
-                    aria-label="会话授权模式"
-                    data-testid="mode"
-                    @change="(value) => saveMode(value as Mode)"
-                  />
-                </div>
-                <div class="model-controls">
-                  <label class="sr-only" for="chat-model">当前模型</label>
-                  <Select
-                    id="chat-model"
-                    v-model:value="selectedModel"
-                    class="model-select"
-                    :options="modelOptions"
-                    :disabled="locked"
-                    :bordered="false"
-                    show-search
-                    option-filter-prop="label"
-                    placement="topLeft"
-                    :dropdown-match-select-width="false"
-                    :dropdown-style="{ minWidth: '260px', maxWidth: 'calc(100vw - 32px)' }"
-                    aria-label="当前模型"
-                    data-testid="model"
-                  >
-                    <template #option="item">
-                      <span class="model-option"
-                        ><span>{{ item.label }}</span
-                        ><span class="model-provider"
-                          >{{ item.provider }}
-                          <svg
-                            v-if="item.value === selectedModel"
-                            class="selected-check"
-                            width="14"
-                            height="14"
-                            viewBox="0 0 16 16"
-                            fill="none"
-                            aria-hidden="true"
-                          >
-                            <path
-                              d="m3 8 3 3 7-7"
-                              stroke="currentColor"
-                              stroke-width="1.8"
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                            />
-                          </svg> </span
-                      ></span>
-                    </template>
-                  </Select>
-                  <span class="control-divider" aria-hidden="true"></span>
-                  <label class="sr-only" for="thinking-effort">思考力度</label>
-                  <Select
-                    id="thinking-effort"
-                    v-model:value="effort"
-                    class="effort-select"
-                    :options="supportsEffort ? effortOptions : [{ value: effort, label: '不支持' }]"
-                    :disabled="locked || !supportsEffort"
-                    :bordered="false"
-                    placement="topLeft"
-                    :dropdown-match-select-width="false"
-                    :dropdown-style="{ minWidth: '190px' }"
-                    aria-label="思考力度"
-                    data-testid="effort"
-                  >
-                    <template #option="item">
-                      <span class="effort-option"
-                        ><span>{{ item.label }}</span
-                        ><span class="effort-description">{{ item.description }}</span></span
-                      >
-                    </template>
-                    <template #suffixIcon>
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M3 12V9M8 12V6M13 12V3"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                        />
-                      </svg>
-                    </template>
-                  </Select>
-                </div>
-              </div>
+              <AgentComposerControls
+                :settings="settings"
+                :models="modelOptions"
+                :busy="active || deciding"
+                :saving="saving"
+                @change="saveSettings"
+              />
               <Button v-if="active" class="send-action" danger :disabled="deciding" @click="stop"
                 >停止本轮</Button
               >
@@ -573,91 +517,6 @@ h2 {
 .audit li + li {
   margin-top: 4px;
 }
-.approval {
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  padding: 16px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  animation: enter 180ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-.card-heading {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  align-items: center;
-}
-.risk {
-  color: #896642;
-  font-size: 12px;
-}
-.object {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-.approval-object {
-  color: var(--muted);
-  min-width: 0;
-}
-.approval-reason {
-  color: var(--muted);
-  font-size: 13px;
-}
-.approval-scope {
-  font-size: 12px;
-  margin-top: 4px;
-}
-details {
-  min-width: 0;
-  margin-top: 4px;
-}
-summary {
-  cursor: pointer;
-  color: #525252;
-  font-size: 12px;
-  padding: 4px 0;
-  overflow-wrap: anywhere;
-}
-summary:hover {
-  color: #262626;
-}
-pre {
-  background: #fafafa;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
-  line-height: 1.8;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  margin: 4px 0 0;
-  padding: 8px 0;
-}
-.diff-line {
-  display: block;
-  padding: 0 12px;
-}
-.diff-added {
-  background: #edf6ee;
-  color: #285b36;
-}
-.diff-removed {
-  background: #fbefee;
-  color: #92463e;
-}
-.buttons {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  gap: 8px;
-  margin-top: 8px;
-}
-.buttons :deep(.ant-btn-dangerous:not(:hover):not(:disabled)) {
-  color: #525252;
-  border-color: #d4d4d4;
-}
 .composer {
   box-sizing: border-box;
   width: calc(100% - 64px);
@@ -691,78 +550,6 @@ pre {
   gap: 8px;
   margin-top: 12px;
   align-items: center;
-}
-.composer-controls,
-.model-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-.composer-controls {
-  flex: 1;
-}
-.mode-control {
-  flex: 0 0 auto;
-}
-.mode-control :deep(.ant-select) {
-  width: auto;
-}
-.mode-control :deep(.ant-select-selector) {
-  background: #f5f5f5;
-  border-radius: 16px;
-}
-.model-select {
-  width: auto;
-  min-width: 104px;
-}
-.effort-select {
-  width: auto;
-}
-.model-controls :deep(.ant-select-selector) {
-  border-radius: 6px;
-  color: #737373;
-}
-.model-controls :deep(.ant-select:not(.ant-select-disabled):hover .ant-select-selector) {
-  background: #f5f5f5;
-}
-.composer-controls :deep(.ant-select-focused .ant-select-selector) {
-  outline: 2px solid #2563eb;
-  outline-offset: 1px;
-}
-.control-divider {
-  height: 14px;
-  width: 1px;
-  background: var(--line);
-  margin: 0 2px;
-}
-.model-option,
-.effort-option {
-  display: flex;
-  gap: 16px;
-  justify-content: space-between;
-  align-items: center;
-}
-.model-provider,
-.effort-description {
-  font-size: 12px;
-  color: #737373;
-}
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-.selected-check {
-  margin-left: 8px;
-  color: #2563eb;
-  vertical-align: middle;
 }
 .send-action {
   flex-shrink: 0;
@@ -816,7 +603,6 @@ pre {
 :deep(.ant-btn:active:not(:disabled)) {
   transform: translateY(1px);
 }
-summary:focus-visible,
 a:focus-visible,
 :deep(.ant-btn:focus-visible) {
   outline: 2px solid #2563eb;
@@ -825,16 +611,6 @@ a:focus-visible,
 :deep(.ant-alert) {
   border-radius: 6px;
   font-size: 13px;
-}
-@keyframes enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 @media (max-width: 1023px) {
   main {
@@ -877,23 +653,11 @@ a:focus-visible,
     width: calc(100% - 32px);
     margin-bottom: 16px;
   }
-  .composer-controls {
-    gap: 8px;
-  }
-  .model-controls {
-    gap: 2px;
-  }
-  .buttons :deep(.ant-btn) {
-    min-height: 36px;
-  }
   .composer-actions > .send-action {
     min-height: 36px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .approval {
-    animation: none;
-  }
   :deep(.ant-btn) {
     transition: none;
   }
