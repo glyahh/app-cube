@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from contextvars import ContextVar
@@ -147,10 +148,14 @@ def _is_proxy_connect_error(exc: BaseException) -> bool:
 
 
 def _chat_model(model_id: str, base_url: str, api_key: str, settings: ModelSettings,
-                *, streaming: bool, proxy_url: str | None, max_retries: int | None = None):
+                *, streaming: bool, proxy_url: str | None, max_retries: int | None = None,
+                timeout: float | None = None, http_client=None):
     from langchain_openai import ChatOpenAI
 
-    http_client, http_async_client = _clients(proxy_url)
+    if http_client is None:
+        http_client, http_async_client = _clients(proxy_url)
+    else:
+        http_async_client = None
     kwargs = dict(
         model=model_id,
         base_url=base_url,
@@ -158,12 +163,17 @@ def _chat_model(model_id: str, base_url: str, api_key: str, settings: ModelSetti
         temperature=settings.temperature,
         max_tokens=settings.max_output_tokens,
         streaming=streaming,
-        extra_body={"thinking": THINKING_DISABLED},
+        extra_body={"thinking": THINKING_DISABLED} if settings.request_kwargs_json is None else {},
         http_client=http_client,
         http_async_client=http_async_client,
     )
+    if settings.request_kwargs_json is not None:
+        from core.model_profiles import strict_json, validate_kwargs
+        kwargs.update(validate_kwargs(strict_json(settings.request_kwargs_json)))
     if max_retries is not None:
         kwargs["max_retries"] = max_retries
+    if timeout is not None:
+        kwargs['timeout'] = timeout
     return ChatOpenAI(**kwargs)
 
 
@@ -304,3 +314,19 @@ def make_summarizer_model(settings: ModelSettings, route_state: ModelRouteState 
                     model_id, settings.model_id)
     return _build(model_id, base_url, api_key, settings,
                   streaming=False, route_state=route_state)
+
+
+def make_review_model(settings: ModelSettings, *, timeout: float, max_output_tokens: int, http_client=None):
+    """独立非流式审查；无工具、无代理回退、无自动重试。"""
+    from dataclasses import replace
+    from core.model_profiles import strict_json, validate_kwargs
+
+    kwargs = validate_kwargs(strict_json(settings.request_kwargs_json))
+    configured_output = kwargs.get('max_tokens', settings.max_output_tokens)
+    if configured_output > max_output_tokens:
+        kwargs['max_tokens'] = max_output_tokens
+    bounded = replace(settings, max_output_tokens=min(configured_output, max_output_tokens),
+                      request_kwargs_json=json.dumps(kwargs))
+    return _chat_model(bounded.model_id, bounded.base_url, bounded.api_key, bounded,
+                       streaming=False, proxy_url=model_connection_options(bounded),
+                       max_retries=0, timeout=timeout, http_client=http_client)

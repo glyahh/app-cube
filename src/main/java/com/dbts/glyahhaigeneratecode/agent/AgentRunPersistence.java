@@ -133,6 +133,7 @@ public class AgentRunPersistence {
             return events
                     .handle((AgentEvent event, SynchronousSink<AgentEvent> sink) -> {
                         accumulate(event, buffer, thinking);
+                        if ("import.review.requested".equals(event.event())) outcome.set("WAITING_REVIEW");
                         if (AgentEvent.RUN_COMPLETED.equals(event.event())) {
                             outcome.set("succeeded".equals(event.status()) ? "SUCCEEDED" : "FAILED");
                             if (event.frame().path("usage").isObject()) {

@@ -145,6 +145,13 @@ public final class UserFacingOutputHandler {
                         out.put("editId", editId).put("count", count).put("blocked", blocked);
                         out.set("digests", digests.deepCopy());
                     }
+                    case "import.permission.requested" -> {
+                        // 执行器已换成服务端安全投影，不传Worker的原始动作参数。
+                        copy(in, out, "id", "editId", "actionHash", "action", "status", "revision");
+                    }
+                    case "import.review.requested" -> {
+                        copy(in, out, "editId", "hash", "risk", "status", "revision");
+                    }
                     case AgentEvent.RUN_STARTED, AgentEvent.HEARTBEAT, AgentEvent.END -> { }
                     case AgentEvent.ARTIFACT_CHANGED, AgentEvent.ARTIFACT_MANIFEST -> {
                         // 作品通过已有的授权文件接口读取，不转发执行层路径或原始清单。

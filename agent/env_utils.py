@@ -63,11 +63,3 @@ def get_env_bool(name: str, default: bool = False) -> bool:
     if raw in _FALSE:
         return default if raw == "" else False
     return default
-
-
-
-def require_env(name: str) -> str:
-    value = get_env(name)
-    if not value:
-        raise RuntimeError(f"缺少必需的环境变量：{name}")
-    return value

@@ -249,6 +249,26 @@ public final class ImportDiskVolume {
         return invokeEdit(action,entry,bytes,List.of());
     }
 
+    public JsonNode inspectAction(ImportAgentEditLedger.Entry entry, long bytes, JsonNode action) throws IOException {
+        Path directory = Path.of("temp", "agent-permission-private").toAbsolutePath();
+        java.nio.file.Files.createDirectories(directory);
+        Path request = java.nio.file.Files.createTempFile(directory, "action-", ".json");
+        try {
+            byte[] raw = ImportAgentCanonicalJson.bytes(action);
+            if (raw.length > 1 << 20) throw new IOException("IMPORT_ACTION_LIMIT");
+            java.nio.file.Files.write(request, raw);
+            return invokeEdit("action-inspect", entry, bytes, List.of("--request-file", engine.path(request)));
+        } finally {
+            java.nio.file.Files.deleteIfExists(request);
+        }
+    }
+
+    public JsonNode reviewCandidate(ImportAgentEditLedger.Row row, JsonNode proof) throws IOException {
+        long bytes = json.readTree(row.resources()).get(0).path("diskBytes").asLong();
+        return invokeEdit("candidate-review", row.identity(), bytes, List.of("--state-hash", proof.path("authorizedStateHash").asText(),
+                "--candidate-hash", proof.path("candidateHash").asText(), "--manifest-hash", proof.path("candidateManifestHash").asText()));
+    }
+
     private JsonNode invokeEdit(String action,ImportAgentEditLedger.Entry entry,long bytes,List<String> extra)throws IOException{
         if(entry==null||bytes<16L<<20||bytes>8L<<30||bytes%4096!=0)throw new IOException("DISK_VOLUME_IDENTITY_INVALID");
         var args=new ArrayList<>(List.of("python3",engine.path(helper),action,"--app-id",Long.toString(entry.appId()),

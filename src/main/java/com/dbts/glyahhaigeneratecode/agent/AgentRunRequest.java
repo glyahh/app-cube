@@ -59,6 +59,14 @@ public class AgentRunRequest {
     String importWorkerLeaseId;
     Long importDiskBytes;
 
+    /** 导入权限由Java冻结，执行侧不能自行选择或替换。 */
+    String importPermissionMode;
+    String importPolicyRevision;
+    String importSessionEpoch;
+    String importServerGeneration;
+    String importModelProfileId;
+    String importThinkingEffort;
+
     String message;
     String initPrompt;
 
@@ -93,6 +101,14 @@ public class AgentRunRequest {
         frame.put("traceId", traceId);
         frame.put("modelRoute", "direct".equals(modelRoute) ? "direct" : "configured");
         frame.put("allowProxyFallback", Boolean.TRUE.equals(allowProxyFallback));
+        if (importTaskId != null) {
+            frame.put("importPermissionMode", importPermissionMode);
+            frame.put("importPolicyRevision", importPolicyRevision);
+            frame.put("importSessionEpoch", importSessionEpoch);
+            frame.put("importServerGeneration", importServerGeneration);
+            frame.put("importModelProfileId", importModelProfileId);
+            frame.put("importThinkingEffort", importThinkingEffort);
+        }
 
         Map<String, Object> workspace = new LinkedHashMap<>();
         workspace.put("root", workspaceRoot);

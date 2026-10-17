@@ -87,6 +87,22 @@ public class ImportAgentEditLedger {
             """,e.id(),e.ownerId(),row.revision(),lease)!=1)throw conflict();
     }
 
+    public Row open(Entry entry, ImportAgentSettingsRepository.Settings policy) {
+        if (policy == null || entry.ownerId() != policy.ownerId() || entry.appId() != policy.appId()) throw conflict();
+        try {
+            jdbc.update("""
+                INSERT INTO biz.project_import_agent_edit(edit_id,owner_id,app_id,import_task_id,run_id,source_hash,
+                    config_revision,context_epoch,executor_id,executor_pid,executor_start,expires_at,
+                    permission_mode,policy_revision,model_profile_id,thinking_effort,session_epoch,server_generation)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,entry.id(),entry.ownerId(),entry.appId(),entry.importTaskId(),Long.parseLong(entry.runId()),entry.sourceHash(),
+                entry.configRevision(),entry.contextEpoch(),entry.executorId(),entry.executorPid(),
+                Timestamp.from(entry.executorStart()),Timestamp.from(entry.expiresAt()), policy.mode(),policy.revision(),
+                policy.profileId(),policy.effort(),policy.sessionEpoch(),policy.serverGeneration());
+        } catch(org.springframework.dao.DataIntegrityViolationException error){throw conflict();}
+        return require(entry.id(),entry.ownerId());
+    }
+
     /** 调用者先持有应用锁并建立完整快照；数据库另核对当前归属、来源和上下文。 */
     public Row open(Entry entry) {
         try {
@@ -135,7 +151,32 @@ public class ImportAgentEditLedger {
     /** 封存/验证资格独立检查；不允许用准备资格或停止自述直接发布。 */
     public boolean qualifiedSealing(Row row){return qualified(row,true);}
 
+    /** 最终等待和发布前必须仍匹配当前策略，不以历史工具许可代替。 */
+    public boolean policyCurrent(Row row){
+        var e=row.identity();
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM biz.project_import_agent_edit e
+                JOIN biz.project_import_agent_settings s ON s.owner_id=e.owner_id AND s.app_id=e.app_id
+                    AND s.thread_id='app:'||e.app_id::text
+                WHERE e.edit_id=? AND e.owner_id=? AND e.revision=?
+                    AND s.mode=e.permission_mode AND s.profile_id=e.model_profile_id
+                    AND s.effort IS NOT DISTINCT FROM e.thinking_effort AND s.policy_revision=e.policy_revision
+                    AND s.session_epoch=e.session_epoch AND s.server_generation=e.server_generation
+                    AND s.session_expires_at>now())
+            """,Boolean.class,e.id(),e.ownerId(),row.revision()));
+    }
+
+    /** 只有真实停止并持久保留候选卷的编辑能移交审阅。 */
+    public boolean reviewStopped(Row row){
+        return row.stopConfirmed() && Boolean.TRUE.equals(jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM biz.project_import_agent_edit_worker WHERE edit_id=? AND phase='STOPPED')
+                AND EXISTS(SELECT 1 FROM biz.project_import_agent_edit_container WHERE edit_id=? AND phase='REMOVED'
+                    AND receipt_json->>'stopConfirmed'='true')
+            """,Boolean.class,row.identity().id(),row.identity().id()));
+    }
+
     private boolean qualified(Row row,boolean sealing){
+        if(!policyCurrent(row))return false;
         var entry=row.identity();
         return Boolean.TRUE.equals(jdbc.queryForObject("""
             SELECT EXISTS(SELECT 1 FROM biz.project_import_agent_edit e
@@ -147,7 +188,7 @@ public class ImportAgentEditLedger {
                   AND e.source_hash=? AND e.executor_id=? AND e.closed_at IS NULL AND NOT e.cancel_requested
                   AND %s AND e.expires_at>now() AND p.state='READY'
                   AND c.config_revision=e.config_revision AND c.context_epoch=e.context_epoch)
-            """.formatted(sealing?"e.state='SEALING' AND e.stop_confirmed AND e.resources_json->0->>'state'='READY'":"e.state IN ('PREPARING','EDITING')"),Boolean.class,entry.id(),entry.ownerId(),entry.appId(),Long.parseLong(entry.runId()),row.revision(),
+            """.formatted(sealing?"e.state IN ('SEALING','WAITING_REVIEW') AND e.stop_confirmed AND e.resources_json->0->>'state'='READY'":"e.state IN ('PREPARING','EDITING')"),Boolean.class,entry.id(),entry.ownerId(),entry.appId(),Long.parseLong(entry.runId()),row.revision(),
                 entry.sourceHash(),entry.executorId()));
     }
 
@@ -184,8 +225,8 @@ public class ImportAgentEditLedger {
 
     public Row cancel(Row row) {
         return cas(row,"""
-            UPDATE biz.project_import_agent_edit SET cancel_requested=true,state='CANCELLING',revision=revision+1,update_time=now()
-            WHERE edit_id=? AND owner_id=? AND revision=? AND state IN ('PREPARING','EDITING','SEALING') AND NOT cancel_requested
+            UPDATE biz.project_import_agent_edit SET cancel_requested=true,state='CANCELLING',permission_phase='CLOSED',revision=revision+1,update_time=now()
+            WHERE edit_id=? AND owner_id=? AND revision=? AND state IN ('PREPARING','EDITING','SEALING','WAITING_REVIEW') AND NOT cancel_requested
             """);
     }
 
@@ -271,7 +312,7 @@ public class ImportAgentEditLedger {
         var e=row.identity();
         int changed=jdbc.update("""
             UPDATE biz.project_import_agent_edit SET state=CASE WHEN cancel_requested THEN 'CANCELLED' ELSE 'FAILED' END,
-                reason=?,stop_confirmed=true,cleanup='DONE',closed_at=now(),revision=revision+1,update_time=now()
+                reason=?,stop_confirmed=true,cleanup='DONE',permission_phase='CLOSED',closed_at=now(),revision=revision+1,update_time=now()
             WHERE edit_id=? AND owner_id=? AND revision=? AND state IN ('PREPARING','CANCELLING','RECOVERY_REQUIRED')
                 AND jsonb_array_length(resources_json)=1 AND resources_json->0->>'state'='RELEASED'
                 AND candidate_hash IS NULL AND publish_phase='NONE' AND recovery_json='{}'::jsonb
@@ -418,13 +459,17 @@ public class ImportAgentEditLedger {
     }
 
     public Row beginPublication(Row row,com.fasterxml.jackson.databind.JsonNode journal,java.util.List<String> authorized){
-        if(!qualifiedSealing(row))throw conflict();var proof=candidateProof(row);var e=row.identity();
+        if(!qualifiedSealing(row)||!reviewStopped(row))throw conflict();var proof=candidateProof(row);var e=row.identity();
         try{
             if(jdbc.update("""
-                UPDATE biz.project_import_agent_edit SET state='COMMITTING',publish_phase='CANDIDATE_READY',candidate_hash=?,
+                UPDATE biz.project_import_agent_edit e SET state='COMMITTING',permission_phase='EXECUTING',publish_phase='CANDIDATE_READY',candidate_hash=?,
                     authorized_json=CAST(? AS jsonb),recovery_json=CAST(? AS jsonb),revision=revision+1,update_time=now()
-                WHERE edit_id=? AND owner_id=? AND revision=? AND state='SEALING' AND NOT cancel_requested AND publish_phase='NONE'
-                """,proof.path("candidateHash").asText(),json.writeValueAsString(authorized),journal.toString(),e.id(),e.ownerId(),row.revision())!=1)throw conflict();
+                WHERE edit_id=? AND owner_id=? AND revision=? AND state IN ('SEALING','WAITING_REVIEW') AND NOT cancel_requested AND publish_phase='NONE'
+                    AND EXISTS(SELECT 1 FROM biz.project_import_agent_review r WHERE r.edit_id=e.edit_id
+                        AND r.status='APPROVED' AND r.expires_at>now() AND r.candidate_hash=? AND r.manifest_hash=?
+                        AND r.authorized_hash=? AND r.source_hash=e.source_hash AND r.review_json->'authorized'=CAST(? AS jsonb))
+                """,proof.path("candidateHash").asText(),json.writeValueAsString(authorized),journal.toString(),e.id(),e.ownerId(),row.revision(),
+                    proof.path("candidateHash").asText(),proof.path("candidateManifestHash").asText(),proof.path("authorizedStateHash").asText(),json.writeValueAsString(authorized))!=1)throw conflict();
             return require(e.id(),e.ownerId());
         }catch(java.io.IOException error){throw conflict();}
     }
@@ -461,7 +506,7 @@ public class ImportAgentEditLedger {
     public Row finishPublication(Row row,boolean committed){
         var e=row.identity();
         if(jdbc.update("""
-            UPDATE biz.project_import_agent_edit SET state=?,cleanup='DONE',closed_at=now(),revision=revision+1,update_time=now()
+            UPDATE biz.project_import_agent_edit SET state=?,cleanup='DONE',permission_phase='CLOSED',closed_at=now(),revision=revision+1,update_time=now()
             WHERE edit_id=? AND owner_id=? AND revision=? AND closed_at IS NULL AND stop_confirmed
               AND state IN ('COMMITTING','RECOVERY_REQUIRED') AND resources_json->0->>'state'='RELEASED'
               AND ((? AND publish_phase='COMMITTED' AND NOT cancel_requested) OR (NOT ? AND publish_phase<>'COMMITTED'))
@@ -543,7 +588,7 @@ public class ImportAgentEditLedger {
     /** 重启核实旧执行者后撤销资格，保留所有资源与发布阶段，不自动续跑。 */
     public Row recoveryRequired(Row row) {
         return cas(row,"""
-            UPDATE biz.project_import_agent_edit SET cancel_requested=true,state='RECOVERY_REQUIRED',revision=revision+1,update_time=now()
+            UPDATE biz.project_import_agent_edit SET cancel_requested=true,state='RECOVERY_REQUIRED',permission_phase='CLOSED',revision=revision+1,update_time=now()
             WHERE edit_id=? AND owner_id=? AND revision=? AND closed_at IS NULL
             """);
     }
@@ -554,7 +599,7 @@ public class ImportAgentEditLedger {
         var entry=row.identity();
         int changed=jdbc.update("""
             UPDATE biz.project_import_agent_edit SET state=CASE WHEN cancel_requested THEN 'CANCELLED' ELSE 'FAILED' END,
-                reason=?,stop_confirmed=true,cleanup='DONE',closed_at=now(),revision=revision+1,update_time=now()
+                reason=?,stop_confirmed=true,cleanup='DONE',permission_phase='CLOSED',closed_at=now(),revision=revision+1,update_time=now()
             WHERE edit_id=? AND owner_id=? AND revision=? AND state IN ('PREPARING','CANCELLING','RECOVERY_REQUIRED')
                 AND resources_json='[]'::jsonb AND candidate_hash IS NULL AND publish_phase='NONE' AND recovery_json='{}'::jsonb
             """,reason,entry.id(),entry.ownerId(),row.revision());

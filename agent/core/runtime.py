@@ -80,6 +80,13 @@ def resolve_workspace(request: dict[str, Any]) -> Path:
     return resolved
 
 
+def import_model_settings(request, settings):
+    """仅正式导入执行调用；新生成与知识任务不读取目录或选项。"""
+    from core.model_profiles import freeze_import_settings
+
+    return freeze_import_settings(request, settings)
+
+
 def run_one(request: dict[str, Any], settings: Settings, emitter: Emitter) -> None:
     """跑一次 run。"""
     run_id = request["runId"]

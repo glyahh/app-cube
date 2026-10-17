@@ -34,7 +34,7 @@ class ImportAgentEditExecutionTest {
                         "{\"v\":1,\"runId\":\"201\",\"seq\":1,\"ts\":1,\"event\":\"__end__\"}");
             })) {
                 var execution=new ImportAgentEditExecution(ledger,preparation,containers,verification,publication,
-                        mock(ImportWorkspaceCoordinator.class),pool,new AgentProperties(),json);
+                        mock(ImportWorkspaceCoordinator.class),pool,new AgentProperties(),json,mock(ImportAgentToolPermissionService.class),mock(ImportAgentCandidateReviewService.class));
                 var events=new java.util.ArrayList<AgentEvent>();
                 assertThrows(RuntimeException.class,()->execution.execute(prepared).doOnNext(events::add).blockLast());
                 assertEquals(key,events.getFirst().frame().path("failureKey").asText());
@@ -62,7 +62,7 @@ class ImportAgentEditExecutionTest {
         })){
             var execution=new ImportAgentEditExecution(ledger,preparation,mock(ImportAgentContainerLifecycle.class),
                     mock(ImportAgentCandidateVerification.class),mock(ImportAgentPublication.class),mock(ImportWorkspaceCoordinator.class),
-                    pool,new AgentProperties(),new ObjectMapper());
+                    pool,new AgentProperties(),new ObjectMapper(),mock(ImportAgentToolPermissionService.class),mock(ImportAgentCandidateReviewService.class));
             assertThrows(RuntimeException.class,()->execution.execute(prepared).blockLast());
             var worker=construction.constructed().getFirst();var order=inOrder(worker,ledger,preparation,pool);
             order.verify(worker).start();order.verify(worker).stop();
@@ -85,7 +85,7 @@ class ImportAgentEditExecutionTest {
                     .when(preparation).finishNotReady(prepared,cancelled);
             var execution=new ImportAgentEditExecution(ledger,preparation,mock(ImportAgentContainerLifecycle.class),
                     mock(ImportAgentCandidateVerification.class),mock(ImportAgentPublication.class),mock(ImportWorkspaceCoordinator.class),
-                    mock(AgentWorkerPool.class),new AgentProperties(),new ObjectMapper());
+                    mock(AgentWorkerPool.class),new AgentProperties(),new ObjectMapper(),mock(ImportAgentToolPermissionService.class),mock(ImportAgentCandidateReviewService.class));
             var cleanup=ImportAgentEditExecution.class.getDeclaredMethod("cleanupResources",ImportAgentEditPreparation.Prepared.class,
                     ImportNativeWorker.class,UUID.class,boolean.class,boolean.class,boolean.class);
             cleanup.setAccessible(true);
@@ -112,7 +112,7 @@ class ImportAgentEditExecutionTest {
         when(ledger.require(entry.id(),7)).thenReturn(row);var lease=UUID.randomUUID();
         var execution=new ImportAgentEditExecution(ledger,preparation,mock(ImportAgentContainerLifecycle.class),
                 mock(ImportAgentCandidateVerification.class),publication,mock(ImportWorkspaceCoordinator.class),
-                mock(AgentWorkerPool.class),new AgentProperties(),new ObjectMapper());
+                mock(AgentWorkerPool.class),new AgentProperties(),new ObjectMapper(),mock(ImportAgentToolPermissionService.class),mock(ImportAgentCandidateReviewService.class));
         var cleanup=ImportAgentEditExecution.class.getDeclaredMethod("cleanupResources",ImportAgentEditPreparation.Prepared.class,
                 ImportNativeWorker.class,UUID.class,boolean.class,boolean.class,boolean.class);
         cleanup.setAccessible(true);
@@ -154,7 +154,7 @@ class ImportAgentEditExecutionTest {
         })) {
             var execution=new ImportAgentEditExecution(ledger,preparation,mock(ImportAgentContainerLifecycle.class),
                     mock(ImportAgentCandidateVerification.class),publication,mock(ImportWorkspaceCoordinator.class),
-                    pool,new AgentProperties(),new ObjectMapper());
+                    pool,new AgentProperties(),new ObjectMapper(),mock(ImportAgentToolPermissionService.class),mock(ImportAgentCandidateReviewService.class));
             try {
                 assertThrows(RuntimeException.class,()->execution.execute(prepared).blockLast());
                 assertTrue(Thread.currentThread().isInterrupted());

@@ -20,6 +20,7 @@ public class ImportAgentEditPreparation {
     private final ImportAgentEditLedger ledger;
     private final ImportStartupSnapshotStore snapshots;
     private final ImportDiskVolume volumes;
+    private final ImportAgentPermissionServiceImpl permissions;
     private final long diskBytes=ImportExecutionSandbox.Limits.defaults().diskBytes();
     private final UUID executorId=UUID.randomUUID();
     private final Instant executorStart=ProcessHandle.current().info().startInstant().orElseThrow();
@@ -28,9 +29,9 @@ public class ImportAgentEditPreparation {
 
     public ImportAgentEditPreparation(ImportWorkspaceCoordinator coordinator,ImportWorkspaceGate gate,
             ImportStartupConfigurationRepository configurations,ImportAgentEditLedger ledger,
-            ImportProperties properties,ImportDiskVolume volumes)throws IOException {
+            ImportProperties properties,ImportDiskVolume volumes,ImportAgentPermissionServiceImpl permissions)throws IOException {
         this.coordinator=coordinator;this.gate=gate;this.configurations=configurations;this.ledger=ledger;
-        this.volumes=volumes;
+        this.volumes=volumes;this.permissions=permissions;
         snapshots=new ImportStartupSnapshotStore(properties.getStagingRoot().resolveSibling("project_edit_private"),
                 List.of(Path.of("temp/code_output"),Path.of("temp/code_deploy"),properties.getStagingRoot()),
                 properties.getMaxFiles(),properties.getMaxSourceBytes());
@@ -41,10 +42,11 @@ public class ImportAgentEditPreparation {
         if(request.getImportTaskId()==null)return new Prepared(request,null);
         long appId=Long.parseLong(request.getAppId()),ownerId=Long.parseLong(request.getUserId());
         return coordinator.withLock(appId,()->{
-            // 1. 重读权威来源与上下文，禁止排队请求携带旧身份。
+            // 1. 锁内重读来源和权限设置，在任何隔离资源创建前冻结。
             var publication=gate.requireAgentEditAllowed(appId);
             if(publication==null||publication.ownerId()!=ownerId
                     ||!publication.taskId().toString().equals(request.getImportTaskId()))throw conflict();
+            var frozen=permissions.freeze(request);
             var configuration=configurations.current(appId,ownerId,publication.taskId());
             UUID editId=UUID.randomUUID();
             ImportStartupSnapshotStore.Snapshot snapshot;
@@ -57,7 +59,7 @@ public class ImportAgentEditPreparation {
             var entry=new ImportAgentEditLedger.Entry(editId,ownerId,appId,publication.taskId(),request.getRunId(),
                     snapshot.contentHash(),configuration.configRevision(),configuration.contextEpoch(),executorId,
                     ProcessHandle.current().pid(),executorStart,Instant.now().plusMillis(deadline));
-            var row=ledger.open(entry);
+            var row=ledger.open(entry,frozen);
             try{
                 // 3. 创建前持久登记意图，平台独占卷核对成功后再更新READY；不使用宿主目录兜底。
                 row=ledger.planVolume(row,diskBytes);
@@ -71,7 +73,10 @@ public class ImportAgentEditPreparation {
                         ()->!Thread.currentThread().isInterrupted());
                 if(!ledger.qualified(row))throw conflict();
                 ledger.viewReady(row,view);
-                return new Prepared(request.toBuilder().importEditId(editId.toString()).importSourceHash(snapshot.contentHash())
+                return new Prepared(request.toBuilder().importPermissionMode(frozen.mode())
+                        .importPolicyRevision(Long.toString(frozen.revision())).importSessionEpoch(frozen.sessionEpoch().toString())
+                        .importServerGeneration(frozen.serverGeneration().toString()).importModelProfileId(frozen.profileId())
+                        .importThinkingEffort(frozen.effort()).importEditId(editId.toString()).importSourceHash(snapshot.contentHash())
                         .importConfigRevision(Long.toString(configuration.configRevision()))
                         .importContextEpoch(Long.toString(configuration.contextEpoch()))
                         .importVolumePath(ImportDiskVolume.editPath(entry)).importDiskBytes(diskBytes)

@@ -61,7 +61,7 @@ public final class ImportAgentPublication {
                 if(!original.contentHash().equals(e.sourceHash()))throw conflict();
                 String stateHash=proof.path("authorizedStateHash").asText(),candidateHash=proof.path("candidateHash").asText(),manifestHash=proof.path("candidateManifestHash").asText();
                 BooleanSupplier candidateEligible=()->{var latest=ledger.require(editId,ownerId);return
-                    List.of("SEALING","COMMITTING").contains(latest.state())&&!latest.cancelRequested()
+                    List.of("SEALING","WAITING_REVIEW","COMMITTING").contains(latest.state())&&!latest.cancelRequested()
                     &&latest.identity().expiresAt().isAfter(java.time.Instant.now())&&requestedEligible.getAsBoolean();};
                 var access=volumes.candidateAccess(e,bytes,stateHash,candidateHash,manifestHash,verifier,candidateEligible);
                 var inventory=access.inventory();

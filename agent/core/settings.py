@@ -50,6 +50,9 @@ class ModelSettings:
     # 模型出口二选一：关闭时明确直连，开启时统一走指定入口。
     proxy_enabled: bool = False
     proxy_url: str = ""
+    # None 保留旧生成链路参数；导入轮次只使用严格校验后的 JSON 参数。
+    request_kwargs_json: str | None = None
+    summarizer_context_window_override: int = 0
 
 
 @dataclass(frozen=True)
@@ -117,6 +120,7 @@ def load_settings() -> Settings:
             summarizer_api_key=get_env("AGENT_SUMMARIZER_API_KEY"),
             proxy_enabled=proxy_enabled,
             proxy_url=proxy_url,
+            summarizer_context_window_override=int(get_env("AGENT_SUMMARIZER_CONTEXT_WINDOW", "0")),
         ),
         limits=Limits(
             deadline_ms=int(get_env("AGENT_DEADLINE_MS", "1800000")),

@@ -120,6 +120,7 @@ import '@/assets/stream-layout.css'
 import { scrollElementToEnd } from '@/utils/scrollElement'
 import { renderSafeMarkdown } from '@/utils/safeMarkdown'
 import { importedApp } from '@/features/project-import/startup'
+import ImportedAgentControls from '@/features/project-import/agent-permissions/ImportedAgentControls.vue'
 import ExecutionProcess from '@/components/ExecutionProcess.vue'
 import ExecutionTerminal from '@/components/ExecutionTerminal.vue'
 import { cleanExecutionText } from '@/utils/executionDisplay'
@@ -243,6 +244,7 @@ const isReadOnly = computed(() => !isOwner.value && !isAdmin.value)
 const StartupRunPreview = defineAsyncComponent(() => import('@/preview/project-import/StartupRunPreview.vue'))
 const importedWorkspace = ref<'pending' | 'imported' | 'plain'>('pending')
 const importedView = computed(() => props.importedProject === true || importedWorkspace.value === 'imported')
+const importedAgentBlocked = ref(true)
 const importLookupBlocked = computed(() => props.importedProject !== true && importedWorkspace.value === 'pending')
 watch(() => [appId.value, userLoginStore.userLogin?.id] as const, async ([id, owner], _, onCleanup) => {
   importedWorkspace.value = 'pending'
@@ -3013,6 +3015,10 @@ function startAgentStream(streamId: string, prompt: string) {
         console.info(`[agent-stream] 传输=${kind}`)
       },
       onEvent: (name, payload) => {
+        if (name === 'import.review.requested') {
+          stopStream(streamId)
+          return
+        }
         const action = mapAgentEvent(name, payload)
         if (action.kind === 'text') {
           maybeInjectToolSelectHint(action.text)
@@ -3384,6 +3390,10 @@ function scheduleChatAutoScroll() {
 }
 
 async function sendMessage(text?: string) {
+  if (importedView.value && importedAgentBlocked.value) {
+    message.warning('请先处理当前任务或读取会话设置。')
+    return
+  }
   if (isReadOnly.value) {
     // 只读视图下静默忽略发送，不弹出任何提示
     return
@@ -4245,6 +4255,8 @@ defineExpose({
               </template>
             </AAlert>
           </div>
+          <ImportedAgentControls v-if="importedView && appId && !isReadOnly" :key="appId" :app-id="appId" :streaming="streaming"
+            @blocked="importedAgentBlocked = $event" @merged="refreshProjectFilesEchoFromDisk(); refreshPreviewWithRetry()" />
           <AInput.TextArea
             v-model:value="inputMessage"
             :placeholder="importedView ? '描述你想调整的内容…' : '描述你想生成的网页，例如：一个用于展示我技术博客的个人站点……'"
@@ -4281,7 +4293,7 @@ defineExpose({
               <AButton v-if="streaming" danger ghost :disabled="isReadOnly" @click="handleStop">
                 停止生成
               </AButton>
-              <AButton v-else type="primary" :loading="sending" :disabled="isReadOnly"
+              <AButton v-else type="primary" :loading="sending" :disabled="isReadOnly || (importedView && importedAgentBlocked)"
                 :class="{ 'send-btn-readonly': isReadOnly }" @click="handleManualSend">
                 发送
               </AButton>

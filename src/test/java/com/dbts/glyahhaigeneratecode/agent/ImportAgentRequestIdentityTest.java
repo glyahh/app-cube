@@ -19,7 +19,11 @@ class ImportAgentRequestIdentityTest {
     @Test void formalFactoryAndQueuedRefreshCarryCurrentImportIdentity()throws Exception {
         var apps=mock(AppService.class);var users=mock(UserService.class);var paths=mock(WorkspacePathResolver.class);
         var repository=mock(ImportTaskRepository.class);var gate=new ImportWorkspaceGate(repository);
-        var factory=new AgentRunRequestFactory(apps,users,paths,new AgentProperties(),gate);
+        var settings=mock(com.dbts.glyahhaigeneratecode.projectimport.ImportAgentSettingsRepository.class);
+        var policy=new com.dbts.glyahhaigeneratecode.projectimport.ImportAgentSettingsRepository.Settings(
+                7,101,"app:101","MANUAL","default",null,2,UUID.randomUUID(),"session",UUID.randomUUID(),Instant.now().plusSeconds(60));
+        when(settings.current(7,101)).thenReturn(policy);
+        var factory=new AgentRunRequestFactory(apps,users,paths,new AgentProperties(),gate,settings);
         var app=new App();app.setId(101L);app.setUserId(7L);app.setCodeGenType("auto");
         when(apps.getById(101L)).thenReturn(app);
         when(paths.outputDir(eq(101L),any(CodeGenTypeEnum.class))).thenReturn(Path.of("target","identity-test","project_101"));
@@ -27,6 +31,8 @@ class ImportAgentRequestIdentityTest {
         when(repository.publicationByApp(101)).thenReturn(new ImportTaskRepository.Publication(old,101,7,"READY","a".repeat(64),1,Instant.now()));
         var request=factory.build(101L,7L,"edit app.py",202L);
         assertEquals(old.toString(),request.getImportTaskId());
+        assertEquals("2",request.getImportPolicyRevision());
+        assertEquals(policy.sessionEpoch().toString(),request.getImportSessionEpoch());
         var mapper=new ObjectMapper();
         assertEquals(old.toString(),mapper.readTree(request.toFrameJson(mapper)).path("workspace").path("importTaskId").asText());
         when(repository.publicationByApp(101)).thenReturn(new ImportTaskRepository.Publication(current,101,7,"READY","b".repeat(64),1,Instant.now()));

@@ -32,6 +32,7 @@ public class AgentRunRequestFactory {
     private final WorkspacePathResolver pathResolver;
     private final AgentProperties agentProperties;
     private final com.dbts.glyahhaigeneratecode.projectimport.ImportWorkspaceGate importGate;
+    private final com.dbts.glyahhaigeneratecode.projectimport.ImportAgentSettingsRepository importSettings;
 
     /**
      * 加载应用、校验归属、组装请求。
@@ -55,6 +56,7 @@ public class AgentRunRequestFactory {
 
         Path workspace = pathResolver.outputDir(appId, type);
         var user = userService.getById(userId);
+        var policy = publication == null ? null : importSettings.current(userId, appId);
 
         return AgentRunRequest.builder()
                 .runId(IdUtil.getSnowflakeNextIdStr())
@@ -73,6 +75,8 @@ public class AgentRunRequestFactory {
                 .codeGenType(type.getDirPrefix())
                 .mode(isWorkspacePopulated(workspace) ? "edit" : "create")
                 .importTaskId(publication == null ? null : publication.taskId().toString())
+                .importPolicyRevision(policy == null ? null : Long.toString(policy.revision()))
+                .importSessionEpoch(policy == null ? null : policy.sessionEpoch().toString())
                 .message(message)
                 .initPrompt(app.getInitPrompt())
                 .deadlineMs(agentProperties.getRunDeadline().toMillis())

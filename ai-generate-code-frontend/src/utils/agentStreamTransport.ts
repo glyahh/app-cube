@@ -82,6 +82,8 @@ export const AGENT_EVENT_NAMES = [
   'artifact.manifest',
   'error',
   'run.completed',
+  'import.permission.requested',
+  'import.review.requested',
   'business-error',
   'done',
 ] as const

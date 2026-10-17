@@ -836,9 +836,86 @@ def apply(action, expected):
         return {**expected, "state": "RELEASED"}
 
 
+def candidate_review(expected, state_hash, candidate_hash, manifest_hash):
+    """仅已封存候选的安全全文投影；秘密映射留在平台，超限拒绝。"""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'agent'))
+    from backends.secret_free_view import SecretFreeView
+    from backends.workspace_secrets import WorkspaceSecrets
+    folder = resource_folder(expected)
+    with locked():
+        record = json.loads((folder / 'record.json').read_bytes())
+        match(expected, record)
+        mounted(folder, record)
+        if record.get('candidateState') != 'SEALED' or (record.get('candidateStateHash'), record.get('candidateHash'), record.get('candidateManifestHash')) != (state_hash, candidate_hash, manifest_hash):
+            raise VolumeError('EDIT_CANDIDATE_NOT_SEALED')
+        if command(['docker', 'ps', '-aq', '--filter', container_filter(expected)]).stdout.strip():
+            raise VolumeError('APP_CONTAINERS_REMAIN')
+        work = folder / 'work'
+        view = SecretFreeView.load_private_state(work / 'private-state.json', state_hash=state_hash,
+                    root=work / 'view', app_id=expected['appId'], owner_id=expected['ownerId'], run_id=expected['runId'], eligible=lambda: True)
+        no_links(work / 'candidate-manifest.json')
+        raw = (work / 'candidate-manifest.json').read_bytes()
+        if hashlib.sha256(raw).hexdigest() != manifest_hash:
+            raise VolumeError('EDIT_READ_PRIVATE_HASH_CHANGED')
+        manifest = json.loads(raw)
+        if view._hash(view._inventory(work / 'candidate', view.max_files, view.max_bytes, lambda: True)) != candidate_hash:
+            raise VolumeError('EDIT_READ_CANDIDATE_CHANGED')
+        registry = WorkspaceSecrets(view.root, view._protected)
+        for value in view._secrets:
+            registry._remember(value)
+        changes = []
+        for change in manifest['changes']:
+            path = change['path']
+            result = dict(change)
+            for side, root in (('before', view.source), ('after', work / 'candidate')):
+                stamp = change[side]
+                if stamp is None:
+                    result[side + 'Text'] = None
+                    continue
+                target = root / path
+                no_links(target)
+                if stamp[1] > 128 << 10:
+                    raise VolumeError('REVIEW_INPUT_LIMIT')
+                content = target.read_bytes()
+                if len(content) != stamp[1] or hashlib.sha256(content).hexdigest() != stamp[0]:
+                    raise VolumeError('EDIT_READ_FILE_CHANGED')
+                try:
+                    result[side + 'Text'] = registry.mask(content.decode('utf-8'))
+                except UnicodeError:
+                    raise VolumeError('REVIEW_BINARY_UNSUPPORTED')
+            changes.append(result)
+        body = {'candidateHash': candidate_hash, 'manifestHash': manifest_hash, 'authorizedHash': state_hash,
+                'sourceHash': expected['contentHash'], 'authorized': sorted(manifest['authorized']), 'changes': changes}
+        if len(json.dumps(body, ensure_ascii=False).encode()) > 256 << 10:
+            raise VolumeError('REVIEW_INPUT_LIMIT')
+        return {**expected, 'state': 'REVIEW_READY', 'body': body}
+
+
+def inspect_edit_action(expected, request):
+    """平台从实际视图重算动作，审查不写文件、不授予执行资格。"""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'agent'))
+    from backends.secret_free_view import SecretFreeView
+    from backends.import_action import verify_action, action_hash, action_inspection
+    folder = resource_folder(expected)
+    with locked():
+        no_links(folder / 'record.json')
+        record = json.loads((folder / 'record.json').read_bytes())
+        match(expected, record)
+        mounted(folder, record)
+        if record.get('viewState') != 'SEALED' or record.get('editState', 'READY') != 'READY' or record.get('candidateState') is not None:
+            raise VolumeError('EDIT_VIEW_UNRESOLVED')
+        state_hash = record.get('authorizedStateHash', record['viewStateHash'])
+        view = SecretFreeView.load_private_state(folder / 'work/private-state.json', state_hash=state_hash,
+                    root=folder / 'work/view', app_id=expected['appId'], owner_id=expected['ownerId'],
+                    run_id=expected['runId'], eligible=lambda: True)
+        action = verify_action(view, state_hash, request, eligible=lambda: True)
+        return {**expected, 'state': 'ACTION_VERIFIED', 'actionHash': action_hash(action), **action_inspection(action)}
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("create", "inspect", "release", "suspend", "resume", "recover", "seed", "edit-view", "file-edit", "edit-candidate", "candidate-read", "edit-container-create", "edit-container-stop", "edit-container-start"))
+    parser.add_argument("action", choices=("create", "inspect", "release", "suspend", "resume", "recover", "seed", "edit-view", "file-edit", "edit-candidate", "candidate-read", "edit-container-create", "edit-container-stop", "edit-container-start", "action-inspect", "candidate-review"))
+    parser.add_argument('--request-file')
     parser.add_argument('--container-id')
     parser.add_argument('--candidate-hash')
     parser.add_argument('--manifest-hash')
@@ -859,7 +936,15 @@ def main():
     try:
         expected = identity(args.app_id, args.content_hash, args.bytes,
                             owner_id=args.owner_id, run_id=args.run_id, edit_id=args.edit_id)
-        if args.action in ('edit-container-create','edit-container-stop','edit-container-start'):
+        if args.action == 'candidate-review':
+            result = candidate_review(expected, args.state_hash, args.candidate_hash, args.manifest_hash)
+        elif args.action == 'action-inspect':
+            from_path = Path(args.request_file)
+            no_links(from_path)
+            if from_path.stat().st_size > 1 << 20:
+                raise VolumeError('EDIT_REQUEST_LIMIT')
+            result = inspect_edit_action(expected, json.loads(from_path.read_bytes()))
+        elif args.action in ('edit-container-create','edit-container-stop','edit-container-start'):
             if args.action=='edit-container-start' and args.container_id is None:raise VolumeError('EDIT_CONTAINER_IDENTITY_REQUIRED')
             result=edit_container(expected,args.action=='edit-container-create',args.container_id if args.action=='edit-container-start' else None)
         elif args.action == 'candidate-read':

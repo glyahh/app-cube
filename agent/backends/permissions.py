@@ -177,6 +177,23 @@ def prepare_import_command(command: str, workspace: Path) -> str:
         raise ImportCommandRejected("EXECUTABLE")
     if any(fragment in command.lower() for fragment in FORBIDDEN_FRAGMENTS):
         raise ImportCommandRejected("DANGEROUS")
+    # 导入编辑许可不能代替安装、启动、部署或远端 Git 的独立授权。
+    executable, arguments = parts[0], parts[1:]
+    if executable in {'pip', 'uv', 'npx'}:
+        raise ImportCommandRejected('SEPARATE_AUTHORIZATION')
+    if executable == 'npm' and (not arguments or arguments[0] not in {'run', 'test', '--version', '-v'}):
+        raise ImportCommandRejected('SEPARATE_AUTHORIZATION')
+    if executable == 'npm' and arguments[0] == 'run' and (len(arguments) < 2 or arguments[1] not in {'build', 'test', 'lint', 'check', 'type-check'}):
+        raise ImportCommandRejected('SEPARATE_AUTHORIZATION')
+    if executable == 'git' and (not arguments or arguments[0] not in {'status', 'diff', 'log', 'show', 'ls-files', 'rev-parse'}):
+        raise ImportCommandRejected('SEPARATE_AUTHORIZATION')
+    if executable in {'python', 'python3', 'py'} and '-m' in arguments:
+        index = arguments.index('-m')
+        if index + 1 >= len(arguments) or arguments[index + 1] not in {'pytest', 'compileall', 'unittest', 'py_compile'}:
+            raise ImportCommandRejected('SEPARATE_AUTHORIZATION')
+    if any(re.search(r'(^|[./_-])(install|start|serve|server|dev|deploy|publish|push)([./_-]|$)', token.lower())
+           for token in arguments if not token.startswith('-')):
+        raise ImportCommandRejected('SEPARATE_AUTHORIZATION')
     root = workspace.resolve()
     for token in parts[1:]:
         if ".." in Path(token).parts:

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 def build_agent(*, settings, backend, checkpointer, store, task_kind: str, tools=None,
                 workspace=None, window: int = 0, overhead=None, compaction_out: list | None = None,
-                route_state=None, import_edit=False):
+                route_state=None, import_edit=False, summarizer_settings=None):
     """按本轮任务类型装配一个可运行的 deep agent。
 
     `tools` 传本项目自带的工具（git_snapshot 等）。框架的
@@ -87,7 +87,7 @@ def build_agent(*, settings, backend, checkpointer, store, task_kind: str, tools
     compaction = CompactionMiddleware(
         window=effective_window,
         overhead=estimator,
-        summarize=make_summarizer(make_summarizer_model(settings.model, route_state)),
+        summarize=make_summarizer(make_summarizer_model(summarizer_settings or settings.model, route_state)),
     )
     if compaction_out is not None:
         # 把实例交回调用方，便于把压缩统计挂到终态事件上做观测

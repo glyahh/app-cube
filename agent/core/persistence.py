@@ -198,12 +198,3 @@ async def close_pools() -> None:
     _checkpointer_cache.clear()
     _store_cache.clear()
     logger.info("所有持久化连接池已关闭")
-
-
-def memory_namespace(app_id: str) -> tuple[str, ...]:
-    """长期记忆的命名空间。
-
-    按 appId 隔离，和现有系统的「一 app 一对话」语义对齐。
-    注意 namespace 不是授权机制 —— 多租户场景必须另加校验。
-    """
-    return ("glyahh", "app-memory", str(app_id))

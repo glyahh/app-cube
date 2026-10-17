@@ -25,6 +25,8 @@ public class ImportAgentEditExecution {
     private final AgentWorkerPool pool;
     private final AgentProperties properties;
     private final ObjectMapper json;
+    private final ImportAgentToolPermissionService toolPermissions;
+    private final ImportAgentCandidateReviewService reviews;
     private final Map<UUID,ImportNativeWorker> running=new ConcurrentHashMap<>();
 
     public Flux<AgentEvent> execute(ImportAgentEditPreparation.Prepared prepared){
@@ -41,7 +43,7 @@ public class ImportAgentEditExecution {
                     }catch(Exception ignored){ }
                 });
             });
-            ImportNativeWorker worker=null;UUID lease=null;boolean reserved=false,stopped=false,successful=false;
+            ImportNativeWorker worker=null;UUID lease=null;boolean reserved=false,stopped=false,successful=false,handedOff=false;
             String stage="WORKER_START";
             String failureKey=null;boolean errorSent=false;int sequence=-1;
             IOException failure=null;
@@ -72,7 +74,17 @@ public class ImportAgentEditExecution {
                     sequence=event.seq();
                     if(event.isEnd()){ended=true;break;}
                     if(AgentEvent.RUN_COMPLETED.equals(event.event()))throw new IOException("IMPORT_EDIT_PREMATURE_SUCCESS");
-                    if("import.edit.stage".equals(event.event())){
+                    if("import.permission.requested".equals(event.event())){
+                        var permission=toolPermissions.requested(id,owner,event.frame());
+                        sink.next(frame(entry.runId(),sequence,"import.permission.requested",permission));
+                    }else if("import.permission.consume".equals(event.event())){
+                        toolPermissions.consume(id,owner,event.frame());
+                    }else if("import.permission.result".equals(event.event())){
+                        toolPermissions.result(id,owner,event.frame());
+                    }else if("import.permission.heartbeat".equals(event.event())){
+                        if(!id.toString().equals(event.frame().path("editId").asText())||!ledger.qualified(ledger.require(id,owner)))
+                            throw new IOException("IMPORT_PERMISSION_REVOKED");
+                    }else if("import.edit.stage".equals(event.event())){
                         String reported=event.frame().path("stage").asText();
                         if(!reported.matches("IMPORT_[A-Z_]{1,60}"))throw new IOException("IMPORT_EDIT_PROTOCOL_INVALID");
                         log.info("导入编辑阶段 edit={} stage={}",id,reported);
@@ -108,6 +120,15 @@ public class ImportAgentEditExecution {
                 if(cancelled.get())throw new IOException("IMPORT_EDIT_CANCELLED");
                 containers.seal(id,owner);
                 verification.verify(id,owner,result.path("authorizedStateHash").asText());
+                stage="CANDIDATE_REVIEW";
+                var review=reviews.prepare(id,owner);
+                if("WAITING".equals(review.status())){
+                    handedOff=true;
+                    sink.next(frame(entry.runId(),++sequence,"import.review.requested",json.valueToTree(review)));
+                    sink.next(frame(entry.runId(),++sequence,AgentEvent.END,json.createObjectNode()));
+                    sink.complete();
+                    return;
+                }
                 stage="PUBLICATION";
                 publication.publish(id,owner,()->!cancelled.get());successful=true;
                 if(!cancelled.get()){
@@ -134,10 +155,12 @@ public class ImportAgentEditExecution {
             }finally{
                 // 3. 独立线程完成有限时停止与账本收口，订阅取消不能再次中断清理。
                 final var cleanupWorker=worker;final var cleanupLease=lease;
-                final boolean workerStopped=stopped,committed=successful;
+                final boolean workerStopped=stopped,committed=successful,waitingReview=handedOff;
                 final String cleanupReason=failureKey;
-                var cleanupTask=new java.util.concurrent.FutureTask<Boolean>(()->cleanupResources(
-                        prepared,cleanupWorker,cleanupLease,workerStopped,committed,cancelled.get(),cleanupReason));
+                var cleanupTask=new java.util.concurrent.FutureTask<Boolean>(()->{
+                    if(waitingReview){running.remove(id);return workerStopped;}
+                    return cleanupResources(prepared,cleanupWorker,cleanupLease,workerStopped,committed,cancelled.get(),cleanupReason);
+                });
                 Thread.ofVirtual().name("import-edit-cleanup-"+id).start(cleanupTask);
                 boolean interrupted=Thread.interrupted();
                 try{
@@ -154,6 +177,7 @@ public class ImportAgentEditExecution {
         }).takeUntilOther(Mono.delay(properties.getRunDeadline()).flatMap(ignored->Mono.error(new java.util.concurrent.TimeoutException("导入编辑超过时间上限"))));
     }
 
+    /** 测试与旧调用方使用的固定 reason 入口；正式执行走带 reason 的重载。 */
     private boolean cleanupResources(ImportAgentEditPreparation.Prepared prepared,ImportNativeWorker worker,
             UUID lease,boolean stopped,boolean successful,boolean cancelled){
         return cleanupResources(prepared,worker,lease,stopped,successful,cancelled,null);

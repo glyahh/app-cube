@@ -31,6 +31,10 @@ def run_import_edit(request, settings, emitter):
     stage = 'IMPORT_EDIT_IMPORTS'
     emitter.emit('import.edit.stage', stage=stage)
     try:
+        from core.runtime import import_model_settings
+        stage = 'IMPORT_EDIT_MODEL_CONFIGURATION'
+        emitter.emit('import.edit.stage', stage=stage)
+        settings, summarizer_settings, model_window = import_model_settings(request, settings)
         import psycopg
         from backends.import_platform_docker import ImportPlatformDockerManager
         from backends.secret_free_docker import SecretFreeDockerBackend
@@ -82,8 +86,15 @@ def run_import_edit(request, settings, emitter):
                     root=root / 'view', app_id=request['appId'], owner_id=request['userId'], run_id=request['runId'], eligible=eligible)
         stage = 'IMPORT_EDIT_BACKEND'
         emitter.emit('import.edit.stage', stage=stage)
+        from core.import_permissions import ImportPermissions
+        permission_identity = {'editId': edit_id, 'ownerId': request['userId'], 'appId': request['appId'],
+                    'runId': request['runId'], 'importTaskId': workspace['importTaskId'],
+                    'sourceHash': workspace['sourceHash'], 'configRevision': workspace['configRevision'],
+                    'contextEpoch': workspace['contextEpoch']}
+        permissions = ImportPermissions(connection, permission_identity, eligible=eligible, emitter=emitter)
         backend = SecretFreeDockerBackend(view, eligible=eligible, session_id='app:' + request['appId'],
-                    run_id=request['runId'], manager=manager, on_edit_started=manager.edit_started, on_edit_finished=manager.edit_finished)
+                    run_id=request['runId'], manager=manager, on_edit_started=manager.edit_started,
+                    on_edit_finished=manager.edit_finished, permissions=permissions, state_hash=manager.authorization_hash)
         # 1. Prompt、事件和持久记忆只使用隔离内容；不导入旧发布目录的历史或平台工具。
         stage = 'IMPORT_EDIT_MASK'
         emitter.emit('import.edit.stage', stage=stage)
@@ -113,7 +124,9 @@ def run_import_edit(request, settings, emitter):
                     return value
                 emitter.emit(event, **clean(payload))
         output = SafeEmitter()
-        output.emit(Event.RUN_STARTED, appId=request['appId'], threadId=request.get('threadId', ''), taskKind='coding')
+        output.emit(Event.RUN_STARTED, appId=request['appId'], threadId=request.get('threadId', ''), taskKind='coding',
+                    modelId=settings.model.model_id, importModelProfileId=request['importModelProfileId'],
+                    importThinkingEffort=request.get('importThinkingEffort'))
         loop = _event_loop()
         checkpoint = loop.run_until_complete(get_checkpointer(settings.postgres_dsn, require_persistent=True))
         store = loop.run_until_complete(get_store(settings.postgres_dsn, require_persistent=True))
@@ -122,7 +135,8 @@ def run_import_edit(request, settings, emitter):
         stage = 'IMPORT_EDIT_MODEL_BUILD'
         emitter.emit('import.edit.stage', stage=stage)
         agent = build_agent(settings=settings, backend=backend, checkpointer=checkpoint, store=store,
-                            task_kind='coding', tools=[], workspace=view.root, overhead=overhead, route_state=route, import_edit=True)
+                            task_kind='coding', tools=[], workspace=view.root, overhead=overhead, route_state=route,
+                            import_edit=True, window=model_window, summarizer_settings=summarizer_settings)
         message = safe(str((request.get('input') or {}).get('message') or '')).strip()
         if not message:
             raise ValueError('IMPORT_EDIT_EMPTY_MESSAGE')

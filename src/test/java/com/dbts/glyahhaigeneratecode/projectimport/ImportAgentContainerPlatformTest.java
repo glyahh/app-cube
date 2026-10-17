@@ -36,10 +36,13 @@ class ImportAgentContainerPlatformTest {
             Path directory=paths.outputDir(app,CodeGenTypeEnum.AUTO);
             var volumes=new ImportDiskVolume(ImportExecutionSandbox.docker(new DockerCli(new RuntimeProperties())),Path.of("scripts/import_disk_volume.py"));
             var properties=new ImportProperties();
-            var preparation=new ImportAgentEditPreparation(coordinator,gate,new ImportStartupConfigurationRepository(source,json),ledger,properties,volumes);
+            var permissions=new ImportAgentPermissionServiceImpl(gate,coordinator,new ImportAgentSettingsRepository(jdbc),
+                    new ImportAgentModelClient(new com.dbts.glyahhaigeneratecode.agent.AgentProperties(),json));
+            var policy=permissions.settings(owner,app,"container-fixture-"+fixture.path("runId").asText());
+            var preparation=new ImportAgentEditPreparation(coordinator,gate,new ImportStartupConfigurationRepository(source,json),ledger,properties,volumes,permissions);
             var request=AgentRunRequest.builder().appId(Long.toString(app)).userId(Long.toString(owner)).importTaskId(task.toString())
                     .runId(fixture.path("runId").asText()).workspaceRoot(directory.getParent().toString()).workspaceName(directory.getFileName().toString())
-                    .deadlineMs(300000L).build();
+                    .deadlineMs(300000L).importPolicyRevision(policy.policyRevision()).importSessionEpoch(policy.sessionEpoch()).build();
             var prepared=preparation.prepare(request);var entry=prepared.row().identity();
             Path output=input.resolveSibling("java-lifecycle-receipt.json");
             var receipt=json.createObjectNode().put("editId",entry.id().toString()).put("runId",entry.runId())

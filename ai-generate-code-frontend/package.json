@@ -49,7 +49,6 @@
     "jsdom": "^26.1.0",
     "npm-run-all2": "^8.0.4",
     "openapi-ts-request": "^1.12.5",
-    "openapi-typescript": "^7.12.0",
     "oxlint": "~1.42.0",
     "prettier": "^3.8.1",
     "typescript": "~5.9.3",

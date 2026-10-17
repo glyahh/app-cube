@@ -22,7 +22,7 @@ class ImportAgentEditPreparationTest {
         var ledger=mock(ImportAgentEditLedger.class);var gate=mock(ImportWorkspaceGate.class);
         var properties=new ImportProperties();properties.setStagingRoot(root.resolve("import"));
         var service=new ImportAgentEditPreparation(mock(ImportWorkspaceCoordinator.class),gate,
-                mock(ImportStartupConfigurationRepository.class),ledger,properties,mock(ImportDiskVolume.class));
+                mock(ImportStartupConfigurationRepository.class),ledger,properties,mock(ImportDiskVolume.class),mock(ImportAgentPermissionServiceImpl.class));
         var request=AgentRunRequest.builder().appId("101").userId("7").runId("201").build();
         assertSame(request,service.prepare(request).request());verifyNoInteractions(ledger,gate);
     }
@@ -31,7 +31,7 @@ class ImportAgentEditPreparationTest {
         var ledger=mock(ImportAgentEditLedger.class);var volumes=mock(ImportDiskVolume.class);
         var properties=new ImportProperties();properties.setStagingRoot(root.resolve("import"));
         var service=new ImportAgentEditPreparation(mock(ImportWorkspaceCoordinator.class),mock(ImportWorkspaceGate.class),
-                mock(ImportStartupConfigurationRepository.class),ledger,properties,volumes);
+                mock(ImportStartupConfigurationRepository.class),ledger,properties,volumes,mock(ImportAgentPermissionServiceImpl.class));
         var start=Instant.now();var e=new ImportAgentEditLedger.Entry(UUID.randomUUID(),7,101,UUID.randomUUID(),"201",
                 "a".repeat(64),0,0,UUID.randomUUID(),1,start,start.plusSeconds(60));
         var row=new ImportAgentEditLedger.Row(e,"PREPARING",2,false,"[{\"kind\":\"VOLUME\",\"state\":\"READY\"}]","PENDING","NONE",false);
@@ -46,7 +46,7 @@ class ImportAgentEditPreparationTest {
         var ledger=mock(ImportAgentEditLedger.class);var volumes=mock(ImportDiskVolume.class);
         var properties=new ImportProperties();properties.setStagingRoot(root.resolve("import"));
         var service=new ImportAgentEditPreparation(mock(ImportWorkspaceCoordinator.class),mock(ImportWorkspaceGate.class),
-                mock(ImportStartupConfigurationRepository.class),ledger,properties,volumes);
+                mock(ImportStartupConfigurationRepository.class),ledger,properties,volumes,mock(ImportAgentPermissionServiceImpl.class));
         var start=Instant.now();var e=new ImportAgentEditLedger.Entry(UUID.randomUUID(),7,101,UUID.randomUUID(),"201",
                 "a".repeat(64),0,0,UUID.randomUUID(),1,start,start.plusSeconds(60));
         var row=new ImportAgentEditLedger.Row(e,"PREPARING",2,false,"[{\"state\":\"READY\"}]","PENDING","NONE",false);
@@ -65,7 +65,7 @@ class ImportAgentEditPreparationTest {
         var ledger=mock(ImportAgentEditLedger.class);var volumes=mock(ImportDiskVolume.class);
         var properties=new ImportProperties();properties.setStagingRoot(root.resolve("import"));
         var service=new ImportAgentEditPreparation(mock(ImportWorkspaceCoordinator.class),mock(ImportWorkspaceGate.class),
-                mock(ImportStartupConfigurationRepository.class),ledger,properties,volumes);
+                mock(ImportStartupConfigurationRepository.class),ledger,properties,volumes,mock(ImportAgentPermissionServiceImpl.class));
         var start=Instant.now();var e=new ImportAgentEditLedger.Entry(UUID.randomUUID(),7,101,UUID.randomUUID(),"201",
                 "a".repeat(64),0,0,UUID.randomUUID(),1,start,start.plusSeconds(60));
         var row=new ImportAgentEditLedger.Row(e,"CANCELLING",3,true,"[{\"state\":\"READY\"}]","PENDING","NONE",false);
@@ -82,7 +82,11 @@ class ImportAgentEditPreparationTest {
         UUID task=UUID.randomUUID();
         when(gate.requireAgentEditAllowed(101L)).thenReturn(new ImportTaskRepository.Publication(task,101,7,"READY","a".repeat(64),1,Instant.now()));
         when(configurations.current(101,7,task)).thenReturn(new ImportStartupConfiguration.State(101,7,task,4,9,".",java.util.List.of()));
-        when(ledger.open(any())).thenAnswer(call->new ImportAgentEditLedger.Row(call.getArgument(0),"PREPARING",0,false,"[]","PENDING","NONE",false));
+        var permissions=mock(ImportAgentPermissionServiceImpl.class);
+        var policy=new ImportAgentSettingsRepository.Settings(7,101,"app:101","MANUAL","default",null,2,
+                UUID.randomUUID(),"d".repeat(64),UUID.randomUUID(),Instant.now().plusSeconds(3600));
+        when(permissions.freeze(any())).thenReturn(policy);
+        when(ledger.open(any(),eq(policy))).thenAnswer(call->new ImportAgentEditLedger.Row(call.getArgument(0),"PREPARING",0,false,"[]","PENDING","NONE",false));
         var properties=new ImportProperties();properties.setStagingRoot(root.resolve("import"));
         var volumes=mock(ImportDiskVolume.class);
         when(ledger.planVolume(any(),anyLong())).thenAnswer(call->call.getArgument(0));
@@ -94,7 +98,7 @@ class ImportAgentEditPreparationTest {
             return new ObjectMapper().createObjectNode().put("viewPath",ImportDiskVolume.editPath(e)+"/view")
                     .put("viewHash","b".repeat(64)).put("viewStateHash","c".repeat(64));
         });
-        var service=new ImportAgentEditPreparation(coordinator,gate,configurations,ledger,properties,volumes);
+        var service=new ImportAgentEditPreparation(coordinator,gate,configurations,ledger,properties,volumes,permissions);
         var workspace=Files.createDirectory(root.resolve("project_101"));Files.writeString(workspace.resolve("app.py"),"before");
         Files.writeString(workspace.resolve(".env"),"test-private-marker");Files.createDirectory(workspace.resolve("empty"));
         var request=AgentRunRequest.builder().appId("101").userId("7").runId("201").importTaskId(task.toString())
@@ -106,7 +110,14 @@ class ImportAgentEditPreparationTest {
         assertTrue(frame.path("workspace").path("contextEpoch").isTextual());
         assertFalse(frame.toString().contains("test-private-marker"));
         assertEquals(ImportDiskVolume.editPath(entry)+"/view",prepared.request().getImportViewPath());
-        var order=inOrder(ledger,volumes);
+        assertEquals("MANUAL",prepared.request().getImportPermissionMode());
+        assertEquals("2",prepared.request().getImportPolicyRevision());
+        assertEquals(policy.sessionEpoch().toString(),prepared.request().getImportSessionEpoch());
+        assertEquals(policy.serverGeneration().toString(),prepared.request().getImportServerGeneration());
+        assertEquals("default",prepared.request().getImportModelProfileId());
+        var order=inOrder(permissions,ledger,volumes);
+        order.verify(permissions).freeze(request);
+        order.verify(ledger).open(any(),eq(policy));
         order.verify(ledger).planView(prepared.row());
         order.verify(volumes).prepareEditView(eq(entry),eq(1L<<30),eq(workspace));
         order.verify(ledger).viewReady(eq(prepared.row()),any());
@@ -116,6 +127,12 @@ class ImportAgentEditPreparationTest {
         service.finishNotReady(prepared,false);verify(ledger).finishWithoutResources(prepared.row(),"IMPORT_EDIT_NOT_READY");
         when(gate.requireAgentEditAllowed(101L)).thenReturn(new ImportTaskRepository.Publication(task,101,8,"READY","a".repeat(64),1,Instant.now()));
         assertThrows(RuntimeException.class,()->service.prepare(request));
-        verify(ledger,times(2)).open(any());
+        verify(ledger,times(2)).open(any(),eq(policy));
+        reset(volumes);
+        when(permissions.freeze(any())).thenThrow(new IllegalStateException("POLICY_REVOKED"));
+        when(gate.requireAgentEditAllowed(101L)).thenReturn(new ImportTaskRepository.Publication(task,101,7,"READY","a".repeat(64),1,Instant.now()));
+        assertThrows(RuntimeException.class,()->service.prepare(request));
+        verifyNoInteractions(volumes);
+        verify(ledger,times(2)).open(any(),eq(policy));
     }
 }
