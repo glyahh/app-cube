@@ -1,5 +1,9 @@
 # 当前项目状态与开发主线
 
+2026-10-17 文档回填（本次只改文档，未改源码、未启动服务、未执行迁移）：第一项状态仍为 **COMPLETE**，权威范围不变。第一项完成后新增需求「导入 Agent 会话授权模式」（MANUAL / GUARDED_AUTO / AUTO，含模型与思考力度选择、工具级单次许可、候选整批审阅）已进入开发，不是恢复已舍弃的历史范围。截至本次核对：前端审核版（`ai-generate-code-frontend/src/preview/import-permissions/`）已存在；后端主体已在工作区实现但**未提交**，包括 V40 迁移、会话设置 / 工具许可 / 候选审阅服务、Python 侧动作校验与独立风险审查、正式前端 `ImportedAgentControls` 接线。该能力**尚未验收**：未在真实 PostgreSQL 应用 V40，未运行 Docker、真实模型审查、SSE/WS、浏览器或重启恢复；当前 `Docker CLI` 也不在 PATH。2026-10-17 的局部检查只有：`mvnw.cmd -q -DskipTests compile` 退出 0；`pytest agent/tests/test_permission_review.py agent/tests/test_model_profiles.py` 95 项通过；`ImportAgentPermissionSettingsTest` 退出 0。计划与前端评审文档原写“后端尚未实施”，已按实际回填；`docs/AGENT_CONTRACT.md` 新增该能力的内部事件契约。风险：V40 会在下次后端启动时自动执行，并把所有未关闭且 `publish_phase='NONE'` 的导入编辑置为 `RECOVERY_REQUIRED`，启动前须确认没有在途编辑。
+
+## 第一项最终收口（2026-10-09，仍为当前权威）
+
 2026-10-09 用户批准最终范围收口：**第一项“已有项目导入”彻底完成，状态 COMPLETE**。最终范围为已通过的核心能力＋5组关键使用风险，18/18检查点、50/50断言、6/6交付包以及52＋4项专项断言全部通过，源码摘要 `e9302662502a8cf3fbdd38bbf3150bd93cb9d9e120f96f95c6f23416d47ba3d9`。未完成验证的扩展框架、多浏览器/系统、长期压力、远端私库权限矩阵及原856条全量验收要求已按用户决定从当前要求、待办和延期清单删除，不再阻塞本项；Vue＋Java/Maven已验收保留。保留秘密隔离、权限、资源限额、Java独立校验和恢复保护，不把删除项记为PASS。当前范围无剩余任务；重新加入被舍弃内容须另立需求。详见[最终范围与完成记录](PLANS/project-import-item1-final-scope-20261009.md)。本次仅文档收口，未改源码、未运行新验收。
 
 ## 历史节点（不再决定第一项当前状态）

@@ -5,7 +5,7 @@
 - [当前项目状态](../CURRENT_PROJECT_STATUS.md)：只看顶部，历史节点不覆盖当前决定。
 - [第一项最终范围与完成记录](./project-import-item1-final-scope-20261009.md)：已有项目导入 COMPLETE；已舍弃扩展不自动恢复为待办。
 - [五组关键使用风险证据](./project-import-five-risk-20261009.md)：最终范围的专项验收记录。
-- [权限模式计划](./import-agent-permission-modes-plan.md)、[前端评审记录](./import-agent-permission-modes-frontend-review.md)：独立前端待评审，后端尚未实施。
+- [权限模式计划](./import-agent-permission-modes-plan.md)、[前端评审记录](./import-agent-permission-modes-frontend-review.md)：第一项完成后的新增能力；前端审核版与后端主体已在工作区实现，但未提交、未验收，状态见[项目状态顶部](../CURRENT_PROJECT_STATUS.md)。
 
 ## 历史证据与设计索引
 

@@ -47,4 +47,6 @@
 
 当前完成定义只看本文件与`docs/CURRENT_PROJECT_STATUS.md`顶部。旧设计、旧矩阵、旧逐节点报告仅为历史，不能恢复旧阻塞项。
 
+2026-10-17 备注：第一项完成后的新增需求「导入 Agent 会话授权模式」另行记录，不属于本文件的交付范围，见[权限模式计划](import-agent-permission-modes-plan.md)；它当前未提交、未验收，不改变本文件的 COMPLETE 状态。
+
 本次文档备份、差异与回退说明位于`D:\codex\WorkDocument\2026-10-09\item1-final-scope-closure`。回退只反向应用本次文档补丁，禁止git reset或整文件覆盖其它改动。

@@ -1,6 +1,6 @@
 # 导入 Agent 会话授权：前端审核记录
 
-状态：FRONTEND_REVIEW_PENDING。用户审核后再开发后端。
+状态：BACKEND_IN_PROGRESS（2026-10-17 回填）。前端审核版已实现；后端已开始接线，尚未提交、未验收。
 
 ## 审核入口
 
@@ -27,7 +27,7 @@
 
 ## 实现边界
 
-新增独立 HTML 与 `src/preview/import-permissions/`，不修改生产 AppChatView、个人偏好、正式路由或传输。
+新增独立 HTML 与 `src/preview/import-permissions/`，不修改生产 AppChatView、个人偏好、正式路由或传输。本节只描述前端审核轮的范围；后续轮次已修改生产 `AppChatView` 与 `agentStreamTransport`，不属于本审核版的实现边界，见[项目状态顶部](../CURRENT_PROJECT_STATUS.md)。
 
 页面使用隔离数据演示交互。页面中的 AI 风险审查、独立校验、批准、停止、清理和合入结果不是实际业务结果；本轮没有调用真实 AI，也未执行任何文件修改或工程命令。没有持久化页面授权，不使用 localStorage。刷新重新进入默认手动批准，不能作为服务端恢复已完成的证据。
 
@@ -35,7 +35,7 @@
 
 故障场景由入口装配参数或单元测试注入，产品页面无测试开关。演示支持保存失败、策略冲突、批准失败、对象失效、硬禁止及合入失败。
 
-后端仍未实施：服务端 AI 风险审查、策略 GET/PUT、policyRevision CAS、权限票据、消费、候选决定、Java/Python 门禁、数据库迁移、刷新找回、SSE/WS、等待心跳和恢复。正式前端接线也待后端提供权威状态。真实授权系统尚未交付。
+后端仍未完成验收：服务端 AI 风险审查、策略 GET/PUT、policyRevision CAS、权限票据、消费、候选决定、Java/Python 门禁、数据库迁移、刷新找回、SSE/WS、等待心跳和恢复。上述能力已在工作区实现（含 V40 与正式前端接线），但未提交，未在真实 PostgreSQL/Docker/模型/浏览器环境验证。正式前端界面已接权威状态接口，但真实授权系统仍不能宣称交付。
 
 ## 本轮检查
 

@@ -1,10 +1,10 @@
 # 导入 Agent 编辑：会话授权模式与统一门禁计划
 
-状态：FRONTEND_REVIEW_PENDING，独立前端审核版已实现，后端尚未实施。日期：2026-10-10。
+状态：BACKEND_IN_PROGRESS。独立前端审核版已实现；后端主体已在工作区实现，但未提交、未验收。日期：2026-10-10（2026-10-17 回填）。
 
 本计划按用户新决定替代 `import-agent-change-review-plan.md` 中“所有结果一律人工确认”的产品策略；仍复用其中候选绑定、独立校验、差异展示、CAS 与恢复要求。旧计划不再作为全模式的开发要求。
 
-本轮按用户要求先制作独立前端审核版，审核通过后再推进后端；不改正式授权入口、不运行迁移、不启动服务。第一项原批准交付范围仍为 COMPLETE；这是新增能力。前端边界与检查记录见 [前端审核记录](import-agent-permission-modes-frontend-review.md)。
+本轮按用户要求先制作独立前端审核版，审核通过后再推进后端；不改正式授权入口、不运行迁移、不启动服务。第一项原批准交付范围仍为 COMPLETE；这是新增能力。前端边界与检查记录见 [前端审核记录](import-agent-permission-modes-frontend-review.md)。2026-10-17 回填：后端实现已写入工作区（含 V40），但尚未提交、未运行迁移、未验收；实际进度见文末「实施进度」。
 
 ## 1. 产品决定
 
@@ -234,3 +234,23 @@ Python 协议只携带服务端冻结策略与请求/消费事件；候选 SHA-2
 ## 10. 尚需用户批准的默认值
 
 推荐默认手动批准；自由发挥首次需要显式选择；执行中不切模式；重启取消旧等待；拒绝任何 ASK 停止整轮。批准本计划后按这些规则实施，不在开发中静默改变。
+
+## 11. 实施进度（2026-10-17 回填）
+
+以下全部位于工作区未提交改动，尚未形成提交版本，也未验收。它只说明代码写到哪，不代表计划完成。
+
+已写入工作区：
+
+- V40 迁移：会话设置、工具许可、会话同类授权、候选审阅四张表及守卫；编辑表新增权限模式、策略版本、模型/力度、会话代次与 `WAITING_REVIEW`；`agent_run` 状态增加 `WAITING_REVIEW`。
+- Java：权限设置/目录服务、工具许可服务、候选审阅仓储与服务、独立模型调用客户端、规范 JSON；`ImportAgentEditPreparation/Ledger/Execution/Publication` 已接冻结策略、票据消费、等待移交与发布前决策校验；两个新增 Controller。
+- Python：`core/import_permissions.py` 负责只读等待与消费证明，`core/permission_review.py` 负责无工具独立审查，`core/model_profiles.py` 负责模型目录与冻结；`SecretFreeDockerBackend` 的 `write/edit/delete/upload_files/execute` 已进门禁，`backends/import_action.py` 从真实视图重算动作。
+- 前端：`features/project-import/agent-permissions/` 与 `AppChatView`、`agentStreamTransport` 正式接线。
+
+尚未完成：
+
+- 真实 PostgreSQL 未应用 V40，`ImportAgentPermissionJdbcTest` 未执行；数据库约束、迁移对旧编辑的撤销行为未验证。
+- Docker CLI 当前不在 PATH，未跑编辑容器/卷/候选的真实链路。
+- 未跑真实模型独立审查、SSE/WS、浏览器三模式、等待期刷新/到期/重启恢复。
+- §5.2 等待期并发准入、§6.1 旧发布入口的纵深证据仍缺；`publish(editId, ownerId)` 旧重载仍存在，目前依赖 `beginPublication` 的数据库决策守卫兜底。
+
+2026-10-17 的局部检查见[项目状态顶部](../CURRENT_PROJECT_STATUS.md)，不是本计划完成证据。

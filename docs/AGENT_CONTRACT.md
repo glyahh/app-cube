@@ -69,6 +69,8 @@ Java 是路径真相源，Python 是内容真相源。新 Auto 应用的业务�
 
 ### 导入编辑准入（2026-10-07，隔离执行与合入仍待接通）
 
+> 历史时点记录：以下拒绝与准备边界保持 2026-10-07 当时状态。正式导入编辑链路与合入门禁见文末「导入工具许可与候选审阅增量（2026-10-17，实施中）」。
+
 SSE/WebSocket 共用请求工厂从当前发布记录取得 `workspace.importTaskId`（UUID string），拿到应用锁后再次读取。该标记不是执行授权。当前 Worker 收到导入身份后，在路径解析、占位成功、模型装配和 Docker/Shell 创建之前返回 `error/code=IMPORT_EDIT_NOT_READY/retryable=false`；Java 展示为“导入项目编辑尚未就绪，本次未执行”。不携带导入身份的新项目维持既有链路。
 
 正式 Java 展示入口在主应用锁内调用 `ImportAgentEditPreparation`，再持有工作区数据库锁，只读冻结完整内容（包括秘密文件、二进制、空目录和属性），写入 V30 账本。请求增加 `workspace.importEditId / sourceHash / configRevision / contextEpoch / importVolumePath` 和 `limits.importDiskBytes`；路径仅由平台按edit UUID生成，身份与代次均为string，秘密值和映射不进入请求。V31核对创建前登记的卷身份和实际分配容量；编辑卷独占`/var/lib/glyahh/import-disks/edit-{editId}/work`，不复用安装运行卷。
@@ -263,6 +265,7 @@ cd agent && uv run pytest -q
 | 2026-09-12 | 初版。子进程 stdio 协议、14 个事件、进程池伸缩策略（3/5/缩容冷却 5 分钟） |
 | 2026-09-12 | 旧链路下线后复验。补第 3 条硬约束「网络出口必须显式」——修 httpx 静默走系统代理导致的 `Connection error.` |
 | 2026-09-19 | 模型出口简化为直连/指定代理二选一；新增按 App 持久化的单调用自动降级。 |
+| 2026-10-17 | 增量导入工具许可、消费证明、心跳与候选审阅事件；请求帧冻结权限模式与模型/力度。实现位于工作区，未验收。 |
 
 ### 正式隔离视图准备增量（2026-10-07）
 
@@ -330,3 +333,27 @@ ImportAgentEditLedger增加封存资格及candidateVerified。VERIFIED只保存s
 Java已提供createdContainer/startEditContainer，ImportAgentContainerLifecycle.beginEditing在业务应用锁、当前executor PID/启动时刻及冻结资格下，先启动原登记ID、核验平台实际内核limits，再CAS EDITING。平台新增edit-container-start及固定--container-id；不新建替代容器或挂载发布目录。实际memory/CPU/pids有界、swap强制0读回，远程引擎/不可强制/未知容器均拒绝。停止失败保留STOPPING/RECOVERY，不释放。WSL MemorySwap记录不可靠时只认可实际cgroup证明，不以当前没有swap代替硬限制。
 
 实际生产Java/数据库/Docker已证明启动、四项内核读回、停止、SEALING和未编辑基线VERIFIED；正式Worker尚未调用该链、工具/真实模型/最终发布仍未接，不移除IMPORT_EDIT_NOT_READY。尚须逐执行复核资格与限额及持久Worker生命周期，不能把一次启动证明当作完整模型执行保护。
+
+### 导入工具许可与候选审阅增量（2026-10-17，实施中）
+
+正式导入编辑由独立入口 `agent/native_import_worker.py` 启动：它校验编辑/租约身份、要求持久 PostgreSQL，再以 `app.main(require_persistent=True, import_only=True, import_runner=run_import_edit)` 进入 `core/import_edit_runtime.py`。普通 `app.py` 主循环仍对带 `workspace.importTaskId` 的请求返回 `IMPORT_EDIT_NOT_READY`，该拒绝分支不能删除。
+
+请求帧在 `workspace.importTaskId` 非空时新增六个 Java 冻结字段，Python 不得自行选择或替换：`importPermissionMode`（`MANUAL` / `GUARDED_AUTO` / `AUTO`）、`importPolicyRevision`、`importSessionEpoch`、`importServerGeneration`、`importModelProfileId`、`importThinkingEffort`（可空）。ID、版本一律 string；非导入请求不携带这些字段。
+
+Python 在工具门禁内新增以下内部事件，信封仍为 `{v,runId,seq,ts}`：
+
+| event | payload 要点 | Java 处理 |
+|---|---|---|
+| `import.permission.requested` | `editId, permissionId(UUID), actionHash(SHA256), action(规范化动作)` | 平台从真实视图重算动作与风险、按冻结模式决定、登记 V40 票据；转前端时只保留白名单字段，不转发原始动作 |
+| `import.permission.consume` | `permissionId, actionHash, consumeRequestId` | CAS 将 APPROVED 票据置 CONSUMED 并写消费证明 |
+| `import.permission.result` | `permissionId, actionHash, consumeProof, state=RESULT_CONFIRMED\|RESULT_UNCONFIRMED, succeeded` | 关联票据结果；不再执行或重放 |
+| `import.permission.heartbeat` | `editId, permissionId` | 复核编辑身份与当前资格，失效即断流 |
+| `import.review.requested` | `editId, hash, risk, status, revision` | 候选审阅已持久化后发出；`agent_run` 记 `WAITING_REVIEW`，不视为成功完成 |
+
+约束：
+
+- `actionHash` 由 `backends/import_action.py` 从真实隔离视图重算，覆盖工具、参数、视图状态哈希与前置文件摘要；Java 用 `ImportAgentCanonicalJson` 复核，不接受模型自报摘要或执行 Agent 的风险结论。
+- Python 只通过 PostgreSQL 只读资格通道等待决定；不写批准表，不新增 HTTP 服务，也不争抢 stdin 的第二个读者。等待单请求默认 300 秒，每 5 秒发心跳；超时、票据不匹配、动作变化、重复消费均按不可恢复失败处理，不转成可重试 ToolMessage。
+- 只有拿到消费证明并再次核对动作未变化后才允许副作用。副作用开始后失败记 `RESULT_UNCONFIRMED`，不自动重放；工具完成事件只说明执行结果，不等于候选已合入。
+- 候选整批决定由 Java 候选审阅服务登记；发布必须存在与候选、清单、授权、源版本匹配的 APPROVED 决策。`WAITING_REVIEW` 时 Worker 与编辑容器已停止，执行流结束，候选与卷保留并计入额度；服务重启不恢复旧等待。
+- 本节的实现位于工作区未提交改动，尚未在真实 PostgreSQL、Docker、模型、SSE/WS 或浏览器中验收；不得把“已接线”当作授权系统交付。
