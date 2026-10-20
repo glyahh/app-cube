@@ -50,8 +50,6 @@
 | [0001-rollback-clean-context-boundary.md](../adr/0001-rollback-clean-context-boundary.md) | 回档后严格建立纯净 AI 上下文的产品决策，实施待验证 |
 | [conversation-memory-v4-current-architecture.md](./conversation-memory-v4-current-architecture.md) | 会话记忆 V4 **当前架构**（As-Is，含 TODO/缺口） |
 | [conversation-memory-v4-target-architecture.md](./conversation-memory-v4-target-architecture.md) | 会话记忆 V4 **目标架构**（To-Be；方案文档，不代表实现完工） |
-| [agent-cluster-orchestration.md](./agent-cluster-orchestration.md) | Agent 集群编排方案 |
-| [agent-cluster-modules-ABC-and-prompts.md](./agent-cluster-modules-ABC-and-prompts.md) | Agent 集群模块与 Prompt |
 | [rag-v5-grep-glob-retrieval-plan.md](../archive/plans/rag-v5-grep-glob-retrieval-plan.md) | 已归档的检索方案；不作为当前开发任务 |
 | [code-knowledge-graph-design.md](./code-knowledge-graph-design.md) | 第五需求：统一图谱、通用解析器与 Agent 补全；主方案已确认，实现待验证 |
 | [code-knowledge-graph-test-matrix.md](./code-knowledge-graph-test-matrix.md) | 图谱分阶段验收与 P0 验证设计；全部待执行 |

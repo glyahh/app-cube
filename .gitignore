@@ -13,14 +13,6 @@ Platform-Utils/script/.env
 Platform-Utils/script/.env.local
 Platform-Utils/script/backup/
 
-### Model GUI cache (browser profile, cookies) ###
-Platform-Utils/model/.cache/
-
-### Model GUI local (DO NOT COMMIT) ###
-Platform-Utils/model/.local/
-Platform-Utils/model/quota.local.env
-# 仅提交样例：Platform-Utils/model/quota.env.example
-
 ### STS ###
 .apt_generated
 .classpath
