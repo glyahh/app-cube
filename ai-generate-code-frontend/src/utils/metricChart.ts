@@ -1,7 +1,7 @@
 /**
  * 指标曲线绘制（Canvas 2D）。
  *
- * <p>移植自 V6 原型 `docs/design/cosmic-code-workbench-v6.html` 的 `drawMetricChart`：
+ * <p>移植自 V6 原型 `docs/assets/cosmic-code-workbench-v6.html` 的 `drawMetricChart`：
  * 4 条水平网格线、线性渐变填充、1.5px 折线，纵轴按 25% 余量取上下界。
  *
  * <p>与原型的差别只在数据来源：原型用正弦加噪声造演示数据，

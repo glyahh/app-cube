@@ -4,7 +4,6 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
-
 ### Local ###
 application-local.yml
 
@@ -23,7 +22,7 @@ Platform-Utils/script/backup/
 .sts4-cache
 
 ### IntelliJ IDEA ###
-.idea
+/.idea/
 *.iws
 *.iml
 *.ipr
@@ -49,46 +48,27 @@ temp/**
 *~
 
 ### Local Tooling State ###
-.cursor/settings.json
 .windsurf/
 # zcode CLI 本地状态（hook 事件、运行历史、插件缓存路径）
 .mimosa/
-.v2c/
+/.v2c/
 
 ### MCP / local agent config (DO NOT COMMIT) ###
 .mcp.json
-.cursor/mcp.json
 .tmp-cookies.txt
 
-### Shared Cursor Assets (keep tracked) ###
-!.cursor/skills/**
-
 ### Local IDE / Tooling config (local only, DO NOT COMMIT) ###
-.agents/
-.claude/
-.codex/
+/.agents/
+/.claude/
+/.codex/
+/.cursor/
+/.pi/
 .firecrawl/
 .editorconfig
 AGENTS.md
 CLAUDE.md
+/CONTEXT.md
 tools/
-
-### Cursor local state (local only, DO NOT COMMIT) ###
-.cursor/commands/
-.cursor/plans/
-.cursor/rules/
-.cursor/debug-*
-.cursor/hooks.json
-.cursor/codex-*
-
-### Extra Cursor skills (local only, DO NOT COMMIT) ###
-.cursor/skills/check_git_code/
-.cursor/skills/code_separate/
-.cursor/skills/exam_codex/
-.cursor/skills/firecrawl-mcp/
-.cursor/skills/git_commit/
-.cursor/skills/super_code_test/
-.cursor/skills/ui/
 
 ### Compiled Python cache (DO NOT COMMIT) ###
 __pycache__/
@@ -114,7 +94,7 @@ __pycache__/
 
 ### Local Bug Notes (DO NOT COMMIT) ###
 /docs/archive/bugs/
-.worktrees/
+/.worktrees/
 /src/main/resources/application-local-a.yml
 /src/main/resources/application-local-b.yml
 /docs/archive/interview/Java全栈面试问答-简历职责对照版.md

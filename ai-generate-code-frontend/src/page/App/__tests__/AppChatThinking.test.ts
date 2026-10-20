@@ -79,6 +79,43 @@ const mountPage = (props: { importedProject?: boolean } = {}) => shallowMount(Ap
 })
 
 describe('AppChatView thinking pipeline', () => {
+  it('reuses unchanged display groups and invalidates same-length thinking and tool updates', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    const vm = wrapper.vm as unknown as {
+      sendMessage(text: string): Promise<void>
+      sessionMessages: { id: number }[]
+      executionSegments(message: { id: number }): { segment: unknown }[]
+      inputMessage: string
+    }
+    await vm.sendMessage('检查更新')
+    const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
+    handlers.onEvent('thinking.started', { thinkingId: 'cache:1', summary: '检查甲', details: '检查甲' })
+    await nextTick()
+    const msg = vm.sessionMessages.at(-1)!
+    const before = vm.executionSegments(msg)
+    vm.inputMessage = '无关输入'
+    await nextTick()
+    expect(vm.executionSegments(msg)).toBe(before)
+    handlers.onEvent('thinking.delta', { thinkingId: 'cache:1', summary: '检查乙', details: '检查乙' })
+    await nextTick()
+    expect(vm.executionSegments(msg)).not.toBe(before)
+    expect(wrapper.text()).toContain('检查乙')
+    handlers.onEvent('thinking.started', { thinkingId: 'cache:2', summary: '新阶段', details: '新阶段' })
+    await nextTick()
+    const firstStage = vm.executionSegments(msg)[0]!.segment
+    handlers.onEvent('thinking.delta', { thinkingId: 'cache:2', summary: '新内容', details: '新内容' })
+    await nextTick()
+    expect(vm.executionSegments(msg)[0]!.segment).toBe(firstStage)
+    handlers.onEvent('tool.started', { callId: 'cache:tool', toolName: 'execute', input: { command: 'node --version' } })
+    await nextTick()
+    const pending = vm.executionSegments(msg)
+    handlers.onEvent('tool.finished', { callId: 'cache:tool', toolName: 'execute', status: 'failed', exitCode: 1, outputPreview: '真实错误' })
+    await nextTick()
+    expect(vm.executionSegments(msg)).not.toBe(pending)
+    expect(wrapper.text()).toContain('失败')
+    wrapper.unmount()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.preference = reactive({ expanded: false })

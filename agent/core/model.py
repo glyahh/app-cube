@@ -35,10 +35,28 @@ def _audit_request(request):
             callback = _AUDIT_FALLBACK
     if callback is not None:
         callback(request)
+    from core.model_timing import request_started
+    attempt = request_started(request)
+    if attempt is not None:
+        request.extensions['trace'] = attempt.network
 
 
 async def _audit_async_request(request):
     _audit_request(request)
+    attempt = request.extensions.get('glyahh_timing')
+    if attempt is not None:
+        async def trace(name, info):
+            attempt.network(name, info)
+        request.extensions['trace'] = trace
+
+
+def _audit_response(response):
+    from core.model_timing import response_headers
+    response_headers(response)
+
+
+async def _audit_async_response(response):
+    _audit_response(response)
 
 
 class ModelRouteState:
@@ -119,8 +137,8 @@ def _clients(proxy_url: str | None = None):
         )
         if proxy_url:
             kwargs["proxy"] = proxy_url
-        cached = (httpx.Client(**kwargs, event_hooks={'request': [_audit_request]}),
-                  httpx.AsyncClient(**kwargs, event_hooks={'request': [_audit_async_request]}))
+        cached = (httpx.Client(**kwargs, event_hooks={'request': [_audit_request], 'response': [_audit_response]}),
+                  httpx.AsyncClient(**kwargs, event_hooks={'request': [_audit_async_request], 'response': [_audit_async_response]}))
         _CLIENTS[proxy_url] = cached
         logger.info("模型 httpx 客户端：trust_env=false proxy=%s", _proxy_label(proxy_url))
     return cached
@@ -178,7 +196,8 @@ def _chat_model(model_id: str, base_url: str, api_key: str, settings: ModelSetti
         kwargs["max_retries"] = max_retries
     if timeout is not None:
         kwargs['timeout'] = timeout
-    return ChatOpenAI(**kwargs)
+    from core.model_timing import instrument
+    return instrument(ChatOpenAI(**kwargs))
 
 
 def _route_aware_model(proxy_model, direct_model, state: ModelRouteState):
@@ -278,7 +297,8 @@ def _route_aware_model(proxy_model, direct_model, state: ModelRouteState):
                 raise
 
     proxy_model.__class__ = RouteAwareChatOpenAI
-    return proxy_model.bind_route(direct_model, state)
+    from core.model_timing import instrument
+    return instrument(proxy_model.bind_route(direct_model, state))
 
 
 def _build(model_id: str, base_url: str, api_key: str, settings: ModelSettings, *,

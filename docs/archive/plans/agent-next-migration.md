@@ -2,7 +2,7 @@
 
 从「单体 Java + LangChain4j」到「Java 接入层 + Python Agent 运行时」的迁移对照与操作步骤。
 
-配套文档：接口契约见 [`docs/AGENT_CONTRACT.md`](../AGENT_CONTRACT.md)；架构决策见计划文件。
+配套文档：接口契约见 [`docs/contracts/agent.md`](../../contracts/agent.md)；架构决策见计划文件。
 
 ## 一、MySQL → PostgreSQL 字段对照
 

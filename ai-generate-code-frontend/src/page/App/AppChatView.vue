@@ -139,13 +139,27 @@ const router = useRouter()
 const userLoginStore = UserLoginStore()
 const appearanceStore = useAppearanceStore()
 /** 保留原始索引，工具状态查询仍对应原来的事件序列。 */
-function displaySegments(m: ChatMessage) {
+function computeDisplaySegments(m: ChatMessage) {
   const active = isStreamActiveForMessage(m)
   const clean = (text: string) => cleanExecutionText(text, active)
-  return getMessageUiSegments(m).map((source, idx) => {
+  const sources = getMessageUiSegments(m)
+  const views = messageRenderCache.get(m)?.thinkingViews ?? new Map<number, ThinkingViewCache>()
+  messageRenderCache.set(m, { ...messageRenderCache.get(m), thinkingViews: views })
+  for (const key of views.keys()) if (key >= sources.length) views.delete(key)
+  return sources.map((source, idx) => {
     let segment = source
     if (source.kind === 'thinking') {
-      segment = { ...source, summary: clean(source.summary), details: source.details.map(clean).filter(text => text.trim()) }
+      const previous = views.get(idx)
+      // 阶段详情只由 mergeThinkingAction 追加；未变化的阶段保持子组件 props 身份。
+      if (previous && previous.active === active && previous.summary === source.summary &&
+          previous.details === source.details && previous.count === source.details.length &&
+          previous.done === source.done && previous.id === source.thinkingId &&
+          previous.segment.segmentId === source.segmentId) segment = previous.segment
+      else {
+        segment = { ...source, summary: clean(source.summary), details: source.details.map(clean).filter(text => text.trim()) }
+        views.set(idx, { active, summary: source.summary, details: source.details, count: source.details.length,
+          done: source.done, id: source.thinkingId, segment })
+      }
     } else if (source.kind === 'markdown') {
       segment = { ...source, content: clean(source.content) }
     } else if (source.kind === 'tool_request') {
@@ -161,6 +175,7 @@ function displaySegments(m: ChatMessage) {
     } else if (source.kind === 'generation_status') {
       segment = { ...source, message: clean(source.message) }
     }
+    if (source.kind !== 'thinking') views.delete(idx)
     return { segment, idx }
   }).filter(({ segment }) => segment.kind === 'thinking'
     ? !!(segment.summary.trim() || segment.details.length)
@@ -172,11 +187,30 @@ function isExecutionSegment(segment: UiSegment): boolean {
 }
 
 function executionSegments(m: ChatMessage) {
-  return displaySegments(m).filter(({ segment }) => isExecutionSegment(segment))
+  return getDisplayGroups(m).execution
 }
 
 function answerSegments(m: ChatMessage) {
-  return displaySegments(m).filter(({ segment }) => !isExecutionSegment(segment))
+  return getDisplayGroups(m).answers
+}
+
+function getDisplayGroups(m: ChatMessage) {
+  const cache = messageRenderCache.get(m) ?? {}
+  const version = buildUiRenderVersion(m)
+  const active = isStreamActiveForMessage(m)
+  const first = isFirstSessionAssistantMessage(m)
+  if (cache.display && cache.display.version === version && cache.display.active === active &&
+      cache.display.first === first && cache.display.content === m.content &&
+      cache.display.thinking === m.thinkingSegments && cache.display.state === m.uiState) return cache.display
+  const segments = computeDisplaySegments(m)
+  const display = {
+    version, active, first, content: m.content, thinking: m.thinkingSegments, state: m.uiState,
+    execution: segments.filter(({ segment }) => isExecutionSegment(segment)),
+    answers: segments.filter(({ segment }) => !isExecutionSegment(segment)),
+  }
+  // getMessageUiSegments 会更新同一份缓存，保留它在本次计算中写入的结果。
+  messageRenderCache.set(m, { ...messageRenderCache.get(m), display })
+  return display
 }
 
 function terminalStatus(segment: UiToolRequestSegment | UiToolExecutedSimpleToolSegment, m: ChatMessage): string {
@@ -187,8 +221,15 @@ function terminalStatus(segment: UiToolRequestSegment | UiToolExecutedSimpleTool
 const genMode = ref<'legacy' | 'workflow'>('legacy')
 
 /** 将普通文本片段统一按 Markdown 渲染，避免仅代码围栏生效。 */
-function renderMarkdown(text: string): string {
-  return renderSafeMarkdown(text)
+function renderMarkdown(text: string, m: ChatMessage, key: string): string {
+  const cache = messageRenderCache.get(m) ?? {}
+  const markdown = cache.markdown ?? new Map<string, { text: string; html: string }>()
+  const previous = markdown.get(key)
+  if (previous?.text === text) return previous.html
+  const html = renderSafeMarkdown(text)
+  markdown.set(key, { text, html })
+  messageRenderCache.set(m, { ...cache, markdown })
+  return html
 }
 
 // 保持 id 为字符串，避免雪花算法生成的 Long ID 精度丢失
@@ -389,6 +430,8 @@ type PendingToolRequest = {
 }
 
 type AssistantUiState = {
+  /** 仅在内容变化时递增，渲染时不再序列化整段执行历史。 */
+  revision?: number
   segments: UiSegment[]
   buffer: string
   stage: ToolExecStage
@@ -479,7 +522,23 @@ const sessionMessages = ref<ChatMessage[]>([])
 /** 历史消息（由 loadedHistoryRecords 预处理而来，避免渲染期重复 map+parse） */
 const historyMessages = ref<ChatMessage[]>([])
 
+type ThinkingViewCache = {
+  active: boolean; summary: string; details: string[]; count: number; done: boolean
+  id: string; segment: UiThinkingSegment
+}
+
 type MessageRenderCache = {
+  thinkingViews?: Map<number, ThinkingViewCache>
+  display?: {
+    version: string; active: boolean; first: boolean; content: string; thinking: unknown
+    state: AssistantUiState | undefined
+    execution: { segment: UiSegment; idx: number }[]
+    answers: { segment: UiSegment; idx: number }[]
+  }
+  markdown?: Map<string, { text: string; html: string }>
+  uiContent?: string
+  uiThinking?: unknown
+  uiState?: AssistantUiState
   workflowVersion?: string
   workflowSteps?: WorkflowStepRow[]
   uiVersion?: string
@@ -600,13 +659,9 @@ function buildWorkflowRenderVersion(
 
 function buildUiRenderVersion(m: ChatMessage): string {
   if (m.uiState) {
-    // 流式消息：segments.length + buffer.length 在 flushSafeMarkdown 追加到已有
-    // markdown segment 时可能都不变，导致缓存版本 key 不变、getMessageUiSegments
-    // 返回旧 segments（画面卡在早期代码位置）。纳入 content.length 确保内容增长
-    // 时缓存一定失效。
-    return `stream:${m.content.length}:${m.uiState.segments.length}:${m.uiState.buffer.length}:${m.uiState.stage}:${JSON.stringify(m.uiState.segments.filter(s => s.kind === 'thinking'))}`
+    return `stream:${m.uiState.revision ?? 0}:${m.content.length}:${m.uiState.stage}`
   }
-  return `hist:${m.content ?? ''}:${JSON.stringify(m.thinkingSegments)}`
+  return 'history'
 }
 
 function precomputeMessageRenderCaches(m: ChatMessage) {
@@ -635,6 +690,9 @@ function precomputeMessageRenderCaches(m: ChatMessage) {
   const uiVersion = buildUiRenderVersion(m)
   const uiSegments = computeMessageUiSegments(m)
   cache.uiVersion = uiVersion
+  cache.uiContent = m.content
+  cache.uiThinking = m.thinkingSegments
+  cache.uiState = m.uiState
   cache.uiSegments = uiSegments
   m.cachedUiSegments = uiSegments
 
@@ -1707,6 +1765,7 @@ function appendUserMessage(text: string) {
 
 function createAssistantUiState(): AssistantUiState {
   return {
+    revision: 0,
     segments: [],
     buffer: '',
     stage: 'markdown',
@@ -1873,6 +1932,7 @@ function flushSafeMarkdown(state: AssistantUiState, keepTail = 80) {
  */
 function drainBufferToSegments(state: AssistantUiState) {
   if (!state.buffer) return
+  state.revision = (state.revision ?? 0) + 1
   if (state.stage === 'tool_exec_stream') {
     const tool = getActiveToolExecutedSegment(state)
     if (tool) {
@@ -1896,6 +1956,7 @@ function drainBufferToSegments(state: AssistantUiState) {
 }
 
 function processAssistantChunkIntoUiState(state: AssistantUiState, chunk: string) {
+  state.revision = (state.revision ?? 0) + 1
   state.buffer += chunk ?? ''
 
   const TOOL_REQUEST_ANY_RE = /\[选择工具\]\s*([^\r\n]+)/
@@ -2740,13 +2801,17 @@ function getMessageUiSegments(m: ChatMessage): UiSegment[] {
   // 先查缓存（含流式消息），避免模板每次 render 都重新 slice/合并/归一化
   const version = buildUiRenderVersion(m)
   const cache = messageRenderCache.get(m)
-  if (cache?.uiVersion === version && cache.uiSegments) {
+  if (cache?.uiVersion === version && cache.uiSegments && cache.uiContent === m.content &&
+      cache.uiThinking === m.thinkingSegments && cache.uiState === m.uiState) {
     return normalizeFirstRoundUiSegments(m, cache.uiSegments)
   }
   const segments = computeMessageUiSegments(m)
   messageRenderCache.set(m, {
     ...cache,
     uiVersion: version,
+    uiContent: m.content,
+    uiThinking: m.thinkingSegments,
+    uiState: m.uiState,
     uiSegments: segments,
   })
   if (isHistoryMessage(m)) {
@@ -2824,7 +2889,8 @@ function assistantHasRenderableOutput(m: ChatMessage): boolean {
   const uiVersion = buildUiRenderVersion(m)
   const combinedVersion = `${workflowVersion}|${uiVersion}`
   const cache = messageRenderCache.get(m)
-  if (cache?.renderableVersion === combinedVersion && typeof cache.renderable === 'boolean') {
+  if (cache?.renderableVersion === combinedVersion && typeof cache.renderable === 'boolean' &&
+      cache.uiContent === m.content && cache.uiThinking === m.thinkingSegments && cache.uiState === m.uiState) {
     return cache.renderable
   }
   if (getWorkflowStepsForMessage(m).length > 0) {
@@ -2885,6 +2951,7 @@ function markStreamFinishedAt(msg: ChatMessage, now = Date.now()) {
   if (msg.role !== 'assistant' || !!msg.createTime) return
   if (!msg.streamFinishedAt) {
     msg.streamFinishedAt = now
+    if (msg.uiState) msg.uiState.revision = (msg.uiState.revision ?? 0) + 1
   }
 }
 
@@ -3281,6 +3348,7 @@ function commitThinkingActionToStream(streamId: string, action: Extract<AgentUiA
   const thinking = state.segments.filter((s): s is UiThinkingSegment => s.kind === 'thinking')
   const segment = mergeThinkingAction(thinking, action)
   if (segment && !state.segments.includes(segment)) state.segments.push(segment)
+  if (segment) state.revision = (state.revision ?? 0) + 1
   scheduleChatAutoScroll()
 }
 
@@ -3345,8 +3413,8 @@ function commitAgentToolActionToStream(
     else state.segments.push(completed)
   }
 
-  // 工具原位替换不改变段数，主动失效旧缓存才能立即显示完成状态。
-  messageRenderCache.delete(msg)
+  // 工具原位替换也递增修订号，保留 Markdown 与解析器缓存。
+  state.revision = (state.revision ?? 0) + 1
   markFirstVisibleAt(msg)
   scheduleChatAutoScroll()
 }
@@ -4233,7 +4301,7 @@ defineExpose({
                           />
                           <!-- 证据：隐藏流式 markdown 会导致“生成计划/生成完毕”等说明文本在生成时不可见。
                                修复：流式阶段也展示文本片段，保证与历史回显一致。 -->
-                          <div v-else class="text-segment" v-html="renderMarkdown(mdSeg.content)" />
+                          <div v-else class="text-segment" v-html="renderMarkdown(mdSeg.content, m, `${idx}:${mdIdx}`)" />
                         </template>
                       </template>
                       </template>

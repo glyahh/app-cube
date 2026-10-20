@@ -2,12 +2,12 @@
 
 Agent 驱动的应用开发工作台。
 
-[GitHub](https://github.com/glyahh/app-cube) · [命名与改名说明](docs/PROJECT_BRANDING.md)
+[GitHub](https://github.com/glyahh/app-cube) · [命名与改名说明](docs/rules/branding.md) · [文档分类索引](docs/README.md)
 
 围绕代码生成与调试，帮助开发者把 Demo 逐步改造成满足实际业务与部署要求的可交付项目。
-保留新项目生成能力；已有项目导入、受限安装运行与模型编辑发布闭环已完成本期交付。支持范围见[第一项最终范围](docs/PLANS/project-import-item1-final-scope-20261009.md)。
+保留新项目生成能力；已有项目导入、受限安装运行与模型编辑发布闭环已完成本期交付。支持范围见[第一项最终范围](docs/status/import-scope-20261009.md)。
 
-> 本文按当前源码整理。能力状态、差距及第一阶段验收见 [当前项目状态与开发主线](docs/CURRENT_PROJECT_STATUS.md)。本次文档同步未运行服务或测试，不代表新的运行验收。
+> 本文按当前源码整理。能力状态、差距及第一阶段验收见 [当前项目状态与开发主线](docs/status/current.md)。本次文档同步未运行服务或测试，不代表新的运行验收。
 
 ## 当前架构
 
@@ -28,7 +28,7 @@ DeepAgents / LangGraph：模型、工具、上下文压缩、任务权限
 - **生成与运行分离**：Python Backend 执行生成工具；Java 运行管理使用独立运行镜像，管理应用进程、日志、就绪状态和预览。
 - **静态发布**：沿用 `deployKey`，制品同步至 `temp/code_deploy/{deployKey}/`；不承诺常驻后端或全栈服务发布。
 
-接口协议见 [Java ↔ Python 契约](docs/AGENT_CONTRACT.md)。旧 Java/LangChain4j 文档只作历史参考，不作为当前生成主链路说明。
+接口协议见 [Java ↔ Python 契约](docs/contracts/agent.md)。旧 Java/LangChain4j 文档只作历史参考，不作为当前生成主链路说明。
 
 ## 当前源码已有能力
 
@@ -139,13 +139,13 @@ Pop-Location
 | POST | `/api/app/deploy`、`/api/app/undeploy` | 静态发布 / 撤回 |
 | GET | `/api/deploy/{deployKey}/**` | 已发布资源 |
 
-详细参数以控制器与运行时 OpenAPI 为准。工作台说明见 [Auto 工作台实施记录](docs/AUTO_WORKBENCH_MIGRATION.md)、[2026-09-19 对齐记录](docs/AUTO_WORKBENCH_ALIGNMENT_20260919.md)；其中验证记录仅对应当时的版本与环境。
+详细参数以控制器与运行时 OpenAPI 为准。工作台说明见 [Auto 工作台实施记录](docs/guides/workbench.md)、[2026-09-19 对齐记录](docs/reports/workbench/alignment-20260919.md)；其中验证记录仅对应当时的版本与环境。
 
 ## 后续主线
 
 先跑通一条窄链路：导入一个 Demo、建立运行基线、复现真实问题、最小修复、回归验证、交付可回放证据。
 之后再按实际业务补权限、校验、异常处理、数据一致性、幂等、资源管理、配置和可观测性。
-当前新增开发是导入 Agent 会话授权模式（手动批准 / 自动批准 / 自由发挥）与候选整批审阅；主体已在工作区实现，尚未验收，状态见[当前项目状态与开发主线](docs/CURRENT_PROJECT_STATUS.md)顶部。
+当前新增开发是导入 Agent 会话授权模式（手动批准 / 自动批准 / 自由发挥）与候选整批审阅；主体已在工作区实现，尚未验收，状态见[当前项目状态与开发主线](docs/status/current.md)顶部。
 并发或性能测试按风险选择；图谱、文档与问答服务于代码理解和调试，海报等扩展场景暂缓。
 
 ## 许可证

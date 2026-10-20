@@ -1,0 +1,698 @@
+# 上下文压缩机制调研（精简版）
+
+> 类型：技术调研；候选方案与资料核对不代表已实施。 当前事实以[项目状态](../status/current.md)及对应版本源码、验收证据为准。
+
+**Claude Code · OpenCode · Codex · Hermes · 其他六条路**
+
+> 调研时点 2026-09-12。这是完整版的压缩版：**数字、issue 号、出处、存疑标记全部保留**，砍掉的是铺陈、重复解释和过渡。
+> 完整版见 `上下文压缩机制调研.md`（含 Claude Code 的独立验证过程、逐条核验意见，以及本版省略的推理链）。
+
+---
+
+## 0. 三件小事
+
+**token 不是字。** 英文约 4 字符 1 个，中文 1~2 字 1 个。后面所有阈值都是 token 数。
+
+**窗口是硬的。** 每个模型有一次能看的 token 上限，常见 200K，贵的 1M。不是"看不清"，是根本看不见；撞上直接报错。
+
+**每问一次，全部重发。** 模型没有记忆。每轮请求都要把迄今为止的全部对话打包重发。推论两条：每轮的钱和时间正比于上下文总量；而上下文只增不减。几十轮工具调用后必然撞墙。
+
+所以整件事就是一句人话：**怎么让上下文变小，又不丢"我们聊到哪儿了"。**
+
+---
+
+## 1. 八种答案
+
+| 解法 | 大白话 | 省钱 | 丢信息 | 要多守纪律 |
+|---|---|---|---|---|
+| **摘要压缩** | 前面几摞纸抄成一张小纸条 | 中等（抄那次贵） | 丢，不可逆 | 不用 |
+| **硬切窗口** | 桌子清空，另开新本子 | 省 | 丢，靠自觉补 | 要 |
+| **外部记忆** | 旁边放个小本子记要点 | 省 | 不丢，但可能忘了写 | 要 |
+| **检索** | 后面有大抽屉，需要时去翻 | 省 | 不丢，但可能翻不到 | 要 |
+| **子代理隔离** | 派个小孩去查，只回一句结论 | **更贵** | 主桌不丢，小孩那边丢 | 不用 |
+| **只擦草稿纸** | 算草纸扔了，正文留着 | 最省（零 LLM） | 丢旧工具输出 | 不用 |
+| **超长窗口硬吃** | 换特大号桌子 | 单次还行，多轮平方级涨 | 不丢 | 不用 |
+| **provider 原生压缩** | 让供应商帮你收拾 | 你付摘要那趟采样费 | 看供应商（有的你连摘要都看不到） | 不用 |
+
+最后一行是这两年新长出来的一族，**所有家都在往这个方向缩**（见 6.3、6.4）。
+
+### 1.1 四个容易想错的地方
+
+**一、小纸条 ≠ 忠实回忆。** 摘要会丢细节，还会：**在关键约束上写错话**（用户写"不要用 X 库"，摘要写成"用户提到过 X 库"）；**把没验证的猜测洗成确定事实**（有用户报告，标注着 `[fee assumption — unverified]` 的猜测压缩后变成语气确定的事实，provenance 消失）；**干脆是空的**（OpenCode #44080：推理模型只产出 reasoning 部件、没有文本部件，系统照样把空壳标记成 `summary:true` 落库，原始历史被替换，**而且不报错**）。准确理解是：**一张别人凭印象写的、语气还挺肯定的转述。**
+
+**二、抄纸条不免费。** 抄这个动作本身是一次完整模型调用，**输入就是被压缩的那一整摞纸**。所以最贵的一次请求，恰好发生在上下文最满的时候。官方原话：「compacting a large context is itself a large request」。
+
+**三、不是越压越短。** 反复压缩会让摘要**膨胀**——它在摘要基础上再摘要。有用户统计 24 个多次压缩的会话，摘要首→最大中位增长 **2.30 倍**、最大 **7.13 倍**，单个注入摘要达 35,958 token；一个会话压了 **103 次**。正确比喻是"纸条越抄越长"。调研专门找过"压缩器递归调用自身"的纯正案例，**没找到**。
+
+**四、这不像虚拟内存分页。** 结构上说得通（类比出自 MemGPT 论文本身），但三个关键性质全反了：
+
+| | 真实虚拟内存 | LLM 的"换页" |
+|---|---|---|
+| 换出什么 | 精确字节副本 | **有损摘要，误差跨轮累积** |
+| 缺页谁负责 | **硬件强制**（不可能忘） | **模型自觉**（不查就没有） |
+| 对语义影响 | 无（只是慢） | **改变模型能力**——这正是目的 |
+
+最要命的是第二行：**模型没意识到缺信息时，什么都不发生，信息静默丢失。** 详见 6.2。
+
+---
+
+## 2. Hermes：把便宜的先做，贵的最后做
+
+**这是重点。** 它是四家里分层做得最明确的，读懂它，其他三家都只是变体。
+
+**比喻**：草稿纸先扔（用过就不再看第二眼的旧命令输出）；还满，就把最早那几页请人读一遍写成交接条夹在最上面；最近写的几页原样留着；第一页（你的原话、当前任务）永远留着。
+
+### 2.1 四个阶段
+
+源码 `agent/context_compressor.py`。
+
+**Phase 1 确定性剪枝（零 LLM 调用）**：完全相同的工具结果去重；超过 **200 字符**的旧工具结果降级成一行摘要（占位符原文 `[Old tool output cleared to save context space]`）；超过 **500 字符**的工具调用参数截断（改写解析后的 JSON，保证仍是合法 JSON）；旧图片降级成占位符、**最新 3 张保留**；尾部压力过大时另有一轮 `_pressure_demote_tail`。
+保护：**≤ 200 字符的工具结果豁免**（`_PRUNE_MIN_CHARS = 200`）——小结果占不了多少地方，剪了反而丢信息。
+
+**Phase 2 切三段**：head = system prompt + 前 `protect_first_n` 条（默认 **3**）；tail = 从末尾往前累计到预算；middle = 送去摘要。
+tail 预算（lean 模式，默认）`max(10_000, min(25_000, 上下文窗口 × 0.025))`——**窗口的 2.5%，夹在 1 万到 2.5 万 token**。
+两个硬保护：**最新一条"要干活的"用户消息**和**最新一条助手消息**，无论预算够不够，永远拉进 tail。
+**head 保护会衰减**：那 3 条在**第一次压缩之后变成 0**。不衰减的话最早那几条会被反复保护、反复留着，变成永远在场、永远挤占空间、而可能早已无关的"化石"——源码注释点名 issue #11996。
+
+**Phase 3 结构化摘要**，字段是硬的：`Historical Task Snapshot` / `Goal` / `Constraints & Preferences` / `Completed Actions`（编号列表 `N. ACTION target — outcome [tool: name]`）/ `Active State` / `Blocked`（要求带精确报错）/ `Key Decisions`（要求带 why）/ `Errors & Fixes`（**要求引用用户纠正的原话**）/ `Resolved Questions` / `Relevant Files` / `Critical Context`（凭据一律 `[REDACTED]`）/ `Pruned Skills`。
+摘要预算 `max(2_000, min(被压缩内容 × 20%, min(窗口 × 5%, 10_000)))`——**摘要不能比被压掉的内容还大**。
+
+**Phase 4 组装 + 修 tool 配对**：形状 `[head][summary][tail]`，摘要是单独一条消息、带前缀 `[CONTEXT COMPACTION — REFERENCE ONLY]` 和结束标记。摘要行角色跟 tail 第一行冲突且翻转也不合法时，不新增独立行，而是**把摘要合并进 tail 第一行的内容里**。
+**多次压缩**不再生成新摘要，而是把上一次的摘要当「PREVIOUS SUMMARY」喂回去、要求**结构不变地增量更新**——这是它对抗摘要膨胀的办法。
+
+### 2.2 阈值：官方文档和源码打架
+
+配置默认 `compression.threshold = 0.50`，但源码还有一层：窗口小于 **512,000** 时阈值被强行抬到 **0.75**（`_SMALL_CTX_THRESHOLD_PERCENT`，raise-only）；另有 **64,000** 下限（`MINIMUM_CONTEXT_LENGTH`）。
+
+| 窗口 | 网上流传 | 源码实际 |
+|---|---|---|
+| 200K | 100,000 | **150,000**（0.75 生效） |
+| 1M | 500,000 | **500,000**（0.50 生效） |
+
+官方文档 "Computed Values (200K at defaults)" 写 100,000——**它跟同一份文档 261-263 行的 floor 规则冲突**。不是"文档写的是旧版本行为"，而是**同一份文档内部没算对**。另一处：文档正文写摘要上限 12,000，源码常量是 `_SUMMARY_TOKENS_CEILING = 10_000`（200K 这个例子上两者同值，窗口超 240K 才有差别）。
+> **教训**：这个领域的官方文档普遍落后于源码，把文档当权威会踩坑。
+
+**为什么小窗口抬到 0.75？** 有些东西**压不掉**——system prompt、几十个工具的 schema，加起来 20-30K token。在 200K 窗口上按 0.50 触发，压完回收的空间不够抵消这个固定开销，结果**每压一两次又满了，再压**。宁可早压。
+
+### 2.3 压缩后还是同一个会话
+
+默认 `compression.in_place: True`——原地重写同一 session，旧消息行软归档（`active=0, compacted=1`），还能被 `session_search` 搜到，**从不删除**。只有设 `in_place: false` 才走老路（新建子 session、轮换 id、记录 `parent_session_id` 血缘）。官方说改成 in_place 是为了消除"session 旋转 bug 簇"：丢 `/goal` 状态、孤儿 session、跨边界搜索缺口。
+
+### 2.4 它为了缓存改过设计——方向是"少压缩"
+
+**prompt cache** 是供应商给的折扣：请求前缀跟上次一字不差，那部分按 0.1 倍计价。但**压缩的定义就是重写前缀**——天生打架。Hermes 的应对是**主动少压**：
+
+- **micro-compaction 默认关掉**。文档原话：「每次 pass 都会重写已经发出去的历史，每一轮都在破坏 provider 的 prompt-cache 前缀……在某些配置下这个代价超过它带来的好处。」
+- **proactive prune 加门槛**：要回收至少 **4,096 token** 才允许动手。配置注释：要让破坏变成「一次大的偶发中断，而不是每个工具循环都来一下小的」。
+
+还有更细一层：system prompt 内部分成**稳定 / 上下文 / 易变**三层，文档解释了原因——「项目共享文件排在"当前工作目录"之前。这样同一项目在不同 git worktree 下的会话，能共享一段覆盖整个 context block 的前缀——而这段前缀正是最长前缀缓存会复用的东西。」
+`agent/prompt_cache_boundary.py` 更极端：skill / webhook / cron 的构造器会拼"大段静态脚手架 + 小段易变尾巴"，**只有构造器知道易变尾巴从哪个字节开始**，所以它把这个边界登记下来，让缓存规划器在正确位置打断点，而不是把整条消息当一个原子块缓存。
+
+### 2.5 记忆是另一条轴
+
+`~/.hermes/memories/` 下两套文件式长期记忆：`MEMORY.md`（上限 2200 字符 ≈ 800 token）、`USER.md`（1375 字符 ≈ 500 token），**会话启动时的冻结快照**，注入 system prompt 的 volatile 段。
+跟压缩的关系三处：摘要 prompt 里插 `MEMORY PROVIDER CONTEXT` 段；摘要前缀和压缩提示词**反复声明**「persistent memory (MEMORY.md, USER.md) 永远权威」；memory provider 有 `on_pre_compress` 检查点钩子，可配成"没检查点就不许压缩"。
+项目文件读取上限公式 `max(20_000, min(窗口token × 4 × 0.06, 500_000))` 字符；截断时提示语会**明确写出文件路径**并让 agent 用 `read_file` 取完整内容。
+
+### 2.6 LCM：必须澄清的误会
+
+网上说 Hermes 用了一套叫 LCM 的无损上下文管理（不可变存储 + 摘要 DAG + 七个工具 + 三级升级 + DAM 神经检索）。**这套东西没有进主干。**
+PR **#4033** 状态 **closed、draft、merged=false**（2026-04-09 关闭，+14036/−143，72 文件）；主干 `plugins/context_engine/` **只有一个 `__init__.py`**；官方文档确实讲 LCM，但那是作为**「怎么给 Hermes 写 context engine 插件」的举例**——范式声明，不是已交付物。能用的是第三方 `stephenschoettler/hermes-lcm`，工具集跟 PR #4033 **基本不相交**（PR 的 `lcm_expand/lcm_pin/lcm_forget/lcm_search/lcm_focus/lcm_budget/lcm_toc` 插件一个都没有，插件是 `lcm_grep/lcm_recall/lcm_expand/lcm_describe/...` 那套 15 个）。
+
+两套参数完全不同：
+
+| | 内置 ContextCompressor | 第三方 hermes-lcm |
+|---|---|---|
+| 阈值 | 0.50 / 0.75 | **0.35** |
+| 保护尾部 | protect_last_n=20 | **32 条消息** |
+| 摘要熔断 | 阶梯 (60,300,900) 秒 | **连续失败 2 次 / 冷却 300 秒** |
+| 摘要结构 | 12 段 | DAG，最大深度 **3** |
+| 三级升级 | 无 | **有**（detailed → bullets → 确定性截断） |
+
+**第三方插件是有三级升级的**（README "How it works" 第 4 步原文就是 Escalate），缺的只是 PR 里那套 DAM / HRR。另有耦合：插件在无状态会话上会**回退调用内置 ContextCompressor**——一次部署里可能两条压缩路径并存。
+
+### 2.7 它的失败清单
+
+| issue | 症状 |
+|---|---|
+| #14690 | 64K 小模型上阈值算出来等于整个窗口 → **压缩永不触发**，供应商先拒请求 |
+| #14695 | system prompt + 工具 schema 的固定开销本身超阈值 → **每轮压了又压的死循环** |
+| #40803 | 整段 transcript 恰好塞进 soft ceiling → 切点算在 head 之前，反复无进展 |
+| #10896 | 最新一条用户消息被切在压缩外（已修） |
+| #11996 | 早期 turn 被反复保护成"化石"（已用 protect_first_n 衰减修） |
+| #11978 / #11914 | **摘要返回空内容** → 模型忘掉正在做的任务 |
+| #92699 | 尾部图片无法降级，每次请求都重发 → 触发 anti-thrash 关掉压缩 |
+| #100611 | 原生 checkpoint 约 500 万字符密文，被按 bytes/4 估算成 **约 129 万 token 的幻影**，反复触发本地压缩 |
+| #70328 | 每张图固定按 1500 token 计价、实测 4000+ → 估算 20K 而真实 prompt 过 80K，压缩永不触发 |
+
+熔断几层：摘要失败冷却阶梯 (60, 300, 900) 秒；anti-thrash 在"无效压缩连续 2 次"或"退化 fallback 连续 2 次"时跳闸，跳闸后 300 秒只放一次探针；`compression.max_attempts` 默认 3（上限 10）。有效性判定**看供应商返回的真实 prompt token 数有没有降**，不看消息条数——条数少但 token 没降太常见了。
+
+**最实在的一条教训**：文档说「摘要模型的上下文必须 ≥ 主模型窗口，否则摘要调用吃 context-length 错误、返回 None，中间那段被**无摘要丢弃**」——官方称这是**压缩质量下降最常见的原因**。这直接推翻"摘要这种活随便找个小模型干就行"。
+
+---
+
+## 3. Claude Code：前台收银，后台整理
+
+### 3.1 触发
+
+```
+有效窗口 = 模型窗口 − min(模型的输出上限, 20,000)
+触发点   = 有效窗口 − 13,000
+```
+
+200K → **167,000**；1M → **967,000**。那个 20,000 有注释：「基于压缩摘要输出的 p99.99 是 17,387 token」——拿真实分位数定的。1M 那档跟官方文档写的 "about 967K tokens by default" **精确吻合**，这是"13K 缓冲仍是现值"的最强交叉证据。
+
+> **存疑**：200K 档矛盾。源码算式给 167,000，官方文档却写 200K 模型 "compact at the 200K boundary"。阈值若真在 167,000（明显在边界前），文档不该这么写。标为**源码值、未经文档交叉验证**。另外那个 13,000 干什么用，**官方从未说明**——只有 20,000 有注释。社区流传的 83.5% 恰好等于 167,000/200,000（算是交叉印证），但社区另有 92% / 95% 两个互相矛盾的版本，**都没有官方数**。
+
+### 3.2 三层，但默认只有一层对你生效
+
+| 层 | 是什么 | 默认 |
+|---|---|---|
+| 时间触发微压缩 | 距最后一条助手消息超 60 分钟后，把除最近 5 个以外的可压缩工具结果换成 `[Old tool result content cleared]` | **关**（`enabled: false`） |
+| 会话记忆压缩 | 用后台 agent 预建的"会话记忆"当摘要，省掉一次 LLM 调用 | **关**（两个开关都 false） |
+| 完整 LLM 摘要 | fork 一个分身写 9 段摘要 | **你实际经历的** |
+
+只有 8 类工具属"可压缩工具"（Read / Bash / PowerShell / Grep / Glob / WebSearch / WebFetch / Edit / Write）。
+
+### 3.3 摘要 prompt：9 段 + 草稿块
+
+开头是一段很凶的指令（原文）：`CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.` … `Tool calls will be REJECTED and will waste your only turn — you will fail the task.`
+结构是先写 `<analysis>` 草稿块，再写 `<summary>`。**草稿块在注入前整段剥掉**——用思维链换摘要质量，但不占压缩后的 token。
+9 段：Primary Request and Intent / Key Technical Concepts / Files and Code Sections / Errors and fixes / Problem Solving / All user messages / Pending Tasks / Current Work / Optional Next Step。第 6 段点明「列出所有非工具结果的用户消息」，第 9 段要求带最近对话的**逐字引用**。（`/compact <文本>` 的自定义指令会作为 `## Additional Instructions` 追加。）
+
+### 3.4 压缩后没有逐字 tail
+
+**这点很多二手文章讲错。** 完整压缩路径**不留逐字历史尾巴**，`messagesToKeep` 在这个路径上是空的。形状是 `[compact_boundary 标记][摘要消息][重新注入的附件][SessionStart hooks 输出]`，靠"重新读盘"捞回：
+
+| 捞回什么 | 限制 |
+|---|---|
+| 项目根 `CLAUDE.md`、rules、auto memory | 从磁盘重读 |
+| 最近读过/改过的文件 | 最多 **5 个**（按修改时间倒序），总预算 **50,000** token，单文件 **5,000**（超了只留路径） |
+| 已调用的 skill 正文 | 单 skill 上限 5,000，总上限 25,000，超额丢最老的 |
+| plan 文件、plan_mode 提示 | 重新追加 |
+
+**不在保护清单里的就真没了**——比如 hooks 之前加进上下文的内容、带路径限定的 rules、子目录嵌套 CLAUDE.md。所以"只留最近写的几行原话"**对 Claude Code 不成立**，那只对应默认关闭的会话记忆路径。
+
+### 3.5 缓存：它为一个细节付了很大代价
+
+摘要请求不是单独起请求，而是**fork 主会话**（同样的 system prompt、工具、历史，只在最后追加一条摘要指令）——**为了复用主会话的 prompt cache 前缀**。源码开关 `tengu_compact_cache_prefix` 默认开着，注释说关掉的路径**98% 缓存 miss**。fork 时还**故意不设 `maxOutputTokens`**，因为设了会改 thinking 配置、进而改变 cache key。
+另一个很细的修复：压缩成功或失败后都要调 `notifyCompaction` 重置 cache-read 基线，否则压缩后 cache read 骤降会被缓存断裂检测**误报**——注释说某次缺这步，导致 **20% 的 `tengu_prompt_cache_break` 是假阳性**。
+
+### 3.6 熔断与用户抱怨
+
+`MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3`。源码注释给了生产数据：某日 **1,279 个会话连续失败 50+ 次**（最多 3,272 次），全球每天浪费约 **25 万次 API 调用**。
+> 诚实地说：注释只给了统计，**没说"所以定成 3"**，因果是推测。
+
+抱怨集中在三件：plan 被忘（#24686 / #13955 / #26532）；CLAUDE.md / MEMORY 关键信息丢失（#28469 / #29890）；整段历史只剩摘要（#19888）。源码里对 plan 和 CLAUDE.md 的重注其实是**事后打补丁**。
+一条很硬的实测：有用户测了 354 次裸 `/compact`，写进 CLAUDE.md 的 "Compact Instructions" **一次都没生效**（354/354 全部回落到内置模板）；改成内联 `/compact <内容>` 之后 7/7 生效。
+
+### 3.7 我做的独立验证
+
+第一轮来源只有单一社区镜像仓库，而"核验"是回同一仓库重读——镜像要是错了，整份报告会整体继承。所以我去 npm 拉了**真实发行包**（`@anthropic-ai/claude-code@2.1.89`，13MB `cli.js`）反混淆交叉验证，**逐条对上**：
+
+`Z17=13000`、`V_Y=20000`、`N_Y=y_Y=20000`、`G17=3000`、窗口下限 `D17=1e5`、上限 `jfK=1e6`；微压缩配置逐字为 `{enabled:!1, gapThresholdMinutes:60, keepRecent:5}`；9 段摘要 prompt 的标题**全部存在**，出现次数 6/6/6/6/6/6/6/4/4（正好对应 BASE / PARTIAL / PARTIAL_UP_TO 三个变体）；占位符 `EH4="[Old tool result content cleared]"` 逐字相同；`compactMetadata` / `preservedSegment` / `isCompactSummary` 都在。
+
+**结论：镜像保真度很高，那份报告现在有两个独立来源。** 两个额外发现：`/autocompact` 命令在 2.1.89 已存在，解析规则是"裸数字 100–1000 按千算"；**npm 上不存在 2.1.88 这个版本**（2.1.87 之后直接跳 2.1.89），镜像仓库标称的版本号在公开 registry 里找不到对应。
+
+---
+
+## 4. OpenCode：先擦草稿，再考虑抄纸条
+
+### 4.1 触发：绝对 token 数
+
+```
+预留 = min(20,000, 模型输出上限)              // COMPACTION_BUFFER
+可用 = 窗口 − 模型输出上限(最多 32,000) 或 limit.input − 20,000
+溢出 = 已用 >= 可用
+```
+
+代表值：200K → 约 **168,000**；1M → 约 **968,000**。
+**一个很典型的 bug**（#45168）：某模型声明 context 256,000 / output 64,000，但真实输入上限 196,608。按公式算出阈值 224,000，而实际用量封顶 198,100——**永远够不到阈值，自动压缩永不触发**，每次全额重发约 196K。修法 PR 到现在还开着。
+> 这是"绝对阈值 + 固定 buffer"的固有问题：**换个模型行为就漂。**
+
+### 4.2 第一层：prune（零 LLM）
+
+`PRUNE_MINIMUM = 20,000` / `PRUNE_PROTECT = 40,000` / `PRUNE_PROTECTED_TOOLS = ['skill']`。从最新往回扫、累计工具输出 token，**最近 40,000 内的受保护**，再往前的被擦——给这个 part 打 `state.time.compacted` 时间戳，模型看到 `[Old tool result content cleared]`。只有被擦总量超 20,000 才真正提交。
+配置默认 `compaction.prune` 是 **false**。作者没解释为什么——config schema 上只有 `(default: false)`，源码注释只讲机制不讲动机。**任何说"因为 X 所以默认关"的都是推测。**
+
+### 4.3 第二层：切点是个持久化的 ID
+
+tail 预算 `preserveRecentBudget = min(15,000, max(2,000, 可用窗口 × 0.25))`。从最新往回按"轮"累加，装得下就整轮进 tail，装不下就调 `splitTurn` 在一轮内部按消息下标再切——**所以确实可能从一轮中间切开**。
+切点存在那条 user 消息的 **`CompactionPart.tail_start_id`** 上（不是内存索引）。重排形状（`filterCompacted()`）：`[compaction-user("What did we do so far?")][summary-assistant][...保留的尾巴...][continue-user]`。注释原话：**"filterCompacted reorders messages for model consumption"**，数组位置不是时间顺序。
+摘要 5 段：`Objective` / `Important Details` / `Work State`（Completed / Active / Blocked）/ `Next Move` / `Relevant Files`。硬性要求：顺序不可变、空也要保留、**必须原样保留精确的文件路径 / 符号 / 命令 / 错误串 / URL**、**不得提及"摘要"或"上下文被压缩"**。有上一份摘要时注入 `<prior-summary>`，模板里一句很直白的警告：**"anything you do not carry into the new summary is lost."**
+
+### 4.4 一手设计动机（第一轮漏了）
+
+仓库里的 `specs/v2/session.md` 是最该引的一手出处：
+
+> Compaction keeps the full transcript durable while replacing its active model representation with one hidden checkpoint containing a structured rolling summary and token-bounded serialized recent context. **Provider-native assistant, reasoning, and tool messages never survive across the boundary, avoiding signature and encrypted-reasoning failures when the earlier prefix changes.**
+
+这解释了那个看起来"没道理"的设计：**为什么 tail 只保留序列化文本、不原生重放历史消息**——因为前缀一变，供应商签名和加密推理状态就失效了。
+
+### 4.5 仓库里有两套，跑哪套是个坑
+
+`packages/opencode/src/session/compaction.ts`（v1）和 `packages/core/src/session/compaction.ts`（v2，常量 `DEFAULT_BUFFER=20_000` / `DEFAULT_KEEP_TOKENS=8_000` / `SUMMARY_OUTPUT_TOKENS=4_096`）。核实到：仓库 `AGENTS.md` 写 **"Do not bridge through legacy `SessionPrompt.loop(...)`"**、`specs/v2/todo.md` 也称 v1 为 legacy → **v1 是遗留路径，v2 是新主线**；v2 的 `compactIfNeeded` 已接进 core session runner；但 V1→V2 整体替换**未完成**（parity 表的用途本身就写着「V2 runner 替换 V1 之前仍需检查的清单」）；两者**共享摘要 prompt 构建器**。
+准确说法：**v1 仍是 `opencode` 包（v1.18.30）的主循环路径，v2 已接入 core runner 且压缩部分 parity 标 complete，但整体替换未完成。**
+
+### 4.6 缓存问题比别家严重
+
+压缩请求复用了主对话的 `prompt_cache_key`，但 payload 是 `tools: []`、无 system、另一套序列化格式——**prompt cache 前缀第一个字节就分叉**（工具块排在最前面）。后果（#43249）：每次压缩都是**全额 cache write**、**永远 0 命中**；还会把主对话即将要读的缓存条目挤掉；实测 3,245 个会话里 52 个发生压缩，花费 $36.95（约总量 1.4%），`cache.read` 恒为 0。而且 `buildPrompt` 把易变的 `<prior-summary>` 排在固定 `SUMMARY_TEMPLATE` **之前**，让唯一跨压缩相同的模板段也不可缓存。修法（#46369）**还开着**。
+
+### 4.7 失败清单
+
+| issue | 症状 |
+|---|---|
+| #44080 | 推理模型只产出 reasoning 部件、无文本部件，**仍把空壳标为 `summary:true` 落库**并替换 epoch，原始历史不可逆丢失、不报错 |
+| #41571 | 摘要为空。结构前提是 v1 落库时 tokens 全零并显式 `cost: 0` |
+| #27924 | runLoop 两条触发路径**都没有重试计数/熔断**，压缩不减少上下文就无限循环烧钱。issue 仍 open，但挂的 5 个修复 PR **全部 CLOSED** |
+| #48065 | tail 预算算出 `keep=undefined` → head=全部、压缩比仅 56-60% → 约 10 分钟涨满 → **单会话一夜压缩 56 次** |
+| #40235 | 中断的 tool run 之后，压缩永久报 `Duplicate value for tool_call_id` |
+| #39291 | 压缩发送被改动的 thinking 块 → 永久 400 重试循环 |
+| #45168 | 阈值够不到，自动压缩永不触发，静默成本爆炸 |
+| #42282 | 压缩失败时**静默丢掉** pre-tail 历史 |
+
+---
+
+## 5. Codex：两条路，一条写交接条，一条直接换新本子
+
+### 5.1 默认路径：摘要
+
+```
+输出预留 = 95%                          // effective_context_window_percent
+软阈值   = min(配置值, 窗口 × 9/10)
+硬上限   = 窗口 × 95/100
+触发     = 软阈值够到 或 硬上限够到
+```
+
+配置项 `model_auto_compact_token_limit_scope` 决定**算哪一段占用**：`total`（默认，整个活跃上下文）vs `body_after_prefix`（只算进入本轮压缩窗口之后的增长）。引入它的 PR 解释了动机：`total` 语义下**保留的大前缀会吃掉整个预算，导致刚压缩完立刻又要压缩**。
+
+**摘要 prompt 只有 4 个字段**：Current progress and key decisions / Important context, constraints, or user preferences / What remains to be done / Any critical data or references。开头固定前缀 **"Another language model started to solve this problem..."**，代码靠它识别摘要消息、避免二次压缩。（对比：Claude Code 9 段、Roo 9 段、Gemini XML 快照、OpenCode 5 段。**Codex 最短。** 网上流传的"8 段式"是错的。）
+
+**保留的是用户消息，不是 tail。** 不打 head/tail 分割，整段历史一次性发给摘要器；从末尾倒着取 user 消息，累计到 `COMPACT_USER_MESSAGE_MAX_TOKENS = 20,000`。保留单位是整条 user 消息，所以不会从一轮中间切开；**助手消息和所有工具调用/结果一律丢弃**，因此也不会产生半个 tool 对。
+回放顺序有坑——**manual / pre-turn 和 mid-turn 不一样**（`InitialContextInjection::{DoNotInject, BeforeLastUserMessage}`）：mid-turn 是 `[初始上下文][最后一条真实 user][<COMPACTION_SUMMARY>]`；manual / pre-turn 是 `[保留的旧 user 消息][<COMPACTION_SUMMARY>][PERMISSIONS][ENVIRONMENT_CONTEXT][新 user]`。把 mid-turn 当统一形状是常见错误。
+
+**远端 v2 压缩的保留规则是另一个东西**（网上普遍说错）。实际保留**四类**：user 消息（但**不是所有 user 角色消息**——必须能被 `parse_turn_item` 判为 `UserMessage` 或 `HookPrompt`，所以 `environment_context` **被排除**）、hook prompt、AgentMessage（单条 ≤ 10,000 token，**且**不是 descendant progress、**且**不是 completion）、client-authored developer 消息（仅当 `Feature::RetainClientDeveloperMessages` 开，**默认关**）。
+四类**共享同一个 64,000 token 预算**，倒序累加。截断**不是严格的"放不下就停"**：某条超预算而剩余额度还够触发它的 attached notice 时，会截断这条并把剩余清零；但若剩余连那条的 notice 都不够、且不触发图片计费，额度**不清零**，循环继续找更旧的能塞下的小条目。另有一层：**图片是否计入这 64k 由独立开关决定**（`Feature::CompactionImageBudget`，Stable，**默认开**）。（对应 commit `bc5957e`。`developer` 那支和图片计费那支都还在演进。）
+
+### 5.2 实验路径：TokenBudget 硬切
+
+`compact_token_budget.rs` 注释直说：**"skips model/server summarization and installs a fresh context window"**。切换发生在 `start_new_context_window()`——**不总结历史**，重新生成初始上下文，旧消息**整体丢弃**，`window_number` 加一。
+配套两样。**notes**：模型在窗口耗尽前自己写进度笔记，提醒阈值为 `reminder_threshold_tokens: 6144`，提醒原文末尾 **"Future context windows will not automatically include the current conversation."**。**history**：一个**后端服务**（不是本地库），接口 `alpha/history/v2/{list_windows, list_items, read_item, search_contents}`——原文在后端可查，这是它"无信息损失"的来源。模型看到的"窗口身份"是 `<context_window>` 消息（First / Current / Previous window id + thread_hint，上限 4,000 字节）。另：notes / history 是**"私有、模型专用"**能力，工具描述明确要求模型**不要向用户披露它的存在或内容**。
+
+**门禁时间线**：#42385（2026-09-02）加"订阅 + 后端"限制、**当时不检查模型**；#43147（09-06）补模型检查，`supports_experimental_context` 默认 false、**只对 `gpt-6-astra` 置 true**；#43912（09-08）把 Guardian 审查会话钉回摘要压缩；#44281（09-09）Guardian 恢复逻辑明确写 **"Avoid history-resetting token-budget compaction for this recovery."**
+**订阅限制是设计上就有的，模型限制是三天后补的收紧。** 连 OpenAI 自己最敏感的审计路径兜底恢复都在**显式绕开硬切压缩**。
+
+### 5.3 一个负面结论：这套东西的"为什么"根本不存在
+
+我读完了引入 TokenBudget 那批 PR 的正文（#27438 / #27488 / #27518 / #29743 / #29762 / #42385）。**OpenAI 没有任何一处说明"为什么用硬切而不是摘要"。** 这些 PR 的 "Why" 段写的是**行为规定**或**能力缺口**：#27438「模型应该能看到窗口预算元数据」（这是"消息长什么样"）；#27518「模型没有直接办法按需索取剩余 token」（纯能力缺口）；#29743「TokenBudget 启用时，压缩应该表现得像 `new_context`……不去要求服务端摘要旧历史」（**行为规定，不是理由**）。整批里唯一沾到动机的一句是 #27488：**"without spending tokens on a compaction summary"**。
+整个仓库文档也搜过：`docs/` 只有 CLA / config / install，**没有任何 context management 设计文档**，`extension:md "context management"` **0 命中**。
+**所以"OpenAI 认为硬切更好"没有证据。** 反面证据更强——v0.153.0 release notes 的官方措辞是「Adds the **disabled-by-default** `features.context_management.experimental_mode` configuration」。**它是针对特定场景的实验路径，不是"更好的方案"。**
+
+### 5.4 它自己承认的问题
+
+代码里有一条要发给用户的警告：**"Long threads and multiple compactions can cause the model to be less accurate. Start a new thread when possible."** 防循环没有硬计数器，靠一个假设（`turn.rs` 注释原文）："as long as compaction works well in getting us way below the token limit, we shouldn't worry about being in an infinite loop"。
+用户侧实测（#14347）给了个质量分档：0-2 次 excellent / 3-5 good / 6-8 acceptable / 9+ degraded（连累积摘要本身也被压）。**但这份分档是报告者自称的"生产经验，不是正式基准"**（样本是"日常 10-16 小时会话"）；而且同 issue 里 **OpenAI 维护者澄清：OpenAI / Azure 托管模型的压缩发生在服务端**，仓库里那份 `templates/compact/prompt.md` **只用于自定义模型提供方**。
+另两个用户报的问题：#19111 标题就是 **"System prompt does NOT survive compaction"**（放在 `~/.codex/CODEX.md` 的内容压缩后模型就不知道了）；#26656 "CONTEXT COMPACT AFTER CONTEXT COMPACT EATING TOKEN"。
+> 对照 Claude Code 会从磁盘重注 CLAUDE.md，说明**"压缩后什么能活"是实现选择，不是必然**。
+
+**"内存 / 工作集 / 冷存储"那个类比**：**我没找到官方表述**，只有注入给模型的文案和社区帖描述。**这是观察者归纳**，给外行讲时该弃用（理由见 1.1 想错四）。
+
+---
+
+## 6. 别的公司在干什么
+
+## 6. 别的公司在干什么
+
+### 6.1 六家的关键点
+
+（这一节原本是六段散文，压成表后**每个数字都保留**。）
+
+| 产品 | 核心机制 | 最值得记的一条 |
+|---|---|---|
+| **Aider** | 不压对话，靠"只把相关文件放进上下文" | repo map 用 tree-sitter + PageRank，**永不压缩、每次重算**；对话只压 `done` 块，阈值 `min(max(窗口/16, 1024), 8192)`——**200K 和 1M 都是 8192**（被 clamp）；缓存在 examples/system、repo/readonly_files、chat_files **三处**打断点，易变块排最后 |
+| **Cline** | 任务级压缩，两套策略 | `basic`（确定性裁剪）/ `agentic`（默认，LLM 摘要）；常量 0.9 / 0.9 / 20,000 / 4096（窗口比、触发比、保留 tail、摘要上限）；切点靠 `isSafeCutBoundary` **从源头避免**切断 tool 对；摘要上限 4096 且**注释特别说明"这是上限不是目标"**——预算给太小，推理模型会把预算全花在思考上 |
+| **Roo Code** | "**fresh start**"非破坏式 | 原消息打 `condenseParent` 标记（可 rewind），摘要是末尾一条 `role=user`，发给 API 的是 `[summary, ...摘要之后的消息]`；tool 对**双向都管**（补合成 tool_result，注释说明原因——**"OpenAI's Responses API rejects conversations with orphan tool_calls"**；重放时过滤孤儿）；代价写在注释里：删/合并摘要消息会破坏 `isSummary` / `condenseId`，**导致所有被 condense 的消息复活** |
+| **Gemini CLI** | 唯一给"压缩失败"做了熔断状态机的 | 阈值 0.5，但 `tokenLimit()` 对 Gemini 系**一律返回 1,048,576**、代码里**没有 200K 分支**——所以 200K 和 1M 触发点相同；摘要先写私有 `<scratchpad>` 再做**第二轮 probe 自检**；关键逻辑：**一旦摘要把 token 数弄大了，非强制压缩就不再调 LLM、只做截断**；事故 #19590 压缩时**进程 OOM 崩溃**（529,479 → 131,437，`FATAL ERROR: Ineffective mark-compacts near heap limit`，需重启），被关为 not_planned |
+| **Cursor** | 把压缩**训练进模型** | 基线是"数千 token 的 prompt、输出平均 >5000 token"；改成让 Composer 自己写摘要，prompt 短到接近 `'Please summarize the conversation'`，**输出约 1000 token**——**误差降 50%、只用五分之一 token、复用 KV cache**；也用"挡在上下文外"：MCP 工具描述外置让总 token **降 46.9%** |
+| **Amp** | **2025-10-23 直接移除 compaction** | 理由是压缩有损、而且**"鼓励又长又绕的线程，一旦窗口满就压一次，摘要叠摘要"**；替代是 **Handoff**（第二个模型起草新线程 prompt + 文件清单，**发送前由用户审阅**） |
+| **Goose** | 摘要做成结构化 JSON，字段缺了也不崩 | **仓库已迁**——Block 在 2025-12 把 goose 捐给 Linux Foundation 旗下 Agentic AI Foundation，现在是 **`aaif-goose/goose`**；阈值 0.8；**摘要请求把历史放在 system prompt 里**，请求体只是一条固定文案；摘要 = `<analysis>` 草稿（丢弃）+ **唯一一个 JSON 块**（9 字段：`user_intent` / `technical_concepts` / `files[{path,summary,key_code}]` / `errors_and_fixes` / `problem_solving` / `user_messages` / `pending_tasks` / `current_work` / `next_step`），要求错误信息**逐字引用**；**宽松反序列化**——字段缺失默认空、非字符串 stringify 而非拒绝、**JSON 解析失败就保留原始文本当摘要**（无损兜底）；渲染带 `code_fence` 过滤器**动态加长反引号**防代码块逃逸；prune **从中间向两侧删工具响应**（中间最不影响续写），按 `REMOVAL_PERCENTAGES = [0, 10, 20, 50, 100]` 逐级重试；熔断 `compaction_attempts >= 2` |
+
+> **时效提醒**：Amp 那篇 `guides/context-management` **顶部自带 Archived 横幅**（2025-11 撰写）。当现行文档引用是常见的坑。
+> **Cline 的补充**：上表那个 5 段摘要是**新 SDK 版**；它的**经典扩展版**是 `<thinking>` + 9 段、与 Claude Code 同源，见 6.5。
+
+### 6.2 MemGPT / Letta："外部记忆"这一族的源头
+
+那个最流行的类比（虚拟内存分页）就是从这里来的。
+
+**论文**（arXiv 2310.08560，UC Berkeley，2023-10）用 **"virtual context management"**：main context（system instructions 只读 + working context 可读写 + FIFO）类比 RAM；external context（recall 消息库 + archival 文本库）类比磁盘，必须**显式移进来**才能被推理看到，分页**靠 function call 驱动**。队列管理器在窗口 70%（论文举例）时插一条 **"memory pressure" warning** 让模型赶紧把重要信息写进去；到 100% 时换出约 50%，并用"已有递归摘要 + 被换出的消息"生成新的递归摘要。
+
+**实验数字**——整份调研最有说服力的一张表：
+
+| 模型 | Deep Memory Retrieval 准确率 |
+|---|---|
+| GPT-4 | 32.1% |
+| GPT-4 **+ MemGPT** | **92.5%** |
+| GPT-4 Turbo | 35.3% |
+| GPT-4 Turbo **+ MemGPT** | **93.4%** |
+
+基线低是因为固定窗口基线拿到的是**"过去五段对话的有损摘要"**，而 MemGPT 拿的是全量历史、只能通过分页搜索召回。**这是"有损摘要 vs 可检索原文"的差距，60 个百分点。**
+
+**Letta 现状**：`main` 分支源码已归档（2026-08-16 `chore: archive the legacy server repository (#3430)`），官方 compaction 文档页标着 **"V1 SDK (legacy)"**。四模式：`sliding_window`（默认）/ `all` / `self_compact_all` / `self_compact_sliding_window`。
+`self_summarizer.py` 文件头注释原文：
+
+```python
+"""Claude Code-style summarization where agent self-summarizes using its own LLM."""
+```
+
+**self_compact 是照着 Claude Code 做的**（存在的理由是缓存：带上 system prompt 和工具定义、前缀不变以提高命中）。另一句旁证（`thresholds.py` 文档串）：**"this aligns GPT-5 behavior with the codex harness' proactive 90% compaction policy."**——**Letta 在自己源码里明确把 90% 主动压缩对标 Codex harness。** 切点必须落在 assistant 消息上，否则 tool 对会被劈开；找不到合法切点就抛错并**降级到 `all`**。护栏第 7 节 **"Lookup hints"** 要求模型记下"塞不进摘要的细节"的主题词——**对"摘要有损"的显式补偿**。
+
+**self-editing memory ≠ notes + 检索**：**memory blocks** 放 system prompt、**永远可见不需检索**、每轮都付 token；**recall / archival** 按需检索、可能想不起来查。分野只有一条轴：**"钉住"（push）还是"按需取"（pull）**。保真度上还有一层——block 装的是**模型自己组织的转述**（会漂移，所以才有 `memory_replace` 这类"整块重写"工具），archival 可塞近乎原文。**一个是有损的自述，一个是较保真的外存。** Letta 后来给 block 加了 `memory_apply_patch`，描述里直接写 "Extended, **codex-style** behavior"。
+
+**分页类比：四正五反。** 站得住的：两层结构 + 容量约束 + 强制换出是真的；"用比物理内存更大的内存"这个 illusion **确实达成了**（DMR 表是可测行为不是隐喻）；内存操作是**显式调用**；控制流与内存管理耦合。会误导的五点：
+
+1. **换出是有损的，而且用同一个模型来做这件有损的事。** 真实 VM 换出精确副本、只是变慢；这里换回来的是**同族模型生成的转述**，而 flush 那步是"递归摘要 + 新换出消息再生成摘要"，**误差跨轮累积**。DMR 表里基线只考 32-35% 就是直接证据。
+2. **缺页靠模型自觉，不是硬件。** 真实 VM 里程序**不可能忘记**缺页；这里"缺页"是一次 tool call，不查就没有 fault。**没有 MMU。** 论文自己承认「Awareness of context limits is a key aspect…」。
+3. **换出改变语义，而不是保持语义。** 真实 VM 里换出对可观测行为无影响；这里换出**恰恰改变模型能力**，这正是目的。所以它根本不是"透明的"虚拟内存，而是一次**有意的、有副作用的上下文干预**。
+4. **没有替换策略，只有静态分区 + 阈值。** 三段是**手工切分**的，没有 LRU、没有访问计数、没有"热页"。这叫"分段回收"，不叫"页面置换算法"。
+5. **地址空间不均匀。** "取出"走 embedding 语义检索，是**近似排序**不是精确寻址——可以就是查不到。论文自己承认「golden document 常在前十几个结果之外」。
+
+**源流事实**：论文里 OS 味最重的部分（队列管理器 + memory pressure 预警 + flush + 递归摘要）在今天 Letta 线上**基本退场了**——v3 里那条主动预警路径**整段被注释**，模型可见的预警降级成**默认关闭**的开关，实际触发改成每步后 `token 估算 > 0.9 × 窗口` 或超窗报错重试。**活下来的是"分层 + 自我编辑块"，退场的是"OS 调度器"。** 一句话：分页可以当**设计词汇**用，但只要落到**保真度 / 强制性 / 透明性**这三点就必须撤掉类比。
+
+### 6.3 provider 原生压缩：摘要归谁所有
+
+它决定"前缀和摘要归谁"，正是缓存故事的关键。里面是**两类机制**：**clear（挖洞，把某些块换成占位符，不产生摘要）** vs **compact（重写，让模型把历史重写成摘要替换掉原文）**。
+
+**Anthropic `compact_20260112`（beta）**：`context_management={"edits": [{"type": "compact_20260112"}]}`
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `trigger` | `input_tokens: 150000` | 唯一支持的触发类型，**最低 50,000** |
+| `pause_after_compaction` | `false` | 生成摘要后停下 |
+| `instructions` | `null` | 自定义摘要 prompt，**完全替换**默认，不是追加 |
+
+几个影响架构选择的点：**compaction block 出现在 assistant response 的开头，API 收到它时它之前的全部 content block 被忽略**（是"之前"不是"之后"）；**`pause_after_compaction` 是 provider 侧唯一能做"摘要 + 保留最近几轮原文"混合策略的钩子**（置 true 时返回 `stop_reason == "compaction"`，response 只含 compaction block，你可以插入想原样保留的消息再继续）；**摘要那趟额外计费、吃 rate limit**；**两条硬限制**——① 摘要用请求里的那个模型、不能换更便宜的，② 带 `tools` 时模型**偶尔会去调工具**而不是写摘要，结果 `content: null`。
+**缓存配合**：① 在 compaction block 上加 `cache_control`；② **在 system prompt 末尾再放一个 breakpoint**——否则摘要作为新内容写缓存时会**连带把缓存的 system prompt 一起冲掉**。
+
+**Anthropic clear 家族**（`clear_tool_uses_20250919`）：`trigger` 默认 100,000、`keep` 默认 3 个 tool use 对、`exclude_tools` 白名单、`clear_tool_inputs` 默认 false。其中 **`clear_at_least` 很值得抄**——一个显式的"这次重写值不值得破坏缓存"的闸门，官方原话 "**This helps determine if context clearing is worth breaking your prompt cache.**"。`clear_thinking_20251015` 只有 `keep`、**默认按模型分档**；thinking 的缓存关系和 tool result 相反：**保留时缓存命中，一旦清理就在清理点失效。**
+**OpenAI**：`context_management=[{"type":"compaction","compact_threshold":N}]`，服务端做摘要，**默认值官方未文档化**（示例都传 200,000）。**返回 opaque、加密、不可人读的东西**；另有独立端点 `POST /responses/compact`（**没有 threshold 参数**，你给什么就压什么；官方忠告**不要裁它的输出**）。**你对摘要写什么、保留什么完全没有发言权。** 缓存文档里有一节标题直接就叫 **"Compaction can reduce cache reuse"**。
+
+| 维度 | Anthropic compact | OpenAI compact | 自己压 |
+|---|---|---|---|
+| 前缀构造权 | 服务端重写 | 服务端重写 | 你自己 |
+| 摘要透明度 | **明文可读** | **加密不可读** | 你自己定义 |
+| 可控性 | trigger / pause / instructions | 仅 `compact_threshold` | 全可控 |
+| 可移植性 | 绑 Anthropic | 绑 OpenAI | 任何供应商 |
+
+判据：**"摘要归谁所有"你无所谓**（任务导向、历史可丢、单供应商）就用 provider 原生；**摘要要能被人看、被人改、被人搬走**就自己压。
+
+> **引用陷阱**：Anthropic 公布的三个效果数字——**memory tool + context editing 提升 39%、context editing 单独提升 29%、100 轮搜索 token 降 84%**——属于 **context editing（clear 家族）**，**不是 server-side compaction**。把 84% 安到压缩头上是错的。
+
+### 6.4 GitHub Copilot：公开信息稀薄，但有个共同点很说明问题
+
+| 面 | 公开程度 |
+|---|---|
+| VS Code agent mode | **源码级**（现已并入 `microsoft/vscode`，独立仓库归档） |
+| Copilot CLI | 只有文档（仓库**不发源码**，探测 `src/main.ts` / `package.json` 全 404） |
+| GitHub cloud / coding agent | 只有文档，**且无任何 compaction 机制描述** |
+
+**① 阈值解析器会主动报错，防止你把百分比当 token 数。** 设置 `summarizeAgentConversationHistoryThreshold`：`≤1` 当比例、`≥100` 当绝对 token 数、**`(1, 100)` 区间直接抛错**——那个抛错是有意的，防止你把 `80`（想表示 80%）当成 80 个 token 传进去。**值得抄**：一个"两种语义共用一个参数"的配置，不做检查就会静默按错的方式工作。未设时 = 用满整个窗口。
+**② 摘要分两档，Full 失败降级 Simple。** **③ 7 个字段**（Chronological Review / Intent Mapping / Technical Inventory / Code Archaeology / Progress Assessment / Context Validation / Recent Commands Analysis），输出包在 `<analysis>` + `<summary>` 里，`unwrapSummary()` 剥标签——**模型不吐标签时回退用原始文本**（和 Goose 无损兜底同思路）。**④ 大工具输出外置** + `maxToolResultLength` 截断 + `maxSummaryTokens` 硬顶。**⑤ 有 PreCompact hook**。**⑥ 把 compaction 委托给 provider**：走 OpenAI Responses API 时若 `isResponsesCompactionContextManagementEnabled` 为真，就用服务端的 compaction、**同时禁用自家的 summarization**。
+
+**第 ⑥ 点和 Goose 重合**——两家源码里都有同一句短路：
+
+```rust
+// Goose: crates/goose/src/context_mgmt/mod.rs:232
+if provider.manages_own_context() { return Ok(false); }
+```
+
+**两家都在做同一件事：如果 provider 自己管上下文，就不做本地压缩。** 这是 6.3 那个趋势的又一证据——**上下文管理正在往 provider 侧移动。**
+
+### 6.5 Roo Code 那份 9 段 prompt 是从哪来的——判定结果
+
+**结论：Roo 的 9 段 CONDENSE prompt 是照抄 Claude Code 的压缩摘要 prompt。Roo 的祖先 Cline 不是来源，源就在 Claude Code 自己。**
+
+| 时间 | 事件 |
+|---|---|
+| 2025-04-08 | Claude Code 压缩 prompt（**7 段**版，已含 `<analysis>` 和 `## Compact Instructions`）首次公开在 GitHub |
+| 2025-05-14 | Roo 加 LLM condense（**6 段** v1，PR #3582） |
+| 2025-08-13 | Cline 加 `summarize_task`（PR #5520） |
+| 2025-11-19 | Claude Code **9 段**版公开（cc 2.0.14） |
+| **2026-01-23** | **Roo PR #10873 逐字抄入 9 段** |
+| 2026-03-31 | Claude Code v2.1.88 source map 泄漏 |
+| 2026-05-12 左右 | Claude 版追加 security 句（首见 2.1.139） |
+
+**决定性证据是一个重复编号的笔误。** Roo PR #10873 的机器人评审评论第一条待办原文：
+
+> Fix CONDENSE support prompt section numbering: previously **"6." appeared twice** (All user messages vs Pending Tasks).
+
+Roo 那版草案里 "All user messages" 和 "Pending Tasks" **都编号成 6**，而 Claude Code 公开发布的对应文本**也**是同样的重复编号 bug。**一个罕见的编号笔误在两家逐字同步出现，基本排除独立撰写。** 佐证：Roo 的 PR 正文只写「Restructured CONDENSE Prompt — Completely rewritten with a highly structured XML format」，**全程没提任何出处**；Roo 加的只是**4 行前言 + 1 句 command 说明**（那句 `Note: Any <command> blocks…` 是 Roo 自己插的，Claude 的五个版本快照里都没有）。
+
+**要修正一个流传的推理。** 网上（包括完整版第一稿）说「Roo 是 9 段、祖先 Cline 是 5 段，所以 Roo 从别处换来的」——**这个推理是错的。** Cline 有**两代**压缩 prompt、两代都抄了 Claude Code：**经典扩展版**（把 `<analysis>` 换成 `<thinking>`，**1-5 段逐字一致**，再加一个 Claude 没有的 "6. Task Evolution"）和**新 SDK 版**（那个 5 段）。准确说法是：**Cline 和 Roo 都抄过 Claude Code，只是各改各的。**
+
+**顺带完成的独立见证**：Roo 的引入 commit（2026-01-23）比那次 source map 泄漏（2026-03-31）**早约两个月**，带的是**改编号之前的原文**。
+> 措辞说准：Roo 的文本本身也是从公开镜像抄来的，谈不上"独立复现"——它"独立"的对象是**那次泄漏**，不是 Claude Code。准确说法是**泄漏之前的又一份公开副本**。
+
+（边界：这些文本仍在演进——"逐字同构"是对**特定版本快照**成立。）**这个现象本身**：一家开源项目把最大竞品的摘要 prompt **原样抄走、连编号 bug 都不改**，而这个 prompt 后来成了好几家的参考模板。说明**"摘要该写哪些字段"这件事，行业里已经收敛了**——不是巧合，是这件事的最优解空间确实很窄。
+
+---
+
+## 7. 为什么"摘要压缩"成了默认选择
+
+### 7.1 它同时满足三件事
+
+| 要满足 | 硬切 | 外部记忆 | 子代理 | 超长窗口 | **摘要压缩** |
+|---|---|---|---|---|---|
+| 保住对话流 | ✗ | ✗ | ✗ | ✓ | **✓** |
+| 不要求模型额外守纪律 | ✓ | ✗ | ✓ | ✓ | **✓** |
+| 在长上下文里真的更准 | ✓ | ✓ | ✓ | **✗** | **✓** |
+
+第三条常被忽略，而且有实测支持。**Lost in the Middle**（arXiv 2307.03172，TACL 2023）：「相关信息出现在输入**开头或结尾**时表现最好，**必须从中间取用时显著退化**——即使是对专门的长上下文模型。」**Chroma 的 Context Rot** README 更狠：**"Model performance varies significantly as input length changes, even on simple tasks."**
+所以压缩的正当性来源不是"省钱"，而是：**同等信息量下，桌上的纸越少，模型越准。** 问题不在"压不压"，在"压得对不对"。
+
+### 7.2 但"摘要"本身有实测争议
+
+**《The Complexity Trap》**（arXiv 2508.21433，DL4C @ NeurIPS'25）在 SWE-bench Verified 上、5 个模型配置下直接对比"**掩蔽旧观察**" vs "**LLM 摘要**"，摘要原话：
+
+> a simple environment observation masking strategy **halves cost relative to the raw agent while matching, and sometimes slightly exceeding, the solve rate of LLM summarization**.
+
+人话：**简单地把旧工具输出涂黑就能把成本砍一半，解出率跟花大钱做 LLM 摘要打平、有时还略高。** 论文还说这 "raise concerns regarding the trend towards pure LLM summarization"。**《Context as a Tool》**（arXiv 2512.22087）也说 append-only 和被动触发的压缩启发式 "often lead to context explosion, semantic drift, and degraded reasoning"，他们把压缩升级成 agent 可**主动调用**的工具，在 SWE-bench Verified 上到 57.6%。
+
+### 7.3 真正的答案
+
+> **压缩之所以是默认，不是因为最优，而是因为它是在"模型注意力随上下文衰减"这个约束下，唯一能同时保住对话流、又不要求模型额外自律的折中。**
+
+工程界的共识其实就是 Hermes 做的事：**把大量工作前移到"不花钱的裁剪 + 外部记忆"两层，只在真必要时才动用 LLM 摘要。** Anthropic 的一句话版本：**"the art of compaction lies in the selection of what to keep versus what to discard"**。以及这条自我警告值得贴墙上：
+
+> **"overly aggressive compaction can result in the loss of subtle but critical context whose importance only becomes apparent later"**
+
+### 7.4 压缩的四样代价
+
+① **一次额外的大请求**——输入就是被压缩的全部历史，**最贵的那次发生在最满的时候**。② **有损且不可逆**（官方：「Compaction replaces older messages with a summary, so specific instructions from early in the conversation may not be preserved.」）。③ **打断 prompt cache**（Claude Code 官方文档明说是 "by design"）。④ **可能让模型变笨**（见 7.2）。
+
+### 7.5 缓存这件事有个反直觉结论
+
+"不压缩、一路缓存下去更省"是错的。缓存读只是**打折**（0.1 倍）不是免费——Claude Code 官方文档：
+
+> Claude Code sends your full conversation with every request... so **a one-line question in a session that has been open all day still draws usage for the whole conversation.**
+
+每轮输入成本 ∝ 上下文大小 × 0.1，而上下文一直涨。TTL 也是硬约束（Anthropic 5 分钟 / Claude Code 订阅 1 小时；OpenAI 默认 30 分钟），闲置超 TTL 就是冷读。
+**所以这不是"压缩 vs 缓存"的二选一，而是：把缓存重建的费用在什么时候付、付多少次。** 一个用户自测的成本模型（非官方）：放着不管 `2C`；缓存热时压缩 `0.1C + 2C'`；缓存冷时压缩 `2C + 2C'`（他回测 168 个会话、45 天、142 次真实压缩，`C'/C = 0.203`）。
+**结论**：缓存热的时候压缩便宜得多。官方建议就是**把 `/compact` 放在任务之间的空隙里**。另有两条更省的替代：`/clear`（零成本，放弃连续性）和 `/rewind`（截断回已缓存前缀）。
+
+---
+
+## 8. 六个真实翻车场面
+
+**8.1 把"没验证的猜测"洗成"确定的事实"。** Claude Code #67500 评论：带 `[fee assumption — unverified]` 标记的猜测**压缩后被改写成语气确定的事实陈述，provenance 直接消失**。评论者分析到位：摘要「描述了这些规则**曾经是什么**，但它不带着同样的指令权威……模型现在是在**推理一条它'记得'的规则**，而不是一条它**正在看着的**规则」。**丢的是一个"我不确定"的标记**，比丢信息更糟。
+
+**8.2 压缩本身把上下文弄大了。** Claude Code #85483（很硬的量化）：扫了 **47,019 个 transcript、5,180 个压缩边界**，发现 **133 次子代理压缩每次反而增加 >50k token**，最坏 +167,519（30,029 → 197,548）；**12.9% 的 workflow-subagent 压缩是净负增长**，而主会话只有 0.1%。
+
+**8.3 压缩太频繁，等于每隔几分钟付一次全量重放。**
+
+| 数据 | 来源 | 口径 |
+|---|---|---|
+| 正常约 **2 次/天**（4 会话合计） | Claude Code #49593 | 用户自测 |
+| 某回归版本涨到 **约 2 次/小时/会话**（20-30 倍） | 同上 | 用户自测，有人独立复现 |
+| 后台预计算压缩 **3 小时内 3 次** | Claude Code #70459 | 用户自测日志 |
+| 单次压缩耗时 **75 秒 ~ 103 秒** | 同上（真实日志） | 用户自测 |
+| 压缩后降到原上下文 **约 20%**（n=142，中位 `post/pre = 0.203`） | 同上评论 | 用户自测 |
+| 单次实测 **54,358 → 2,522 token** | compact-canon 项目 | 用户自测 |
+| OpenCode 单会话一夜压缩 **56 次** | OpenCode #48065 | **故障态** |
+| Hermes 开 micro-compaction 时 **3.5 小时 0 次批量压缩** | 维护者合并的 PR #75345 | 贡献者自测 |
+
+另一条很硬的：Claude Code #90509——上下文无声掉了 157,023 token，随后 17 分钟内 **21 次全量重写、19 次连续 cache miss**，约 **2500 万 token 被烧掉**。
+**两极分化的原因**：往"频繁"走是**上下文被系统侧撑大**（Claude Code 某版本把启动占用从 8% 提到 **22%**，约 16k→45k token 硬地板，结果每会话约 30 分钟压一次；`effortLevel: high` 让一次平凡交互多约 8k token）、**尾预算塌陷 + 重算**（OpenCode 大上下文下 tail 预算算出 `total=0 → head=全部`，压缩比仅 56-60%，约 4k token/90 秒回填，**约 10 分钟再跨阈值**——慢速自激循环）。往"不触发"走是窗口够大、主动摊销、设计上不做（Amp）、或用户手动关掉。
+
+**8.3.1 一条关于 Codex 的澄清。** 那个流传很广的质量分档（0-2 excellent … 9+ degraded）出自 #14347，**但报告者自己说那是"生产经验，不是正式基准"**；更重要的是同 issue 里 **OpenAI 维护者澄清：OpenAI / Azure 托管模型的压缩发生在服务端**，仓库里那份开源 prompt **只用于自定义模型提供方**。这对"照着开源代码推测产品行为"是个提醒。
+
+**8.4 配对切断，然后整个会话变砖。** 最硬的一类故障——**API 直接 400，而且会一直 400**。Claude Code #6836 是伞形汇总、**150+ 报告**；#84272 有逐版本量化："orphaned tool_use" 比例从 2.1.220 的 **0.089%** 跳到 2.1.222 的 **1.406%**（约 **15.8 倍**）；#88421（v2.1.238）报 `Each advisor_tool_result block must have a corresponding server_tool_use block before it`，而且 **"Repeats on every request once it starts"**——会话直接报废；#90771 有个关键观察：**磁盘上的 transcript 本身配对一致（119/119，无 dangling）**，孤儿**只存在于客户端装配的请求里**——压缩/重装配那一步丢了一半。
+对照别家就知道这不该发生：**LangChain** 的 `_find_safe_cutoff_point` 注释 "Advance past any ToolMessages to avoid splitting AI/Tool pairs"；**Roo Code** 双向都管；**Cline** 靠 `isSafeCutBoundary`；**Gemini** 只允许 `role=user` 且不含 `functionResponse` 的位置当切点。
+
+**8.5 小会话被过度压缩。** Claude Code #89738 "Compaction fired at **53%** for no apparent reason."；#23751 **48%** 时就报 context full；#43509 约 **5%** 用量时可见历史被静默截断；Cline #9748 LiteLLM 下 1M 窗口被内部当成 200K、**约 100K 就开始摘要**。部分根因是"压缩走更小的模型"或"token 计数用错字段"。
+
+**8.6 摘要边界没写，UI 显示成功但实际没压。** Claude Code #89040：summary 生成了，但**边界记录 `compact_boundary` 从没被写入**，用户看到"命令成功"而上下文没缩。那个会话一生有 **103 条 `/compact`、只有 28 条 `compact_boundary`**；最近 47 次手动尝试里 **46 次成了孤儿**。
+
+---
+
+## 9. 对你做 harness 有什么可抄的
+
+（这一节的判断是我的归纳，不是任何一家的官方说法。）
+
+**9.1 分层：把不花钱的排在前面。**
+
+```
+第 0 层  结构性排除 —— 根本不让它进上下文（检索、文件外置、工具输出截断）
+第 1 层  确定性清理 —— 去重、旧工具输出降级成一行、大参数截断      零 LLM
+第 2 层  轻量裁剪   —— 擦旧工具输出，带保护窗口和最小回收门槛      零 LLM
+第 3 层  摘要       —— 只在真超阈值时做，一次，结构化              一次 LLM
+```
+
+回到你的 V4：`compactAiMessageForMemory`（约 2400 字符阈值）在第 1 层，`trySummarizeOldestRoundsIfNeeded`（>3 轮合并最早 2 轮）在第 3 层，`cm:ref` 大文件归档是第 0 层的雏形。**你缺的是第 2 层**（OpenCode 那种"擦旧工具输出"的轻量层）。而缺口 G2（`cm:ref` 读回未接线）本质是第 0 层没闭合——**存了但取不回来，等于没存**。
+
+**9.2 阈值：相对比例 + 一个绝对上限，别只用一个。** 教训很一致：OpenCode #45168（绝对阈值换模型就够不到）、Hermes #14690（绝对阈值在小窗口上等于整窗）、Codex 的 `body_after_prefix` scope 都在修这个。Hermes 的解法可以照抄：**比例为主（0.50 / 小窗口 0.75），可选一个绝对 cap，取较小者。** 而且**小窗口必须抬高下限**——"压不掉的部分"（system prompt + 工具 schema，20-30K）在小窗口上占比太大。这条对你也成立：你那个 `@SystemMessage` 加 tools 定义有多大？如果在 32K 窗口上占比超 50%，任何按比例算的阈值都会失效。
+
+**9.3 摘要：必须结构化，且要显式保护用户约束。** 字段固定、不能自由发挥（四家都这样）；**必须有"用户的约束/偏好"这一段**（Claude Code #80938 丢的正是 working-mode 指令，代价是"约 10 小时高级工程师时间"）；**必须要求引用用户纠正的原话**（Hermes 的 `Errors & Fixes`）；**必须写"不要提摘要/上下文压缩"**（OpenCode 模板里的禁令）。最容易被忽略的一条：Claude Code #89797 那个 354/354 实测说明——**用户写在 CLAUDE.md 里的压缩指令，默认不会进压缩器提示词**，要支持就得**显式接进摘要 prompt**。
+
+**9.4 摘要模型不能随便选小的。** Hermes 那条教训要看两遍：**摘要模型的上下文必须 ≥ 主模型窗口**，否则摘要调用吃 context-length 错误、返回 None，**中间那段被无摘要丢弃**——官方称这是压缩质量下降最常见的原因。这直接推翻"摘要随便找个小模型干"。
+
+**9.5 一定要有熔断，而且熔断要能恢复。** Claude Code 是连续失败 3 次停；Hermes 是冷却阶梯 (60,300,900) 秒 + anti-thrash（连续 2 次无效就跳闸，300 秒后放一次探针）；Codex 靠"压缩后应远低于阈值"的假设、**没有硬计数器**；OpenCode **没有**（#27924 至今 open）；Gemini 是六态状态机、inflate 后降级为只截断。
+Hermes 文档点出一个容易忽略的坑：**熔断之后如果没有恢复路径，这个会话会永远不再自动压缩，一路撞到供应商硬上限**（#14694）——所以熔断必须有**探针式恢复**。另一条必须抄：**no-op 检测**——有效性判定**看供应商返回的真实 prompt token 数有没有降**，不看消息条数（条数少但 token 没降太常见）。
+
+**9.6 切点：一定要对齐，且要考虑"压缩器自己"的边界。** 不切开 tool 对（四家都在防）；**最新一条用户消息永远保留**；**要考虑"压缩时结果还没回来"**——Hermes 有个特判：最后一个非 tool 消息若是 assistant，就假定它的 tool_calls 还在 pending，**整条逐字保留**。
+另外 Claude Code 那个 `shouldAutoCompact` 的递归防护值得抄：`querySource` 是 `'session_memory'` 或 `'compact'` 时直接返回 false——**避免 fork 出来的摘要 agent 再触发压缩而死锁**。注意这是"防护针对的场景"，**不是"实际观察到的递归事故"**（专门找过纯正递归案例，没找到）。
+
+**9.7 缓存：要么把摘要放在稳定前缀，要么别打那个断点。** Anthropic 官方做法是给 compaction block 打 `cache_control`、同时在 **system prompt 末尾单独打一个断点**（这样压缩发生时 system prompt 缓存**继续命中**，只有摘要要写新缓存）。**Claude Code** 是把易变内容全部追加到对话尾部（plan mode 和 skill 加载都是**作为对话消息追加**的）。**OpenCode 是反面教材**：它把 `[compaction-user, summary, ...tail, continue-user]` **重排到最前面**——本来是好设计（摘要成了稳定头部），但它**没有为这个位置单独打断点**，加上压缩请求用了 `tools: []`，前缀第一个字节就分叉，结果每次压缩都是全额 cache write、0 命中。**Hermes** 的 `prompt_cache_boundary.py`（由构造器登记易变尾巴起点）是解决"大段静态 + 小段易变拼在一条消息里"的通用方案。
+**判断标准**（Anthropic 文档原话）：**"Common mistake: Breakpoint on content that changes every request"**。压缩后的对话恰好就是"每次都变"的内容——**如果你压缩完还在同一位置打断点，那你每次都在付全额写缓存的钱，一次读都拿不到。**
+
+**9.8 给用户一个"手动挡"。** Amp 敢删掉自动压缩，是因为把控制权交给了人（Handoff 由用户审阅）。**自动压缩是保底，手动压缩是省钱的正道。** 而 `/clear` 和截断回已缓存前缀这两条路成本更优——只是放弃了连续性。给人一个选择，比默默自动压更划算。
+
+**9.9 想清楚"摘要归谁所有"。** 趋势很明确——**上下文管理正在往 provider 侧移动**：Goose 和 Copilot 源码里都有同一句短路；Anthropic 在 SDK 侧 vs 服务端压缩的对照里直接写 "**server-side compaction is generally preferred**"；Codex 维护者澄清托管模型的压缩**发生在服务端**。
+自己压更合适如果：需要精确保留早期细节或跨变量状态；需要对摘要**审计/编辑/换模型生成**（OpenAI 给的是加密串，做不到；Anthropic 只有 `instructions` 且模型不能换）；需要跨供应商迁移；需要分层记忆；需要"摘要 + 保留最近 N 轮原文"的混合（Anthropic 能靠 `pause_after_compaction` 在服务端做，OpenAI 没有等价物）。
+**落到你的场景**：你做的是生成端侧制品——要落盘、可版本化、可发布。所以"摘要归谁所有"对你**本来就不是可选项**：你的会话状态里还有文件快照、变更清单这些**根本不在对话里**的东西，必须自己掌控。**答案是：自己压，但把 provider 那套当参照**——特别是 `pause_after_compaction` 和 `clear_at_least`。
+
+---
+
+## 附录 A 数字对照表
+
+### A.1 触发阈值
+
+| | Claude Code | OpenCode (v1) | Codex (默认) | Hermes |
+|---|---|---|---|---|
+| 类型 | 绝对（由窗口推导） | 绝对 | 双档（90% / 95%） | **相对比例** |
+| 预留输出 | `min(输出上限, 20,000)` | `min(20,000, 输出上限)` 或 `输出上限(≤32,000)` | 5% | 可选（默认不预留） |
+| 缓冲 | 13,000 | 20,000 | 16,384（仅 fallback） | 无（用比例代替） |
+| 200K 触发点 | 167,000（源码）/ 文档存疑 | 约 168,000 | 180,000（软） | **150,000** |
+| 1M 触发点 | 967,000（文档吻合） | 约 968,000 | 900,000（软） | **500,000** |
+
+### A.2 保留与摘要
+
+| | Claude Code | OpenCode | Codex | Hermes |
+|---|---|---|---|---|
+| 逐字 tail | **无**（完整压缩路径） | 有，`min(15,000, max(2,000, 可用×0.25))` | 无 tail，保留 user 消息 ≤20,000 | 有，`max(10,000, min(25,000, 窗口×0.025))` |
+| 头部保护 | 从磁盘重注 CLAUDE.md / rules | 无（system 每次重建） | 重新渲染初始上下文 | system + 前 3 条，**第一次压缩后衰减为 0** |
+| 摘要段数 | 9 段 + `<analysis>` 草稿 | 5 段 | **4 段** | 12 段 |
+| 摘要上限 | `min(20,000, 模型上限)` | 4,096（v2） | 无硬上限 | `max(2,000, min(内容×20%, min(窗口×5%, 10,000)))` |
+| 摘要存放 | 一条 `role=user` 消息 | 一条 `summary=true` 的 assistant 消息 | 一条 `role=user` 消息 | 一条独立消息（两次压缩走增量更新） |
+| 熔断 | 连续失败 3 次 | **无** | 无硬计数器 | 冷却阶梯 + anti-thrash + 探针 |
+| 压缩后会话 id | 不变 | 不变 | 不变 | **不变**（`in_place: True`） |
+
+### A.3 常量速查
+
+```
+Claude Code   13,000（缓冲，用途未说明）/ 20,000（摘要输出预留，p99.99=17,387）
+              20,000（告警/错误缓冲）/ 3,000（手动压缩缓冲）
+              熔断 = 连续失败 3 次；自动压缩窗口范围 100,000 ~ 1,000,000
+OpenCode      COMPACTION_BUFFER=20,000 / OUTPUT_TOKEN_MAX=32,000
+              PRUNE_MINIMUM=20,000 / PRUNE_PROTECT=40,000 / TOOL_OUTPUT_MAX_CHARS=2,000
+              tail 保留 2,000 ~ 15,000（= 可用 × 0.25）
+              v2: KEEP_TOKENS=8,000 / SUMMARY_OUTPUT_TOKENS=4,096
+Codex         输出预留 95% / 软阈值 = min(配置, 窗口 × 9/10)
+              user 消息保留 ≤20,000；远端 v2 共享预算 64,000 / AgentMessage 单条 ≤10,000
+              reminder_threshold_tokens=6,144 / MAX_THREAD_HINT_BYTES=4,000
+Hermes        threshold=0.50（小窗口 raise-only 抬到 0.75）/ 下限 64,000 / trigger_cap 0.85
+              _PRUNE_MIN_CHARS=200 / lean tail = 2.5% 窗口夹在 10,000~25,000
+              _SUMMARY_RATIO=0.20 / 上限 10,000
+              MEMORY.md=2,200 字符 / USER.md=1,375 字符
+              项目文件上限 = max(20,000, min(窗口 × 4 × 0.06, 500,000))
+Goose         阈值 0.8 / 删工具响应 [0,10,20,50,100]% / 熔断 compaction_attempts>=2
+Letta         触发 0.9 × 窗口 / 换出比例 0.30 / memory_warning_threshold=0.75
+              send_memory_warning_message 默认 False
+Anthropic API compact_20260112: trigger 默认 150,000（最低 50,000）
+              clear_tool_uses_20250919: trigger 默认 100,000 / keep 3 / clear_at_least
+              clear_thinking_20251015: keep 默认按模型分档
+```
+
+---
+
+## 附录 B 可信度分级
+
+**B.1 Claude Code 我做了独立验证**（见 3.7）——那份报告第一轮只有单一社区镜像来源，我从 npm 真实发行包反混淆后**逐条对上**。**结论：镜像保真度很高，现在有两个独立来源。**
+
+**B.2 我不敢担保的：**
+
+- **Claude Code 的 200K 触发点（167,000）**：源码算式如此，但官方文档写 "at the 200K boundary"，两者有张力。标为**源码值、未经文档交叉验证**。
+- **13,000 缓冲的用途**：官方从未说明。
+- **OpenCode 实际跑哪套**：v1 是主循环路径，v2 已接进 core runner 但整体替换未完成。
+- **Codex 的 200K / 1M 触发数字**：是**算术外推**，不是仓库实测值。
+- **Codex 引入 TokenBudget 的设计动机**：**不存在**（见 5.3）。
+- **"内存 / 工作集 / 冷存储"类比**：不是官方表述。
+- **OpenCode 为什么 prune 默认关、tail 只留 2.5%**：没有动机说明。
+- **Aider / Cline / Roo 的阈值动机**：同样没有一手出处。
+
+**B.3 明确"没找到证据"的：** 纯正的"压缩器递归调用自身"（只有 summary-of-summary 膨胀、递归 collapse 死循环、摘要器自身陷循环三种，**别混为一谈**）；Anthropic 官方对任一 Claude Code 压缩失败的回应（检索到的关闭全是 bot 以 "inactive for too long" 自动关的）；跨项目统一口径的"压缩频率"数据集。
+
+**B.4 容易踩的引用陷阱：** 「Claude Code 601 次压缩跨 8 个项目、间隔 7.0 分钟」（**查不到**，搜索 0 命中）；「Hermes micro-compaction 实测窗口 400K、阈值 320K」（一手只给了"约 80% 阈值"和"占用走平约 22%"，320/400 疑似百分比反推）；「Claude Code 自动压缩在 ~80% 触发」（社区口径，83.5% / 92% / 95% 互相矛盾，**无官方数**）；「Codex 摘要是 8 段式」（实际只有 **4 个字段**）；「Claude Code 压缩后保留最近几行原话」（**完整压缩路径没有逐字 tail**）；39% / 29% / 84% 属于 **context editing** 不是 compaction；Hermes 的 LCM **没进主干**；**Goose 仓库**已从 `block/goose` 迁到 `aaif-goose/goose`；**Letta 源码**只在 `archive` 分支、官方标 "V1 SDK (legacy)"；**Copilot 的 cloud / coding agent** 没有任何 compaction 机制描述。
+
+---
+
+## 附录 C 主要出处
+
+完整路径清单见完整版附录 C。这里是**查询入口**：
+
+```
+源码    Claude Code  @anthropic-ai/claude-code@2.1.89 cli.js（反混淆，本版独立验证）
+                    + 社区镜像 chauncygu/collection-claude-code-source-code
+        OpenCode     anomalyco/opencode @95daf90
+                    packages/{opencode,core}/src/session/compaction.ts
+                    specs/v2/session.md（一手设计动机）/ AGENTS.md（v1·v2 定位）
+        Codex        openai/codex @bc5957e、@654b0a77
+                    codex-rs/core/src/{compact,compact_token_budget,compact_remote_v2}.rs
+                    codex-rs/core/src/session/{context_window,token_budget,mod}.rs
+                    codex-rs/models-manager/models.json
+        Hermes       NousResearch/hermes-agent
+                    agent/{context_engine,context_compressor,prompt_caching,
+                           prompt_cache_boundary,memory_manager,model_metadata}.py
+                    hermes_cli/config_defaults.py
+                    website/docs/developer-guide/context-compression-and-caching.md
+                    PR #4033（closed / draft / unmerged）
+        其他          Aider-AI/aider、cline/cline、RooCodeInc/Roo-Code、google-gemini/gemini-cli
+                    continuedev/continue、aaif-goose/goose、letta-ai/letta（archive 分支）
+        prompt 源流   Roo-Code:cf5d42e（#10873）/ Roo-Code:7c1185e（#3582）
+                    Piebald-AI/claude-code-system-prompts:c64a9d3
+                    dontriskit/awesome-ai-system-prompts:66da747（7 段前身）
+
+文档    Anthropic 侧   Effective context engineering / Compaction / Context editing /
+                      Managing context（39%·29%·84%）/ Prompt caching / Pricing
+        Claude Code    Context window / Prompt caching / Costs / Sub-agents
+        Hermes         Context compression and caching / Context engine plugin / Memory
+        Letta          Compaction（V1 SDK legacy）/ Memory blocks
+        Goose          Smart context management
+        OpenAI         Codex config reference / Compaction / Prompt caching
+
+论文    Lost in the Middle  arXiv:2307.03172（TACL 2023）   Context Rot  Chroma 2025-07
+        The Complexity Trap arXiv:2508.21433               Context as a Tool  arXiv:2512.22087
+        MemGPT              arXiv:2310.08560
+
+issue   Claude Code  #6836 #75759 #85483 #88679 #89281 #89797 #90509 #91351 #67500 #80938
+                     #89040 #92849 #84272 #65098 #88421 #90771 #65746 #18641 #63197
+                     #23751 #43509 #43975 #46663 #24686 #13955 #26532 #28469 #29890
+                     #19888 #49593 #70459
+        OpenCode     #43249 #48065 #44080 #41571 #27924 #45168 #40235 #42282
+        Codex        #43912 #36057 #14347 #26656 #37305 #19111
+        Gemini CLI   #19590 #25595 #19456
+        Hermes       #14690 #14695 #40803 #11996 #11978 #100611 #70328 #14694
+```
+
+---
+
+*author By glyahh · 精简版 · 2026-09-12 · 完整版见 `上下文压缩机制调研.md`*

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 
-spec = importlib.util.spec_from_file_location('item1_complete', Path(__file__).parents[1] / 'verify-item1-complete.py')
+spec = importlib.util.spec_from_file_location('item1_complete', Path(__file__).parents[1] / 'checks' / 'verify-item1-complete.py')
 gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
 
@@ -63,7 +63,7 @@ def test_product_manifest_cannot_drop_most_cases_to_claim_complete(baseline):
 
 
 def product_cases():
-    return json.loads((gate.ROOT / 'docs/PLANS/project-import-backend-test-cases.json').read_text(encoding='utf-8'))
+    return json.loads((gate.ROOT / 'docs/tests/project-import-backend-test-cases.json').read_text(encoding='utf-8'))
 
 
 def test_full_product_denominator_is_frozen_without_reusing_old_evidence():
@@ -129,7 +129,7 @@ def test_boolean_exit_code_is_not_actual_success(baseline):
 
 
 def test_initial_ledger_contains_every_pending_row_and_no_claimed_environment():
-    spec = importlib.util.spec_from_file_location('item1_init', Path(__file__).parents[1] / 'init-item1-ledger.py')
+    spec = importlib.util.spec_from_file_location('item1_init', Path(__file__).parents[1] / 'checks' / 'init-item1-ledger.py')
     initializer = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(initializer)
     cases = product_cases()
@@ -145,7 +145,7 @@ def test_initial_ledger_contains_every_pending_row_and_no_claimed_environment():
 
 
 def test_initializer_refuses_overwriting_existing_evidence(tmp_path, monkeypatch):
-    spec = importlib.util.spec_from_file_location('item1_init_write', Path(__file__).parents[1] / 'init-item1-ledger.py')
+    spec = importlib.util.spec_from_file_location('item1_init_write', Path(__file__).parents[1] / 'checks' / 'init-item1-ledger.py')
     initializer = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(initializer)
     output = tmp_path / 'ledger.json'

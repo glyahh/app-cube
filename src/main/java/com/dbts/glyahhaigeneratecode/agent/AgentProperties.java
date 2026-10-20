@@ -10,7 +10,7 @@ import java.time.Duration;
  * Python Agent 运行时的接入配置。
  *
  * <p>Python 侧以常驻子进程方式运行，通过 stdin/stdout 的 NDJSON 协议通信。
- * 协议定义见 docs/AGENT_CONTRACT.md —— 两边改任何一处都要同时改那里。
+ * 协议定义见 docs/contracts/agent.md —— 两边改任何一处都要同时改那里。
  */
 @Data
 @Configuration

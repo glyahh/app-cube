@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import threading
+import time
 from contextlib import redirect_stderr, redirect_stdout
 
 from core.model_profiles import resolve_profile_window, select_profile, strict_json
@@ -102,8 +103,9 @@ def bounded_review_client(proxy_url):
     return httpx.Client(transport=BoundedTransport(), trust_env=False, timeout=CALL_TIMEOUT_SECONDS)
 
 
-def review(raw, settings=None, *, model_factory=None):
+def review(raw, settings=None, *, model_factory=None, metrics=None):
     """独立一次 invocation，不绑定工具，不使用执行器、工作区或持久记忆。"""
+    started = time.monotonic()
     from core.model import make_review_model, model_connection_options
 
     # 1. 完整检查输入与平台指定配置；不得采用请求中自称的风险结论。
@@ -121,8 +123,13 @@ def review(raw, settings=None, *, model_factory=None):
     with bounded_review_client(model_connection_options(model_settings)) as client:
         model = factory(model_settings, timeout=CALL_TIMEOUT_SECONDS,
                         max_output_tokens=MAX_OUTPUT_TOKENS, http_client=client)
+        prepared = time.monotonic()
+        if metrics is not None:
+            metrics['prepareMs'] = round((prepared - started) * 1000, 3)
         response = model.invoke([{'role': 'system', 'content': SYSTEM_PROMPT},
                                  {'role': 'user', 'content': payload}])
+        if metrics is not None:
+            metrics['invokeMs'] = round((time.monotonic() - prepared) * 1000, 3)
     if getattr(response, 'tool_calls', None) or getattr(response, 'invalid_tool_calls', None) or getattr(response, 'additional_kwargs', {}).get('tool_calls'):
         raise ValueError('REVIEW_TOOL_OUTPUT_REJECTED')
     metadata = getattr(response, 'response_metadata', {})

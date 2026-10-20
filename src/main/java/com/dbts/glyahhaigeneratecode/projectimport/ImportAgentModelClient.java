@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 public class ImportAgentModelClient {
     private final AgentProperties properties;
     private final ObjectMapper json;
+    private final ImportAgentReviewPool reviewPool;
     private final Semaphore slots = new Semaphore(2);
 
     public JsonNode catalog() {
@@ -34,18 +35,14 @@ public class ImportAgentModelClient {
                 || !objectHash.matches("[0-9a-f]{64}") || payload == null || !payload.isObject()) {
             throw new MyException(ErrorCode.PARAMS_ERROR, "独立审查对象无效。");
         }
-        try {
-            var input = json.createObjectNode().put("kind", kind).put("objectHash", objectHash);
-            input.set("payload", payload);
-            var result = call("core.permission_review", json.writeValueAsBytes(input), Duration.ofSeconds(90), 16 * 1024);
-            if (!result.isObject() || result.size() != 3 || !objectHash.equals(result.path("objectHash").asText())
-                    || !java.util.Set.of("ORDINARY", "HIGH").contains(result.path("risk").asText())
-                    || !result.path("reason").isTextual() || result.path("reason").asText().isBlank()
-                    || result.path("reason").asText().length() > 1000) throw failure();
-            return result;
-        } catch (IOException error) {
-            throw failure();
-        }
+        var input = json.createObjectNode().put("kind", kind).put("objectHash", objectHash);
+        input.set("payload", payload);
+        var result = reviewPool.review(input);
+        if (!result.isObject() || result.size() != 3 || !objectHash.equals(result.path("objectHash").asText())
+                || !java.util.Set.of("ORDINARY", "HIGH").contains(result.path("risk").asText())
+                || !result.path("reason").isTextual() || result.path("reason").asText().isBlank()
+                || result.path("reason").asText().length() > 1000) throw failure();
+        return result;
     }
 
     private JsonNode call(String module, byte[] input, Duration timeout, int outputLimit) {

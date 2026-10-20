@@ -50,13 +50,16 @@ class ImportAgentPermissionSettingsTest {
     @Test
     @EnabledIfEnvironmentVariable(named = "AGENT_TEST_REAL_PERMISSIONS", matches = "1")
     void realConfiguredCatalogAndIndependentToolFreeReview() {
-        var client = new ImportAgentModelClient(new AgentProperties(), json);
+        var pool = new ImportAgentReviewPool(new AgentProperties(), json);
+        var client = new ImportAgentModelClient(new AgentProperties(), json, pool);
         var catalog = ImportAgentPermissionServiceImpl.projectModels(client.catalog());
         assertTrue(catalog.stream().anyMatch(ImportAgentPermissionService.ModelVO::configured));
         String hash = "a".repeat(64);
         var action = json.createObjectNode().put("tool", "edit").put("path", "src/greeting.txt")
                 .put("before", "hello").put("after", "hello world");
-        var review = client.review("ACTION", hash, action);
+        com.fasterxml.jackson.databind.JsonNode review;
+        try { review = client.review("ACTION", hash, action); }
+        finally { pool.close(); }
         assertEquals(hash, review.path("objectHash").asText());
         assertTrue(List.of("ORDINARY", "HIGH").contains(review.path("risk").asText()));
         assertFalse(review.path("reason").asText().isBlank());

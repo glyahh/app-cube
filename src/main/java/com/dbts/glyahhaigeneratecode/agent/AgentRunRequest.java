@@ -12,7 +12,7 @@ import java.util.Map;
 /**
  * 发给 Python 的一次 run 请求。
  *
- * <p>字段名与 docs/AGENT_CONTRACT.md 里的 schema 一一对应，构造出来的 JSON 直接
+ * <p>字段名与 docs/contracts/agent.md 里的 schema 一一对应，构造出来的 JSON 直接
  * 写成一行喂给子进程的 stdin。
  *
  * <p>**所有 ID 都是字符串。** 雪花 ID 约 19 位，超过 {@code 2^53}，

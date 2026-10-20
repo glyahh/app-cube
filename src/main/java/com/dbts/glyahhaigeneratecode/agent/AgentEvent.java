@@ -9,7 +9,7 @@ import java.io.IOException;
  * Python 侧发来的一帧事件。
  *
  * <p>帧格式是 NDJSON，每行一个 JSON 对象，统一带信封 {@code {v, runId, seq, ts, event}}。
- * 契约见 docs/AGENT_CONTRACT.md。
+ * 契约见 docs/contracts/agent.md。
  *
  * @param runId 所属 run
  * @param seq   per-run 单调递增序号，用于去重与乱序检测

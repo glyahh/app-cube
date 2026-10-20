@@ -110,7 +110,8 @@ def run_agent_with_events(
         "recursion_limit": max(200, limits.max_tool_calls * 4),
     }
 
-    with _keepalive(emitter) as beat:
+    from core.model_timing import bind_run
+    with bind_run(emitter._run_id), _keepalive(emitter) as beat:
         return _run_locked(agent, messages, config, emitter, tracker, state, overhead,
                            import_edit, beat)
 
@@ -369,10 +370,13 @@ def _on_model_end(ev: dict, state: _RunState, overhead=None, emitter: Emitter | 
     # 工具调用前的说明只用于内部执行；最后一次无工具调用的回答才作为终稿。
     state.text = "" if tool_calls else state.candidate
     usage = getattr(output, "usage_metadata", None) if output is not None else None
+    input_tokens = 0
+    output_tokens = 0
     if isinstance(usage, dict):
         input_tokens = int(usage.get("input_tokens") or 0)
         state.input_tokens += input_tokens
-        state.output_tokens += int(usage.get("output_tokens") or 0)
+        output_tokens = int(usage.get("output_tokens") or 0)
+        state.output_tokens += output_tokens
 
         # 用真实用量校正固定开销估计。不校正的话压缩触发点永远到不了 ——
         # 表现就是「压缩配了但没生效」。
@@ -382,9 +386,9 @@ def _on_model_end(ev: dict, state: _RunState, overhead=None, emitter: Emitter | 
     # 一段模型输出结束 = 一个 assistant 段落结束，下一段用新的 messageId
     state.segment += 1
     if state.model_started_at:
-        logger.info("model call #%d ms=%d in=%d out=%d", state.model_calls,
+        logger.info("model call #%d ms=%d inputTokens=%d outputTokens=%d cumulativeInputTokens=%d cumulativeOutputTokens=%d", state.model_calls,
                     (time.monotonic() - state.model_started_at) * 1000,
-                    state.input_tokens, state.output_tokens)
+                    input_tokens, output_tokens, state.input_tokens, state.output_tokens)
         state.model_started_at = 0.0
 
 

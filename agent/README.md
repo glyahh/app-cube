@@ -1,9 +1,11 @@
 # agent — Harness 架构的 Agent 运行时
 
+[项目文档](../docs/README.md) · [当前状态](../docs/status/current.md)
+
 Python 侧的 Coding Agent 执行体。由 Spring Boot 以**常驻子进程**方式拉起，
 通过 stdin/stdout 的 NDJSON 协议通信。
 
-**接口契约见 [`docs/AGENT_CONTRACT.md`](../docs/AGENT_CONTRACT.md)** —— 那是唯一的权威定义。
+**接口契约见 [`docs/contracts/agent.md`](../docs/contracts/agent.md)** —— 那是唯一的权威定义。
 
 ## 跑起来
 
@@ -80,7 +82,7 @@ backends/              local_shell / docker_sandbox / 只读及敏感路径防�
 retrieval/             Glob/Grep/SearchTrace/Projection
 ```
 
-这些模块已有源码，不代表本次文档同步完成了运行验收。当前架构、待开发边界及第一阶段验收见 [当前项目状态与开发主线](../docs/CURRENT_PROJECT_STATUS.md)。
+这些模块已有源码，不代表本次文档同步完成了运行验收。当前架构、待开发边界及第一阶段验收见 [当前项目状态与开发主线](../docs/status/current.md)。
 
 生成沙箱和 Java 管理的应用运行容器是两条执行链路。Docker 直接读写挂载的工作区，不等于保护原项目的独立修复副本；桥接网络不阻断出网。导入与修复流程仍需补齐副本、运行基线和验证证据绑定，不应直接在原项目执行未知脚本。
 

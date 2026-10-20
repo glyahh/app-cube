@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import pytest
 
-spec = importlib.util.spec_from_file_location('core_gate', Path(__file__).parents[1] / 'verify-item1-core-complete.py')
+spec = importlib.util.spec_from_file_location('core_gate', Path(__file__).parents[1] / 'checks' / 'verify-item1-core-complete.py')
 gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
 
@@ -69,5 +69,5 @@ def test_negative_evidence_cannot_complete(baseline, fault):
 
 
 def test_checked_in_profile_matches_frozen_requirements():
-    path = gate.strict.ROOT / 'docs/PLANS/project-import-core-checkpoints.json'
+    path = gate.strict.ROOT / 'docs/tests/project-import-core-checkpoints.json'
     assert json.loads(path.read_text(encoding='utf-8')) == gate.profile()

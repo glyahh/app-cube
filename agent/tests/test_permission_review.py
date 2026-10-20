@@ -251,6 +251,19 @@ def test_real_sdk_http_invocation_has_no_tools(settings):
         assert process.returncode == 0, process.stderr
         assert json.loads(process.stdout) == output() and process.stderr == b''
         assert len(captured) == 2 and 'tools' not in captured[1]
+        from uuid import uuid4
+        envelopes = [{'requestId': str(uuid4()), 'input': json.loads(input_bytes())} for _ in range(2)]
+        process = subprocess.run([sys.executable, '-u', '-m', 'core.permission_review_worker'],
+            input=b''.join(json.dumps(row).encode() + b'\n' for row in envelopes),
+            cwd=Path(__file__).parents[1], env=env, capture_output=True, timeout=90)
+        assert process.returncode == 0 and process.stderr == b''
+        frames = [json.loads(line) for line in process.stdout.splitlines()]
+        assert frames[0] == {'type': 'ready', 'protocol': 1}
+        assert [row['requestId'] for row in frames[1:]] == [row['requestId'] for row in envelopes]
+        assert all(row['result'] == output() for row in frames[1:])
+        assert len(captured) == 4
+        assert all(len(row['messages']) == 2 and 'tools' not in row for row in captured)
+        assert captured[2]['messages'] == captured[3]['messages'] == captured[0]['messages']
     finally:
         server.shutdown()
         server.server_close()

@@ -37,7 +37,8 @@ class ImportAgentContainerPlatformTest {
             var volumes=new ImportDiskVolume(ImportExecutionSandbox.docker(new DockerCli(new RuntimeProperties())),Path.of("scripts/import_disk_volume.py"));
             var properties=new ImportProperties();
             var permissions=new ImportAgentPermissionServiceImpl(gate,coordinator,new ImportAgentSettingsRepository(jdbc),
-                    new ImportAgentModelClient(new com.dbts.glyahhaigeneratecode.agent.AgentProperties(),json),
+                    new ImportAgentModelClient(new com.dbts.glyahhaigeneratecode.agent.AgentProperties(),json,
+                            org.mockito.Mockito.mock(ImportAgentReviewPool.class)),
                     org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.agentauth.AgentModelsService.class));
             var policy=permissions.settings(owner,app,"container-fixture-"+fixture.path("runId").asText());
             var preparation=new ImportAgentEditPreparation(coordinator,gate,new ImportStartupConfigurationRepository(source,json),ledger,properties,volumes,permissions);
