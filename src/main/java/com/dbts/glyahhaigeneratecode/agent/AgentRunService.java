@@ -31,6 +31,9 @@ public class AgentRunService {
     private final AgentRunPersistence persistence;
     private final com.dbts.glyahhaigeneratecode.projectimport.ImportAgentEditPreparation editPreparation;
     private final com.dbts.glyahhaigeneratecode.projectimport.ImportAgentEditExecution importExecution;
+    private final com.dbts.glyahhaigeneratecode.agentauth.AgentPermissionEventBridge permissionBridge;
+    private final com.dbts.glyahhaigeneratecode.agentauth.AgentEditSessionService sessionService;
+    private final com.dbts.glyahhaigeneratecode.agentauth.AgentCandidateReviewService reviewService;
 
     /**
      * 跑一次 run，返回事件流。
@@ -62,13 +65,28 @@ public class AgentRunService {
      */
     public Flux<AgentEvent> streamForDisplay(Long appId, Supplier<AgentRunRequest> requestSupplier) {
         return coordinator.serialize(appId, () -> Flux.defer(() -> {
-                    AgentRunRequest request = requestSupplier.get();
-                    persistence.recordRun(request);
+                    AgentRunRequest candidate = null;
+                    try {
+                        candidate = requestSupplier.get();
+                        persistence.recordRun(candidate);
+                    } catch (RuntimeException error) {
+                        // 会话在 supplier 内部就可能已开启；这里失败时没有任何流可挂 doFinally，
+                        // 必须显式关闭，否则唯一索引会永久挡住该应用。
+                        closeSession(candidate, reactor.core.publisher.SignalType.ON_ERROR, null);
+                        throw error;
+                    }
+                    final AgentRunRequest request = candidate;
+                    // 记录本轮终态：run.completed 的 cancelled 表示「等待审批超时暂停」，
+                    // 会话关闭时要与正常完成区分开。
+                    java.util.concurrent.atomic.AtomicReference<String> finalStatus =
+                            new java.util.concurrent.atomic.AtomicReference<>();
                     Flux<AgentEvent> execution = Flux.defer(() -> {
                         var prepared = editPreparation.prepare(request);
                         if(prepared.row()!=null)return importExecution.execute(prepared);
                         AtomicBoolean preparationSettled = new AtomicBoolean(false);
                         return runOnce(prepared.request().toFrameJson(objectMapper))
+                                    // 许可事件必须在流上同步处理：执行侧正在等票据状态。
+                                    .transform(events -> permissionBridge.attach(events, prepared.request()))
                                     .concatWith(Flux.defer(() -> {
                                         if(preparationSettled.compareAndSet(false,true))editPreparation.finishNotReady(prepared, false);
                                         return Flux.empty();
@@ -81,10 +99,48 @@ public class AgentRunService {
                                         if(preparationSettled.compareAndSet(false,true))editPreparation.finishNotReady(prepared, true);
                                     });
                     });
-                    Flux<AgentEvent> audited = persistence.tap(execution, request);
+                    Flux<AgentEvent> audited = persistence.tap(execution, request)
+                            .doOnNext(event -> {
+                                if (AgentEvent.RUN_COMPLETED.equals(event.event())) {
+                                    finalStatus.set(event.status());
+                                }
+                            })
+                            // 会话必须在整轮结束时关闭：否则同一应用的唯一索引会挡住下一次请求。
+                            // doFinally 覆盖完成、错误、取消三种信号，漏一种就漏一次释放。
+                            .doFinally(signal -> closeSession(request, signal, finalStatus.get()));
                     return UserFacingOutputHandler.apply(audited);
                 }))
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /** 关闭本轮编辑会话；未携带会话的请求（含导入应用）直接跳过。 */
+    private void closeSession(AgentRunRequest request, reactor.core.publisher.SignalType signal,
+                              String finalStatus) {
+        if (request == null) return;
+        String sessionId = request.getPermissionSessionId();
+        if (sessionId == null || sessionId.isBlank()) return;
+        String state = switch (signal) {
+            case CANCEL -> "CANCELLED";
+            case ON_ERROR -> "FAILED";
+            // 等待审批超时是主动暂停，不能记成成功。
+            default -> "cancelled".equals(finalStatus) ? "CANCELLED" : "SUCCEEDED";
+        };
+        try {
+            var id = java.util.UUID.fromString(sessionId);
+            long ownerId = Long.parseLong(request.getUserId());
+            // 1. 自动模式在会话结束前冻结候选：它们没有逐次批准，
+            //    整批审阅是用户看清本轮改了什么的主要入口。
+            //    MANUAL 已逐次批准过，再要求整批确认是重复劳动，故不生成。
+            if ("SUCCEEDED".equals(state) && !"MANUAL".equals(request.getPermissionApprovalMode())) {
+                reviewService.prepareIfChanged(ownerId, id);
+            }
+            // 2. 再关闭会话：未决票据随之取消，唯一索引释放。
+            sessionService.close(id, ownerId, state);
+            log.info("关闭编辑会话 session={} run={} state={}", sessionId, request.getRunId(), state);
+        } catch (Exception error) {
+            // 关闭失败不能让整轮结果变成失败，但必须留痕：会话残留会挡住下次请求。
+            log.warn("关闭编辑会话失败 session={}", sessionId, error);
+        }
     }
 
     /**

@@ -1,5 +1,7 @@
 # 当前项目状态与开发主线
 
+2026-10-20 终端失败恢复修复已完成本轮定向验证：默认沙箱改为 `glyahh-sandbox-runtime:24.04`，启动前与容器获取时核对运行时；版本预检从容器根目录执行，避免加载工程启动配置。提示词按实际执行后端选择。普通命令的已确认非零退出码返回模型，修正后须申请新许可；执行状态不明时先停止容器，停止未确认则保留资源并阻止复用。`tool.finished` 新增可选 `exitCode`，Java 与前端保留失败状态。Python 213 项通过（另 3 项真实 Docker 检查单独启用后通过），前端 47 项及类型检查通过，Java 17 项通过。真实浏览器验证了自动放行、人工批准、语法错误 1 → 模型修正 → 新票据执行 0，以及重启后的错误 2 → 成功 0、数值退出码透传；最终源码标准重启后 8124 与真实模型冒烟通过。专用测试账户/应用已逻辑删除，工作目录、容器和未关闭会话清理读回通过；真实数据库只读核对为 V50，未新增迁移。详见[本轮验收记录](PLANS/terminal-command-recovery-20261020.md)。该记录仅覆盖此故障链，不表示新增权限能力已整体验收，也不改变第一项 COMPLETE 的权威范围。
+
 2026-10-17 文档回填（本次只改文档，未改源码、未启动服务、未执行迁移）：第一项状态仍为 **COMPLETE**，权威范围不变。第一项完成后新增需求「导入 Agent 会话授权模式」（MANUAL / GUARDED_AUTO / AUTO，含模型与思考力度选择、工具级单次许可、候选整批审阅）已进入开发，不是恢复已舍弃的历史范围。截至本次核对：前端审核版（`ai-generate-code-frontend/src/preview/import-permissions/`）已存在；后端主体已在工作区实现但**未提交**，包括 V40 迁移、会话设置 / 工具许可 / 候选审阅服务、Python 侧动作校验与独立风险审查、正式前端 `ImportedAgentControls` 接线。该能力**尚未验收**：未在真实 PostgreSQL 应用 V40，未运行 Docker、真实模型审查、SSE/WS、浏览器或重启恢复；当前 `Docker CLI` 也不在 PATH。2026-10-17 的局部检查只有：`mvnw.cmd -q -DskipTests compile` 退出 0；`pytest agent/tests/test_permission_review.py agent/tests/test_model_profiles.py` 95 项通过；`ImportAgentPermissionSettingsTest` 退出 0。计划与前端评审文档原写“后端尚未实施”，已按实际回填；`docs/AGENT_CONTRACT.md` 新增该能力的内部事件契约。风险：V40 会在下次后端启动时自动执行，并把所有未关闭且 `publish_phase='NONE'` 的导入编辑置为 `RECOVERY_REQUIRED`，启动前须确认没有在途编辑。
 
 ## 第一项最终收口（2026-10-09，仍为当前权威）

@@ -27,7 +27,7 @@ from pathlib import Path
 from deepagents.backends.local_shell import LocalShellBackend
 from deepagents.backends.protocol import ExecuteResponse
 
-from backends.permissions import CommandRejected, ensure_safe_command
+from backends.permissions import CommandRejected, ensure_safe_command, _tokenize
 from core.masking import mask
 from backends.secret_files import SecretSafeFilesMixin
 
@@ -45,9 +45,69 @@ class GuardedShellBackend(SecretSafeFilesMixin, LocalShellBackend):
     FilesystemMiddleware，代价大得多，还容易漏掉某条路径。
     """
 
-    def __init__(self, workspace: Path | str, *, timeout: int = 120, **kwargs):
+    def __init__(self, workspace: Path | str, *, timeout: int = 120, permissions=None, **kwargs):
         self.workspace = Path(workspace).resolve()
+        self._permissions = permissions
         super().__init__(str(self.workspace), virtual_mode=True, timeout=timeout, **kwargs)
+
+    # ── 工具许可门禁 ──────────────────────────────────────────
+    # DeepAgents 实际调用异步接口，同步版本不会被走到；两套都覆写。
+    # 这里必须用显式 super(类名, self)：mixin 里的裸 super() 在混合继承下无法推断类。
+
+    def _permission_path(self, file_path: str) -> str:
+        text = str(file_path).strip().replace("\\", "/")
+        while text.startswith("/"):
+            text = text[1:]
+        target = Path(text)
+        if target.is_absolute():
+            target = target.resolve().relative_to(self.workspace)
+        return target.as_posix()
+
+    def _perform(self, tool, parameters, operation):
+        if self._permissions is None:
+            return operation()
+        return self._permissions.perform(lambda: {"tool": tool, **parameters}, operation)
+
+    def write(self, file_path, content):
+        relative = self._permission_path(file_path)
+        return self._perform("write", {"path": relative, "content": content},
+                             lambda: super(GuardedShellBackend, self).write(file_path, content))
+
+    def edit(self, file_path, old_string, new_string, replace_all=False):
+        relative = self._permission_path(file_path)
+        return self._perform(
+            "edit", {"path": relative, "oldString": old_string, "newString": new_string,
+                     "replaceAll": replace_all},
+            lambda: super(GuardedShellBackend, self).edit(file_path, old_string, new_string, replace_all))
+
+    def delete(self, file_path):
+        relative = self._permission_path(file_path)
+        return self._perform("delete", {"path": relative},
+                             lambda: super(GuardedShellBackend, self).delete(file_path))
+
+    def upload_files(self, files):
+        parameters = {"files": [{"path": self._permission_path(path)} for path, _ in files]}
+        return self._perform("upload_files", parameters,
+                             lambda: super(GuardedShellBackend, self).upload_files(files))
+
+    async def _permission_blocking(self, fn, *args, **kwargs):
+        import asyncio
+        return await asyncio.to_thread(fn, *args, **kwargs)
+
+    async def awrite(self, file_path, content):
+        return await self._permission_blocking(self.write, file_path, content)
+
+    async def aedit(self, file_path, old_string, new_string, replace_all=False):
+        return await self._permission_blocking(self.edit, file_path, old_string, new_string, replace_all)
+
+    async def adelete(self, file_path):
+        return await self._permission_blocking(self.delete, file_path)
+
+    async def aupload_files(self, files):
+        return await self._permission_blocking(self.upload_files, files)
+
+    async def aexecute(self, command, *, timeout=None):
+        return await self._permission_blocking(self.execute, command, timeout=timeout)
 
     # ── 检索留痕 ──────────────────────────────────────────────
     def glob(self, pattern: str, path: str | None = None):
@@ -80,7 +140,12 @@ class GuardedShellBackend(SecretSafeFilesMixin, LocalShellBackend):
         # 模型能看到原因并换一种做法，而不是以为工具坏了。
         ensure_safe_command(command, self.workspace)
         self._refresh_secrets()
+        # 门禁放在白名单之后：先硬边界，再问人。否则会出现「点了批准仍被拒」。
+        return self._perform(
+            'execute', {'argv': _tokenize(command), 'cwd': '.'},
+            lambda: self._execute_checked(command, timeout))
 
+    def _execute_checked(self, command: str, timeout: int | None) -> ExecuteResponse:
         effective_timeout = timeout or getattr(self, "_default_timeout", 120)
         if effective_timeout <= 0:
             raise ValueError(f"timeout 必须为正数，收到 {effective_timeout}")

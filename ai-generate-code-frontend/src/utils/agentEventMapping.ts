@@ -92,9 +92,11 @@ export type AgentUiAction =
       toolName: string
       label: string
       status: string
+      exitCode?: number
       outputPreview: string
     }
-  | { kind: 'error'; text: string }
+  | { kind: 'error'; text: string; retryable?: boolean }
+  | { kind: 'paused'; text: string }
   | { kind: 'done' }
   | { kind: 'model_route_fallback' }
   | { kind: 'thinking_started'; thinkingId: string; summary: string; details: string; status: string }
@@ -145,22 +147,28 @@ export function mapAgentEvent(name: string, payload: Record<string, unknown>): A
         toolName,
         label: TOOL_LABELS[toolName] || (typeof payload.label === 'string' ? payload.label : '正在处理'),
         status: String(payload.status ?? 'succeeded'),
+        ...(typeof payload.exitCode === 'number' ? { exitCode: payload.exitCode } : {}),
         outputPreview: typeof payload.outputPreview === 'string' ? payload.outputPreview : '',
       }
     }
 
     case 'business-error': {
       const text = String(payload.message ?? '生成过程中出现错误')
-      return { kind: 'error', text }
+      return { kind: 'error', text, retryable: payload.retryable === true }
     }
 
     case 'error': {
       const text = String(payload.message ?? '生成过程中出现错误')
-      return { kind: 'error', text }
+      // 后端把「重试也没用」的错误标成 retryable=false；不传就按可重试处理。
+      return { kind: 'error', text, retryable: payload.retryable !== false }
     }
 
     case 'run.completed':
-      // 终态不在这里收尾 —— 由随后的 done 事件统一处理，避免重复刷新
+      // 终态不在这里收尾 —— 由随后的 done 事件统一处理，避免重复刷新。
+      // 只有「等待审批超时」需要额外提示：本轮是暂停，不是失败。
+      if (payload.status === 'cancelled') {
+        return { kind: 'paused', text: String(payload.summary || '等待审批超时，本轮已暂停') }
+      }
       return { kind: 'ignore' }
 
     case 'model.route.fallback':

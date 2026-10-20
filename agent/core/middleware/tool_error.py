@@ -5,7 +5,7 @@
 
 两类失败必须分开对待：
 - **可恢复**（命令被白名单拒、文件不存在、超时）→ 给模型明确原因 + 建议
-- **不可恢复**（权限、配置错误）→ 同样还给模型，但要它停止重试同一件事
+- **不可恢复**（许可停止、沙箱状态不明）→ 向外抛出，由本轮生命周期明确停止
 
 参考项目在这一层踩过的坑：它把所有异常都当可重试处理，结果模型对着一个权限问题
 无限重试。所以下面的提示里对「被拒绝」明确写了「不要重复同一条命令」。
@@ -20,11 +20,17 @@ from typing import Any
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import ToolMessage
 
+from core.tool_permissions import ToolPermissionStopped
+from core.import_permissions import ImportPermissionStopped
+from backends.docker_sandbox import SandboxError
+
 logger = logging.getLogger(__name__)
 
 # 按异常类型给可执行的下一步提示。模型看得到这些文字。
 _HINTS = {
     "CommandRejected": "命令被安全策略拒绝。请换一条合规命令，不要重复提交同一条。",
+    "ReadOnlyViolation": "当前会话是只读档位，不能写文件或执行命令。"
+                         "需要修改代码时，请告诉用户在生成对话里提出，不要重复尝试写入。",
     "FileNotFoundError": "文件不存在。先用 ls 或 glob 确认真实路径，再重试。",
     "IsADirectoryError": "这是一个目录，不是文件。先列出目录内容。",
     "PermissionError": "文件系统拒绝了访问。确认路径不是目录、也没被别的进程占用。",
@@ -40,12 +46,18 @@ class ToolErrorMiddleware(AgentMiddleware):
     def wrap_tool_call(self, request, handler):
         try:
             return handler(request)
+        except (ToolPermissionStopped, ImportPermissionStopped, SandboxError):
+            # 许可等待结束（超时、拒绝、撤销）不是工具错误：
+            # 转成 ToolMessage 会让模型继续换参数重试，整轮停不下来。
+            raise
         except Exception as exc:  # noqa: BLE001 — 这里就是要兜住一切
             return _error_tool_message(request, exc)
 
     async def awrap_tool_call(self, request, handler):
         try:
             return await handler(request)
+        except (ToolPermissionStopped, ImportPermissionStopped, SandboxError):
+            raise
         except Exception as exc:  # noqa: BLE001
             return _error_tool_message(request, exc)
 

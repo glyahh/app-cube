@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from enum import Enum
 from typing import Any, TextIO
@@ -78,24 +79,28 @@ class Emitter:
         self._stream = stream
         self._run_id = run_id
         self._seq = 0
+        # 心跳线程与主执行会同时发事件：seq 自增与写盘必须原子，
+        # 否则会出现重复 seq 或被撕裂的半行，Java 侧按行解析会直接失败。
+        self._lock = threading.Lock()
 
     @property
     def seq(self) -> int:
         return self._seq
 
     def emit(self, event: Event | str, **payload: Any) -> None:
-        frame = {
-            "v": PROTOCOL_VERSION,
-            "runId": self._run_id,
-            "seq": self._seq,
-            "ts": int(time.time() * 1000),
-            "event": event.value if isinstance(event, Event) else event,
-        }
-        frame.update(payload)
-        self._seq += 1
-        self._stream.write(json.dumps(frame, ensure_ascii=False, default=str) + "\n")
-        # 每帧都 flush：Java 侧是按行阻塞读的，攒着会卡住首屏。
-        self._stream.flush()
+        with self._lock:
+            frame = {
+                "v": PROTOCOL_VERSION,
+                "runId": self._run_id,
+                "seq": self._seq,
+                "ts": int(time.time() * 1000),
+                "event": event.value if isinstance(event, Event) else event,
+            }
+            frame.update(payload)
+            self._seq += 1
+            self._stream.write(json.dumps(frame, ensure_ascii=False, default=str) + "\n")
+            # 每帧都 flush：Java 侧是按行阻塞读的，攒着会卡住首屏。
+            self._stream.flush()
 
     def error(self, code: ErrorCode, message: str, retryable: bool = False) -> None:
         self.emit(Event.ERROR, code=code.value, message=message, retryable=retryable)

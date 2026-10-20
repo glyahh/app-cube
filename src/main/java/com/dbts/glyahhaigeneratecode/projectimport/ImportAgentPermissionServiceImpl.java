@@ -27,6 +27,7 @@ public class ImportAgentPermissionServiceImpl implements ImportAgentPermissionSe
     private final ImportWorkspaceCoordinator coordinator;
     private final ImportAgentSettingsRepository settings;
     private final ImportAgentModelClient model;
+    private final com.dbts.glyahhaigeneratecode.agentauth.AgentModelsService modelsService;
     private final UUID generation = UUID.randomUUID();
 
     @Override
@@ -56,8 +57,11 @@ public class ImportAgentPermissionServiceImpl implements ImportAgentPermissionSe
 
     @Override
     public List<ModelVO> models(long ownerId, long appId) {
-        requireOwner(ownerId, appId);
-        return projectModels(model.catalog());
+        // 目录与普通应用共用；这里只把统一模型投影成导入侧 VO。
+        return modelsService.catalog(ownerId, appId).stream()
+                .map(model -> new ModelVO(model.id(), model.name(), model.model(), model.provider(),
+                        model.efforts(), model.configured()))
+                .toList();
     }
 
     /** 调用者已持有应用锁；冻结当前配置，不替旧请求补默认模式或模型。 */
@@ -90,29 +94,11 @@ public class ImportAgentPermissionServiceImpl implements ImportAgentPermissionSe
     }
 
     static List<ModelVO> projectModels(JsonNode directory) {
-        ThrowUtils.throwIf(directory == null || !directory.isObject() || directory.size() != 1
-                        || !directory.path("profiles").isArray() || directory.path("profiles").size() > 32,
-                ErrorCode.OPERATION_ERROR, "模型目录无效。");
-        var result = new ArrayList<ModelVO>();
-        var ids = new HashSet<String>();
-        for (var profile : directory.path("profiles")) {
-            String id = profile.path("id").asText();
-            ThrowUtils.throwIf(!id.matches("[a-zA-Z0-9_-]{1,64}") || !ids.add(id)
-                            || !profile.path("name").isTextual() || profile.path("name").asText().isBlank()
-                            || profile.path("name").asText().length() > 120 || !profile.path("provider").isTextual()
-                            || profile.path("provider").asText().length() > 120 || !profile.path("configured").isBoolean()
-                            || !profile.path("efforts").isArray(), ErrorCode.OPERATION_ERROR, "模型目录无效。");
-            var efforts = new ArrayList<String>();
-            for (var effort : profile.path("efforts")) {
-                ThrowUtils.throwIf(!effort.isTextual() || !Set.of("low", "medium", "high").contains(effort.asText())
-                                || efforts.contains(effort.asText()), ErrorCode.OPERATION_ERROR, "模型力度配置无效。");
-                efforts.add(effort.asText());
-            }
-            result.add(new ModelVO(id, profile.path("name").asText(), profile.path("provider").asText(),
-                    List.copyOf(efforts), profile.path("configured").asBoolean()));
-        }
-        ThrowUtils.throwIf(result.stream().noneMatch(ModelVO::configured), ErrorCode.OPERATION_ERROR, "没有可用模型，请检查本地配置。");
-        return List.copyOf(result);
+        // 保留给既有测试；生产入口走 AgentModelsService，两条链路共用同一份解析。
+        return com.dbts.glyahhaigeneratecode.agentauth.AgentModelCatalog.parse(directory).stream()
+                .map(model -> new ModelVO(model.id(), model.name(), model.model(), model.provider(),
+                        model.efforts(), model.configured()))
+                .toList();
     }
 
     static void requireProfile(List<ModelVO> profiles, String id, String effort) {

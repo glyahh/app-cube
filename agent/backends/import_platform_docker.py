@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import stat
 import time
 
@@ -58,8 +59,8 @@ class ImportPlatformDockerManager:
             raise SandboxError('IMPORT_PLATFORM_EXECUTION_INVALID')
         self.platform.edit_container(self.identity, start_id=self.container_id)
         self._qualified()
-        return self._docker('exec', '-i', '-w', '/workspace', self.container_id,
-                            'timeout', '-k', '2', str(timeout), 'sh', '-c', command, check=False, timeout=timeout + 5)
+        bounded = f'timeout -k 2 {timeout} sh -c {shlex.quote(command)}'
+        return DockerSandboxManager.execute_confirmed(self._docker, self.container_id, bounded, timeout + 5)
 
     def _load_record(self):
         self.platform.no_links(self.folder)

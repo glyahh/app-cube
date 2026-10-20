@@ -60,6 +60,13 @@ describe('mapAgentEvent · 工具卡片', () => {
     expect(action).toMatchObject({ kind: 'tool_finished', label: '执行命令', status: 'failed' })
   })
 
+  it('保留命令失败的退出码并兼容没有退出码的旧事件', () => {
+    expect(mapAgentEvent('tool.finished', {
+      toolName: 'execute', status: 'failed', exitCode: 127, outputPreview: 'python: command not found',
+    })).toMatchObject({ kind: 'tool_finished', status: 'failed', exitCode: 127, outputPreview: 'python: command not found' })
+    expect(mapAgentEvent('tool.finished', { toolName: 'execute', status: 'succeeded' })).not.toHaveProperty('exitCode')
+  })
+
   it('未知工具名仍生成结构化动作', () => {
     const action = mapAgentEvent('tool.started', { toolName: 'some_new_tool' })
     expect(action).toMatchObject({ kind: 'tool_started', label: '正在处理' })
@@ -104,7 +111,19 @@ describe('mapAgentEvent · 收尾与错误', () => {
     expect(mapAgentEvent('business-error', { message: '当前生成任务较多' })).toEqual({
       kind: 'error',
       text: '当前生成任务较多',
+      // 后端未标 retryable 时按不可重试处理：业务错误重试同一请求通常无效。
+      retryable: false,
     })
+  })
+
+  it('error 事件保留后端的 retryable 语义', () => {
+    expect(mapAgentEvent('error', { message: '模型超时', retryable: true })).toEqual({
+      kind: 'error',
+      text: '模型超时',
+      retryable: true,
+    })
+    // 环境类失败（数据库、Docker）后端会标 false，前端要能区分。
+    expect(mapAgentEvent('error', { message: '数据库不可用', retryable: false }).retryable).toBe(false)
   })
 
   it('error 事件同样走错误路径', () => {
@@ -122,6 +141,12 @@ describe('mapAgentEvent · 收尾与错误', () => {
 
   it('run.completed 不在映射里收尾 —— 交给 done，避免重复刷新', () => {
     expect(mapAgentEvent('run.completed', { status: 'succeeded' }).kind).toBe('ignore')
+  })
+
+  it('等待审批超时的 cancelled 映射成暂停提示，不当作错误', () => {
+    expect(mapAgentEvent('run.completed', {
+      status: 'cancelled', summary: '等待审批超时，本轮已暂停',
+    })).toEqual({ kind: 'paused', text: '等待审批超时，本轮已暂停' })
   })
 })
 

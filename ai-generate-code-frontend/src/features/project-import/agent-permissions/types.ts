@@ -1,9 +1,11 @@
 export type AgentPermissionMode = 'MANUAL' | 'GUARDED_AUTO' | 'AUTO'
-export type AgentEffort = 'low' | 'medium' | 'high'
+export type AgentEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export interface AgentModelOption {
   id: string
   name: string
+  /** 真实模型名，界面优先展示；缺失时回退到 name。 */
+  model?: string
   provider: string
   efforts: AgentEffort[]
 }

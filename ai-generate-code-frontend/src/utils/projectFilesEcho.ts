@@ -1,13 +1,3 @@
-import { CodeGenTypeEnum } from '@/utils/CodeGenTypeEnum'
-
-/** 与 AppChatView.normalizeCodeGenType 一致：Vue → vue_project_{id} */
-export function getStaticDeployKey(codeGenType: string, appId: string): string {
-  const lower = (codeGenType || '').toLowerCase()
-  if (lower === CodeGenTypeEnum.VUE_PROJECT) return `vue_project_${appId}`
-  if (lower === CodeGenTypeEnum.HTML) return `html_${appId}`
-  return `multi_file_${appId}`
-}
-
 export interface GeneratedFileItem {
   path: string
   language?: string

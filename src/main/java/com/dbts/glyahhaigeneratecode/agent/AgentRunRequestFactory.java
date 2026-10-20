@@ -6,12 +6,13 @@ import com.dbts.glyahhaigeneratecode.exception.ThrowUtils;
 import com.dbts.glyahhaigeneratecode.model.Entity.App;
 import com.dbts.glyahhaigeneratecode.model.enums.CodeGenTypeEnum;
 import com.dbts.glyahhaigeneratecode.service.AppService;
+import com.dbts.glyahhaigeneratecode.service.ChatHistoryService;
 import com.dbts.glyahhaigeneratecode.service.UserService;
 import com.dbts.glyahhaigeneratecode.service.support.WorkspacePathResolver;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.UUID;
@@ -25,6 +26,7 @@ import java.util.UUID;
  */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class AgentRunRequestFactory {
 
     private final AppService appService;
@@ -33,6 +35,10 @@ public class AgentRunRequestFactory {
     private final AgentProperties agentProperties;
     private final com.dbts.glyahhaigeneratecode.projectimport.ImportWorkspaceGate importGate;
     private final com.dbts.glyahhaigeneratecode.projectimport.ImportAgentSettingsRepository importSettings;
+    private final com.dbts.glyahhaigeneratecode.agentauth.AgentModelPreferenceService modelPreferences;
+    private final com.dbts.glyahhaigeneratecode.agentauth.AgentEditSettingsService editSettings;
+    private final com.dbts.glyahhaigeneratecode.agentauth.AgentEditSessionService sessionService;
+    private final ChatHistoryService chatHistoryService;
 
     /**
      * 加载应用、校验归属、组装请求。
@@ -57,9 +63,14 @@ public class AgentRunRequestFactory {
         Path workspace = pathResolver.outputDir(appId, type);
         var user = userService.getById(userId);
         var policy = publication == null ? null : importSettings.current(userId, appId);
+        // 普通应用读取应用级模型偏好；导入应用继续用冻结策略里的模型字段。
+        var preference = publication == null ? modelPreferences.freeze(userId, appId) : null;
+        // 普通应用的编辑会话不在这里开：build() 在 App 锁外执行，并发请求会同时开会话，
+        // 第二个必然撞唯一索引。改到 refreshModelRoute（锁内）开启，见下方注释。
+        String runId = IdUtil.getSnowflakeNextIdStr();
 
         return AgentRunRequest.builder()
-                .runId(IdUtil.getSnowflakeNextIdStr())
+                .runId(runId)
                 .threadId(threadIdOf(appId))
                 .appId(String.valueOf(appId))
                 .userId(String.valueOf(userId))
@@ -73,10 +84,14 @@ public class AgentRunRequestFactory {
                 .workspaceRoot(workspace.getParent().toString())
                 .workspaceName(workspace.getFileName().toString())
                 .codeGenType(type.getDirPrefix())
-                .mode(isWorkspacePopulated(workspace) ? "edit" : "create")
+                // 按对话轮数判断首轮：本轮 USER 行已由调用方先落库，
+                // 所以纯问答的第一轮即使没产出文件，第二轮也必须是 edit。
+                .mode(chatHistoryService.countRoundsByAppId(appId, user) > 1 ? "edit" : "create")
                 .importTaskId(publication == null ? null : publication.taskId().toString())
                 .importPolicyRevision(policy == null ? null : Long.toString(policy.revision()))
                 .importSessionEpoch(policy == null ? null : policy.sessionEpoch().toString())
+                .modelProfileId(preference == null ? null : preference.profileId())
+                .thinkingEffort(preference == null ? null : preference.effort())
                 .message(message)
                 .initPrompt(app.getInitPrompt())
                 .deadlineMs(agentProperties.getRunDeadline().toMillis())
@@ -94,27 +109,28 @@ public class AgentRunRequestFactory {
                 ErrorCode.NO_AUTH_ERROR, "只能操作自己的应用");
         var user = userService.getById(userId);
         var publication = importGate.requireAgentEditAllowed(appId);
+        var preference = publication == null ? modelPreferences.freeze(userId, appId) : null;
+        // 1. 编辑会话只在这里开：本方法在 App 锁内执行，并发请求会排队，
+        //    不会像在 build() 里那样同时开会话撞上唯一索引。
+        var session = publication == null
+                ? sessionService.open(userId, appId, Long.parseLong(request.getRunId()),
+                    editSettings.sandboxMode(userId, appId), editSettings.mode(userId, appId))
+                : null;
+        if (session != null) {
+            log.info("开启编辑会话 app={} run={} session={} mode={} sandbox={}",
+                    appId, request.getRunId(), session.id(), session.approvalMode(), session.sandboxMode());
+        }
+        // 2. 路由与应用级偏好一并刷新，保证排队的请求不携带旧状态。
         return request.toBuilder()
                 .importTaskId(publication == null ? null : publication.taskId().toString())
                 .modelRoute(Boolean.TRUE.equals(app.getForceModelDirect()) ? "direct" : "configured")
                 .allowProxyFallback(user != null && Boolean.TRUE.equals(user.getAutoModelProxyFallback()))
+                .modelProfileId(preference == null ? null : preference.profileId())
+                .thinkingEffort(preference == null ? null : preference.effort())
+                .permissionSessionId(session == null ? null : session.id().toString())
+                .permissionSandboxMode(session == null ? null : session.sandboxMode())
+                .permissionApprovalMode(session == null ? null : session.approvalMode())
                 .build();
-    }
-
-    /**
-     * 产物目录里有没有东西 —— 用来区分「建工程」还是「改产物」。
-     *
-     * <p>Phase 0 的过渡判断：产物已存在就按修改轮处理，否则按首轮。
-     * Phase 1 接上 {@code chat_history} 后会换成按轮数判断（对齐现有的 isFirstRound），
-     * 因为「目录非空」和「有对话历史」是两件事。
-     */
-    private static boolean isWorkspacePopulated(Path workspace) {
-        try (var entries = Files.list(workspace)) {
-            return entries.findAny().isPresent();
-        } catch (Exception e) {
-            // 目录不存在或读不了 —— 按首轮处理，让 Python 去建
-            return false;
-        }
     }
 
     /**

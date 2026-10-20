@@ -10,9 +10,10 @@ import {
   message,
 } from 'ant-design-vue'
 import { userLogoutUsingPost } from '@/api/userController'
-import { RightOutlined, SettingOutlined, SkinOutlined, AppstoreOutlined } from '@ant-design/icons-vue'
+import { RightOutlined, SettingOutlined, SkinOutlined, AppstoreOutlined, ApiOutlined } from '@ant-design/icons-vue'
 
 const userLoginStore = UserLoginStore()
+const isAdmin = computed(() => userLoginStore.userLogin?.userRole === 'admin')
 
 /** 基础菜单项 */
 const baseMenuItems = [
@@ -33,9 +34,7 @@ const adminMenuItems = [
 
 /** 根据用户角色动态计算完整菜单 */
 const menuItems = computed(() => {
-  const userRole = userLoginStore.userLogin?.userRole
-  const isAdmin = userRole === 'admin'
-  return isAdmin ? [...baseMenuItems, ...adminMenuItems] : baseMenuItems
+  return isAdmin.value ? [...baseMenuItems, ...adminMenuItems] : baseMenuItems
 })
 
 // ref,computed都是响应式数据,需要加上value
@@ -102,6 +101,12 @@ function handleMyLoop() {
   router.push('/user/loops')
 }
 
+// 模型配置
+function handleModelConfig() {
+  router.push('/user/models')
+  showUserMenu.value = false
+}
+
 // 退出登录
 async function handleLogout() {
   if (isLoggingOut.value) return
@@ -161,6 +166,10 @@ async function handleLogout() {
               <div class="menu-item settings-item" @click="handleMyLoop">
                 <AppstoreOutlined class="menu-icon" />
                 <span class="menu-text">我的 Loop</span>
+              </div>
+              <div v-if="isAdmin" class="menu-item settings-item" @click="handleModelConfig">
+                <ApiOutlined class="menu-icon" />
+                <span class="menu-text">模型配置</span>
               </div>
               <div class="menu-item logout-item" @click="handleLogout" :class="{ 'loading': isLoggingOut }">
                 <RightOutlined class="menu-icon" />

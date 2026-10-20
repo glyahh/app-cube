@@ -78,6 +78,8 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Resource
     private com.dbts.glyahhaigeneratecode.projectimport.ImportStartupConfigurationRepository startupConfigurations;
     @Resource
+    private com.dbts.glyahhaigeneratecode.agentauth.AgentEditSessionService editSessionService;
+    @Resource
     private org.springframework.beans.factory.ObjectProvider<com.dbts.glyahhaigeneratecode.projectimport.ImportExecutionService> importExecutions;
     @Resource
     private com.dbts.glyahhaigeneratecode.projectimport.ImportAgentCleanup importAgentCleanup;
@@ -559,7 +561,14 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         requireNoActiveInstall(appId);
         // 1. 导入容器没确认停掉时中断，应用和持久副本都保留。
         releaseImportedExecution(appId);
-        // 2. 应用记录删掉之后，再把仍可用的导入资格标成已中止。
+        // 2. 归档权限会话必须在软删之前：会话守卫会在应用被删后拒绝任何状态变更，
+        //    晚一步做就永远关不掉，未关闭会话会一直占着 app_id 的唯一索引。
+        try {
+            editSessionService.archiveByApp(appId);
+        } catch (Exception e) {
+            log.warn("归档应用编辑会话失败, appId={}", appId, e);
+        }
+        // 3. 应用记录删掉之后，再把仍可用的导入资格标成已中止。
         boolean result = this.removeById(appId);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "删除应用失败");
         importPublications.retirePublication(appId);

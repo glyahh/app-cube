@@ -7,7 +7,7 @@ import java.util.List;
 public interface ImportAgentPermissionService {
     record SettingsVO(String appId, String threadId, String mode, String profileId, String effort,
                       String policyRevision, String sessionEpoch, Instant sessionExpiresAt) { }
-    record ModelVO(String id, String name, String provider, List<String> efforts, boolean configured) { }
+    record ModelVO(String id, String name, String model, String provider, List<String> efforts, boolean configured) { }
     record SettingsDTO(String policyRevision, String mode, String profileId, String effort) { }
 
     SettingsVO settings(long ownerId, long appId, String loginSessionId);

@@ -10,6 +10,7 @@ from backends.docker_sandbox import SandboxError
 def config(monkeypatch, tmp_path):
     monkeypatch.setattr(startup, "get_env", lambda key, default="": {"AGENT_SANDBOX_BACKEND": "docker"}.get(key, default))
     monkeypatch.setattr(startup, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(startup, "verify_image_runtime", Mock())
 
 
 def test_healthy_docker_is_not_restarted(monkeypatch):
@@ -17,6 +18,17 @@ def test_healthy_docker_is_not_restarted(monkeypatch):
     spawn = Mock()
     monkeypatch.setattr(startup.subprocess, "Popen", spawn)
     startup.ensure_sandbox_ready()
+    spawn.assert_not_called()
+    startup.verify_image_runtime.assert_called_once()
+
+
+def test_runtime_failure_stops_without_starting_daemon(monkeypatch):
+    monkeypatch.setattr(startup.DockerSandboxManager, "_docker", Mock())
+    monkeypatch.setattr(startup, "verify_image_runtime", Mock(side_effect=SandboxError("python3 missing")))
+    spawn = Mock()
+    monkeypatch.setattr(startup.subprocess, "Popen", spawn)
+    with pytest.raises(SandboxError, match="python3 missing"):
+        startup.ensure_sandbox_ready()
     spawn.assert_not_called()
 
 

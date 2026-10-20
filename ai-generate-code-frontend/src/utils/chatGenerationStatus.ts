@@ -24,13 +24,6 @@ export function isGenerationFailedText(text: string): boolean {
   return t.startsWith(LEGACY_AI_ERROR_PREFIX)
 }
 
-export function toUserFacingFailedText(text: string): string {
-  if (isGenerationFailedText(text)) {
-    return GENERATION_FAILED_MESSAGE
-  }
-  return text
-}
-
 export function splitInterruptedTail(text: string): { body: string; hasInterrupt: boolean } {
   const raw = text ?? ''
   const marker = GENERATION_INTERRUPTED_MARKER
@@ -40,11 +33,6 @@ export function splitInterruptedTail(text: string): { body: string; hasInterrupt
     return { body, hasInterrupt: true }
   }
   return { body: raw, hasInterrupt: false }
-}
-
-function isOnlyGenerationFailedMessage(text: string): boolean {
-  const t = (text ?? '').trim()
-  return t === GENERATION_FAILED_MESSAGE || t.startsWith(LEGACY_AI_ERROR_PREFIX)
 }
 
 function stripFailedLineFromMarkdown(content: string): string {
@@ -69,7 +57,7 @@ export function injectGenerationStatusSegments<T extends SegmentLike>(
 ): Array<T | GenerationStatusSegmentInput> {
   const raw = rawText ?? ''
 
-  if (isOnlyGenerationFailedMessage(raw)) {
+  if (isGenerationFailedText(raw)) {
     return [
       {
         kind: 'generation_status',

@@ -107,6 +107,15 @@ describe('输入栏受控设置', () => {
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
   })
 
+  it('showMode 关闭时只渲染模型与力度', () => {
+    const wrapper = controls({ showMode: false })
+    expect(wrapper.find('[data-testid="mode"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="model"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="effort"]').exists()).toBe(true)
+    // 少一个下拉，模型与力度仍是同一个组件内的两个 Select。
+    expect(wrapper.findAllComponents(Select)).toHaveLength(2)
+  })
+
   it('只使用模型声明的力度，拒绝未知模式、模型和力度', () => {
     const wrapper = controls()
     const selects = wrapper.findAllComponents(Select)

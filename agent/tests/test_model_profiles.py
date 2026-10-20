@@ -37,8 +37,8 @@ def configure(monkeypatch, *entries):
 def test_default_uses_existing_configuration_and_safe_projection(settings):
     profile = load_profiles(settings)['default']
     assert profile.settings is settings.model
-    assert profile.safe() == {'id': 'default', 'name': '默认模型', 'provider': 'openai-compatible',
-                              'efforts': [], 'configured': True}
+    assert profile.safe() == {'id': 'default', 'name': '默认模型', 'model': settings.model.model_id,
+                              'provider': 'openai-compatible', 'efforts': [], 'configured': True}
     selected = profile.select()
     assert selected.model_id == settings.model.model_id
     assert strict_json(selected.request_kwargs_json) == {'extra_body': {'thinking': {'type': 'disabled'}}}
@@ -173,7 +173,8 @@ def test_directory_cli_only_public_metadata(settings, monkeypatch):
     assert process.returncode == 0, process.stderr
     result = json.loads(process.stdout)
     assert set(result) == {'profiles'}
-    assert all(set(profile) == {'id', 'name', 'provider', 'efforts', 'configured'} for profile in result['profiles'])
+    assert all(set(profile) == {'id', 'name', 'model', 'provider', 'efforts', 'configured'}
+               for profile in result['profiles'])
     assert b'private-key' not in process.stdout and b'private-model' not in process.stdout
     monkeypatch.setenv('AGENT_MODEL_PROFILES_JSON', '{"secret":"do-not-echo"}')
     failed = subprocess.run([sys.executable, '-m', 'core.model_profiles'], cwd=Path(__file__).parents[1],

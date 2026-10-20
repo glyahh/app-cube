@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import uuid
 from contextvars import ContextVar
 from collections.abc import Callable
 from urllib.parse import urlparse
@@ -170,6 +171,9 @@ def _chat_model(model_id: str, base_url: str, api_key: str, settings: ModelSetti
     if settings.request_kwargs_json is not None:
         from core.model_profiles import strict_json, validate_kwargs
         kwargs.update(validate_kwargs(strict_json(settings.request_kwargs_json)))
+    # OpenCode Go 用会话头做请求路由；普通 OpenAI-compatible 供应商不需要。
+    if "opencode.ai/inference/go" in base_url:
+        kwargs["default_headers"] = {"x-opencode-session": str(uuid.uuid4())}
     if max_retries is not None:
         kwargs["max_retries"] = max_retries
     if timeout is not None:

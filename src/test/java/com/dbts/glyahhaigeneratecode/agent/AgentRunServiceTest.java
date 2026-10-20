@@ -73,7 +73,10 @@ class AgentRunServiceTest {
         service = new AgentRunService(pool, runtimeProps, mapper, new AppRunCoordinator(),
                 org.mockito.Mockito.mock(AgentRunPersistence.class),
                 org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.projectimport.ImportAgentEditPreparation.class),
-                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.projectimport.ImportAgentEditExecution.class));
+                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.projectimport.ImportAgentEditExecution.class),
+                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.agentauth.AgentPermissionEventBridge.class),
+                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.agentauth.AgentEditSessionService.class),
+                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.agentauth.AgentCandidateReviewService.class));
     }
 
     @AfterEach

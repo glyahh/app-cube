@@ -17,6 +17,7 @@ BASE_PROMPT = """你是运行在一个受治理工作区里的编码助手。
 先用工具看清楚现状，再动手：
 - 不知道目录里有什么，先看目录（ls）
 - 要改已有文件，先读它（read_file），不要凭印象改
+- 同一个文件在一次任务里只全量读一次。改动用 edit_file；要定位用 grep，不要每改一处就重读整个文件
 - 找文件用 glob，找内容用 grep，不要靠猜路径
 - 改已有文件用 edit_file（精确替换），新建文件才用 write_file
 - 写完可以用 execute 跑一次构建或测试确认
@@ -122,22 +123,26 @@ READ_ONLY_PROMPTS = {
 }
 
 
-def get_system_prompt(task_kind: str = "coding", *, import_edit: bool = False) -> str:
+def get_system_prompt(task_kind: str = "coding", *, import_edit: bool = False,
+                      execution_backend: str = "local_shell") -> str:
     """按任务类型拼系统提示词。"""
     base = BASE_PROMPT
-    if import_edit:
+    if execution_backend == "docker":
         start = base.index("## 关于 execute")
         end = base.index("## 关于失败", start)
         base = base[:start] + """## 关于 execute
 
 运行环境是Linux容器，工作目录是隔离副本。使用python3，不使用Windows的cmd或where。
-源码修改只能使用文件工具。execute仅用于检查或生成检查产物，安装和服务启动必须另行批准。
+命令仍受白名单限制，优先使用node、npm、python3；查找文件优先使用文件工具。
 只允许白名单中的单条命令；禁止Shell串联、管道、重定向、后台执行和命令替换。
 Python -c的引号参数可包含普通分号；参数按字面值传递，不做Shell变量展开。
 路径使用工作目录内的相对路径，不访问外部绝对路径或上级目录。
 首次策略拒绝可修正一次，同类拒绝再次发生会终止本轮。
 
 """ + base[end:]
+    if import_edit:
+        base += "\n源码修改只能使用文件工具。execute仅用于检查或生成检查产物，安装和服务启动必须另行批准。\n"
+    base += "\n命令返回非零退出码时，先读取真实错误并修正；每次执行均重新申请许可，不复用旧批准。同一条命令最多重试一次，仍失败就换思路或明确报告失败。未执行的检查不得说成通过。\n"
     if task_kind == "coding":
         return f"{base}\n{CODING_PROMPT}"
     specific = READ_ONLY_PROMPTS.get(task_kind)

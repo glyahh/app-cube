@@ -27,6 +27,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Sequence
 
+from core.settings import clamp_to_window
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,15 +53,6 @@ def estimate_tokens(text: str) -> int:
     return cjk + (rest + 3) // 4
 
 
-def _clamp(absolute: int, ratio: float, window: int) -> int:
-    """阈值折算成 min(绝对值, 窗口 × 比例)。
-
-    用 min 不用 max —— max 在小窗口上会算出大于窗口的阈值，那一层
-    永远不触发，整条链路静默失效，最后以供应商上限错误暴露。
-    """
-    return int(min(absolute, window * ratio))
-
-
 @dataclass(frozen=True)
 class Thresholds:
     """一套与窗口绑定的阈值。换模型时重新算，不要写死。"""
@@ -74,17 +67,17 @@ class Thresholds:
         在 200K 窗口上按 0.50 触发，压完回收的空间还不够抵消这个开销。
         """
         ratio = 0.75 if self.window < 512_000 else 0.50
-        return _clamp(64_000, ratio, self.window)
+        return clamp_to_window(64_000, ratio, self.window)
 
     @property
     def protect_window(self) -> int:
         """第 2 层的保护窗口：这之内的工具输出永不擦除。"""
-        return _clamp(40_000, 0.10, self.window)
+        return clamp_to_window(40_000, 0.10, self.window)
 
     @property
     def min_reclaim(self) -> int:
         """第 2 层的最小回收门槛。不够就不提交 —— 不值得动一次手。"""
-        return _clamp(20_000, 0.05, self.window)
+        return clamp_to_window(20_000, 0.05, self.window)
 
     @property
     def tail_budget(self) -> int:
@@ -354,12 +347,10 @@ def _settle(
 
 # 降级豁免线：短于这个长度的工具输出不动它
 _PRUNE_MIN_CHARS = 200
-# 工具调用参数截断长度
-_ARG_MAX_CHARS = 500
 
 
 def _layer1(messages: Sequence) -> tuple[list, list[str]]:
-    """确定性清理：去重、旧工具结果降级成一行、参数截断。
+    """确定性清理：去重、旧工具结果降级成一行。
 
     **绝不调 LLM**；**绝不改对话正文**（HumanMessage / AIMessage 的 content 原样保留）。
     """

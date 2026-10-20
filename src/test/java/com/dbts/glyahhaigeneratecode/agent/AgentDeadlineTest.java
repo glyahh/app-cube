@@ -27,7 +27,10 @@ class AgentDeadlineTest {
                 org.mockito.Mockito.mock(AppRunCoordinator.class),
                 org.mockito.Mockito.mock(AgentRunPersistence.class),
                 org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.projectimport.ImportAgentEditPreparation.class),
-                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.projectimport.ImportAgentEditExecution.class));
+                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.projectimport.ImportAgentEditExecution.class),
+                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.agentauth.AgentPermissionEventBridge.class),
+                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.agentauth.AgentEditSessionService.class),
+                org.mockito.Mockito.mock(com.dbts.glyahhaigeneratecode.agentauth.AgentCandidateReviewService.class));
         org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
                 () -> service.streamUncoordinated("{}").blockLast(Duration.ofSeconds(3)));
         org.mockito.Mockito.verify(pool, org.mockito.Mockito.timeout(1000)).discard(worker);

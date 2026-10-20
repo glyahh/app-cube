@@ -7,6 +7,29 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class UserFacingOutputHandlerTest {
+
+    @Test
+    void executeExitCodeSurvivesPublicProjection() {
+        AgentEvent raw = event("tool.finished", "internal");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) raw.frame()).put("toolName", "execute").put("status", "failed")
+                .put("exitCode", 127).put("outputPreview", "python: command not found");
+        AgentEvent safe = UserFacingOutputHandler.apply(Flux.just(raw)).blockFirst();
+        assertNotNull(safe);
+        assertEquals(127, safe.frame().path("exitCode").asInt(-1));
+        assertEquals("failed", safe.frame().path("status").asText());
+    }
+
+    @Test
+    void legacyAndInvalidExitCodesAreNotInvented() {
+        for (String tool : List.of("execute", "write_file")) {
+            AgentEvent raw = event("tool.finished", "internal");
+            var frame = (com.fasterxml.jackson.databind.node.ObjectNode) raw.frame();
+            frame.put("toolName", tool).put("status", "succeeded");
+            assertFalse(UserFacingOutputHandler.apply(Flux.just(raw)).blockFirst().frame().has("exitCode"));
+            frame.put("exitCode", "127");
+            assertFalse(UserFacingOutputHandler.apply(Flux.just(raw)).blockFirst().frame().has("exitCode"));
+        }
+    }
     @Test void preservesOnlySafeImportFailureKeys() {
         for (String key : List.of("IMPORT_EDIT_REPEATED_COMMAND_REJECTION", "IMPORT_EDIT_MODEL_BUDGET_EXHAUSTED",
                 "IMPORT_EDIT_NO_CHANGES", "IMPORT_EDIT_CANDIDATE_VERIFY_FAILED", "/private/secret", "IMPORT_BAD\nsecret")) {

@@ -55,7 +55,11 @@ def run_import_edit(request, settings, emitter):
         if workspace['importViewPath'] != str(root / 'view') or not settings.model.api_key:
             raise ValueError('IMPORT_EDIT_CONFIGURATION_INVALID')
         native_ticks = Path('/proc/self/stat').read_text().rsplit(')', 1)[1].split()[19]
-        connection = psycopg.connect(settings.postgres_dsn, autocommit=True)
+        # 与普通应用门禁一致：连不上就快速失败，不要让整轮编辑挂死在这里。
+        try:
+            connection = psycopg.connect(settings.postgres_dsn, autocommit=True, connect_timeout=10)
+        except psycopg.OperationalError as error:
+            raise ValueError(f'IMPORT_EDIT_POSTGRES_UNAVAILABLE: {error}') from error
 
         def eligible():
             row = connection.execute('''SELECT EXISTS(
@@ -136,7 +140,7 @@ def run_import_edit(request, settings, emitter):
         emitter.emit('import.edit.stage', stage=stage)
         agent = build_agent(settings=settings, backend=backend, checkpointer=checkpoint, store=store,
                             task_kind='coding', tools=[], workspace=view.root, overhead=overhead, route_state=route,
-                            import_edit=True, window=model_window, summarizer_settings=summarizer_settings)
+                            import_edit=True, execution_backend='docker', window=model_window, summarizer_settings=summarizer_settings)
         message = safe(str((request.get('input') or {}).get('message') or '')).strip()
         if not message:
             raise ValueError('IMPORT_EDIT_EMPTY_MESSAGE')

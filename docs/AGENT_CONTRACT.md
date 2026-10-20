@@ -127,7 +127,7 @@ checkpoint 为准**。
 | `todo.delta` | `messageId, todos:[{content,status}]` | ❌ |
 | `step` | `key, title, kind: workflow\|think\|tool, status, detail` | ❌ |
 | `tool.started` | `callId, toolName, inputDigest, inputPreview` | ❌ |
-| `tool.finished` | `callId, toolName, status, durationMs, outputPreview, truncated` | ❌ |
+| `tool.finished` | `callId, toolName, status, durationMs, outputPreview, truncated, exitCode?` | ❌ |
 | `artifact.changed` | `files:[{path,change,bytes,hash}], added, modified, deleted` | ✅ |
 | `artifact.manifest` | `fileCount, totalBytes, topPaths, truncated` | ✅ |
 | `error` | `code, message, retryable` | ✅ |
@@ -136,6 +136,8 @@ checkpoint 为准**。
 | `__end__` | `{}`（终止帧，**不转成对前端的事件**） | ❌ |
 
 **AI 消息只在 `run.completed` / `error` 时写一次**（`round_id` 上唯一索引做幂等）。
+
+2026-10-20 终端结果约定：`execute` 的可选 `exitCode` 来自框架执行结果的 `artifact.exit_code`，不从输出文本猜测。非零退出码对应 `tool.finished.status=failed`，脱敏 stdout/stderr 与真实退出码仍返回模型，模型可以修正后申请新许可；工具失败不等于整轮取消。已确认的失败许可上报 `RESULT_CONFIRMED, succeeded=false`，旧消费证明不得重放。Docker、取消、资格或资源保护失败，以及无法确认是否结束的超时，继续停止并保留 `RESULT_UNCONFIRMED` 等原有保护；不宣称命令已终止。旧事件没有 `exitCode` 时保持兼容。新增字段经 Java 安全投影透传到前端。
 不要每个 `text.delta` 都写库 —— 现有 `StreamHandlerExecutor` 也是流结束才落 AI 行。
 
 ## error.code 枚举

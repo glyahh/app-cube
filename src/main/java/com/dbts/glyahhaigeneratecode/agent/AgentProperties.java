@@ -34,8 +34,14 @@ public class AgentProperties {
      */
     private Duration runDeadline = Duration.ofMinutes(30);
 
-    /** 读一帧事件的等待上限。超时说明 Python 卡住，按故障处理。 */
-    private Duration readTimeout = Duration.ofSeconds(60);
+    /**
+     * 读一帧事件的等待上限。超时说明 Python 卡住，按故障处理。
+     *
+     * <p>Python 侧每 15 秒补一条心跳，这里给三倍余量：心跳线程被 GIL 或
+     * 事件循环短暂挡住时不该误判成故障。原来是 60 秒，推理模型想得久一点
+     * 就会撞上，把正常生成判成卡死。
+     */
+    private Duration readTimeout = Duration.ofSeconds(180);
 
     /** 启动一个 Python 进程后，等待它就绪的上限。冷启动实测约 7 秒，留足余量。 */
     private Duration startupTimeout = Duration.ofSeconds(60);

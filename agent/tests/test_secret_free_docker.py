@@ -17,7 +17,7 @@ def setup(tmp_path):
     source.joinpath('.env').write_bytes(b'API_TOKEN=original-secret-f783811\n')
     source.joinpath('app.py').write_bytes(b'print("before")\n')
     view = SecretFreeView.create(source, tmp_path / 'view', app_id='101', owner_id='7', run_id='201', eligible=lambda: True)
-    manager = SimpleNamespace(acquire=lambda session, workspace, **kw: SimpleNamespace(container_id='unit-only', workspace=workspace),
+    manager = SimpleNamespace(acquire=lambda session, workspace, **kw: SimpleNamespace(container_id='unit-only', workspace=workspace, reused=False),
                               close=lambda *args: None,
                               _docker=lambda *a, **kw: subprocess.CompletedProcess('ps', 0, '', ''))
     backend = SecretFreeDockerBackend(view, eligible=lambda: True, session_id='unit', run_id='201', manager=manager)

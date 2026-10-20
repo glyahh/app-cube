@@ -23,13 +23,14 @@ from backends.docker_sandbox import (
 def kernel_swap_readback(monkeypatch):
     # 生命周期夹具不模拟内核；硬 swap 正反例另见 test_docker_hard_swap.py。
     monkeypatch.setattr(DockerSandboxManager, "_swap_is_zero", lambda self, cid: True)
+    monkeypatch.setattr(DockerSandboxManager, "_verify_runtime", lambda self, cid: None)
 
 
 def _make_inspect_json(
     name: str,
     session_id: str,
     workspace: Path,
-    image: str = "ubuntu:24.04",
+    image: str = "glyahh-sandbox-runtime:24.04",
     status: str = "running",
     cpus: float = 2.0,
     mount_dest: str = "/workspace",

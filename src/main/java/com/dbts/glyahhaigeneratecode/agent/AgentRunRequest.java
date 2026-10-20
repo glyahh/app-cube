@@ -67,6 +67,27 @@ public class AgentRunRequest {
     String importModelProfileId;
     String importThinkingEffort;
 
+    /**
+     * 普通应用的编辑会话身份，用于工具许可票据归属。
+     *
+     * <p>由 Java 在请求前创建并冻结；执行侧只能上报同一 ID，
+     * 不能自行选择或替换，否则许可事件会被拒绝。
+     */
+    String permissionSessionId;
+    /** 普通应用的沙箱档位，执行侧不能覆盖。 */
+    String permissionSandboxMode;
+    /** 普通应用的审批模式，执行侧不能覆盖。 */
+    String permissionApprovalMode;
+
+    /**
+     * 普通应用的模型选择，来自应用级偏好；未选择时为空，执行侧回落全局配置。
+     *
+     * <p>与 {@code importModelProfileId} 分开：导入用 Java 冻结值，普通应用用用户选择，
+     * 两条链路不互相覆盖。
+     */
+    String modelProfileId;
+    String thinkingEffort;
+
     String message;
     String initPrompt;
 
@@ -101,6 +122,17 @@ public class AgentRunRequest {
         frame.put("traceId", traceId);
         frame.put("modelRoute", "direct".equals(modelRoute) ? "direct" : "configured");
         frame.put("allowProxyFallback", Boolean.TRUE.equals(allowProxyFallback));
+        // 普通应用的模型选择；导入应用另有冻结字段，两者不互相替代。
+        if (modelProfileId != null) {
+            frame.put("modelProfileId", modelProfileId);
+            frame.put("thinkingEffort", thinkingEffort);
+        }
+        // 普通应用的权限会话：沙箱与审批两轴由 Java 冻结，执行侧不得改写。
+        if (permissionSessionId != null) {
+            frame.put("permissionSessionId", permissionSessionId);
+            frame.put("permissionSandboxMode", permissionSandboxMode);
+            frame.put("permissionApprovalMode", permissionApprovalMode);
+        }
         if (importTaskId != null) {
             frame.put("importPermissionMode", importPermissionMode);
             frame.put("importPolicyRevision", importPolicyRevision);

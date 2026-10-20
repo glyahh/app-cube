@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from dataclasses import replace
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from deepagents.backends.protocol import ReadResult, GrepResult, FileDownloadResponse
 
@@ -55,7 +56,23 @@ class SecretSafeFilesMixin:
         result = super().read(file_path, offset, limit)
         if result.file_data and result.file_data.get('encoding') == 'utf-8':
             data = dict(result.file_data)
-            data['content'] = self._mask_file(data['content'], file_path)
+            content = self._mask_file(data['content'], file_path)
+            # 同一 run 内重复读取同一范围时不再返回全文：模型每改一处就重读整份文件，
+            # 会让上下文按文件体积线性膨胀。内容变化后哈希不同，自然失效。
+            digests = getattr(self, '_read_digests', None)
+            if digests is None:
+                digests = self._read_digests = {}
+            key = (PurePosixPath(file_path).as_posix(), offset, limit)
+            digest = hashlib.sha256(content.encode('utf-8')).hexdigest()
+            if digests.get(key) == digest:
+                total = result.total_lines or result.end_line or 0
+                return replace(result, file_data={
+                    'content': (f'（该文件自上次读取后未变化，共 {total} 行。'
+                                '为节省上下文这里不重复返回全文；'
+                                '需要特定范围请用 offset/limit 重新读取。）'),
+                    'encoding': 'utf-8'})
+            digests[key] = digest
+            data['content'] = content
             result = replace(result, file_data=data)
         return replace(result, error=mask(result.error) or None)
 

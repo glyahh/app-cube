@@ -48,8 +48,12 @@ def test_escaped_operator_is_literal_and_legacy_policy_is_unchanged(tmp_path):
         ensure_safe_command('python3 -c "print(1); print(2)"', tmp_path)
 
 
-def test_only_import_prompt_uses_linux():
+def test_execution_backend_selects_shell_and_import_adds_its_own_constraints():
     assert 'shell 是 cmd.exe' in get_system_prompt()
-    prompt = get_system_prompt(import_edit=True)
+    ordinary = get_system_prompt(execution_backend='docker')
+    assert '运行环境是Linux容器' in ordinary and '使用python3' in ordinary
+    assert '安装和服务启动必须另行批准' not in ordinary
+    prompt = get_system_prompt(import_edit=True, execution_backend='docker')
     assert '运行环境是Linux容器' in prompt and '使用python3' in prompt
     assert 'shell 是 cmd.exe' not in prompt and '不要用 Unix 命令' not in prompt
+    assert '安装和服务启动必须另行批准' in prompt

@@ -123,6 +123,10 @@ pre {
   overflow-wrap: anywhere;
   margin: 4px 0 0;
   padding: 8px 0;
+  /* 长 JSON 单行折行后会把卡片撑满整屏，按钮被挤出视口。
+     限制高度并在卡片内滚动，保证决定按钮始终可见。 */
+  max-height: 240px;
+  overflow: auto;
 }
 .diff-line {
   display: block;

@@ -23,7 +23,11 @@ class ImportAgentRequestIdentityTest {
         var policy=new com.dbts.glyahhaigeneratecode.projectimport.ImportAgentSettingsRepository.Settings(
                 7,101,"app:101","MANUAL","default",null,2,UUID.randomUUID(),"session",UUID.randomUUID(),Instant.now().plusSeconds(60));
         when(settings.current(7,101)).thenReturn(policy);
-        var factory=new AgentRunRequestFactory(apps,users,paths,new AgentProperties(),gate,settings);
+        var factory=new AgentRunRequestFactory(apps,users,paths,new AgentProperties(),gate,settings,
+                mock(com.dbts.glyahhaigeneratecode.agentauth.AgentModelPreferenceService.class),
+                mock(com.dbts.glyahhaigeneratecode.agentauth.AgentEditSettingsService.class),
+                mock(com.dbts.glyahhaigeneratecode.agentauth.AgentEditSessionService.class),
+                mock(com.dbts.glyahhaigeneratecode.service.ChatHistoryService.class));
         var app=new App();app.setId(101L);app.setUserId(7L);app.setCodeGenType("auto");
         when(apps.getById(101L)).thenReturn(app);
         when(paths.outputDir(eq(101L),any(CodeGenTypeEnum.class))).thenReturn(Path.of("target","identity-test","project_101"));

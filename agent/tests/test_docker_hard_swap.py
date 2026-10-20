@@ -200,7 +200,7 @@ def test_daemon_failure_is_not_absence_during_reap(manager, monkeypatch, tmp_pat
 @pytest.mark.skipif(os.getenv("AGENT_TEST_REAL_DOCKER") != "1", reason="real Docker explicitly required")
 @pytest.mark.parametrize("deny_pin", [False, True])
 def test_real_kernel_admission_and_cleanup(manager, monkeypatch, tmp_path, deny_pin):
-    manager.image = "ubuntu:24.04"
+    manager.image = "glyahh-sandbox-runtime:24.04"
     session = "item1-hard-swap-" + uuid.uuid4().hex
     name = manager._container_name(session)
     marker = "kernel-" + uuid.uuid4().hex

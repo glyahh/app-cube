@@ -94,13 +94,15 @@ class ImportPermissions:
             if canonical_bytes(factory()) != raw:
                 raise ImportPermissionStopped('IMPORT_PERMISSION_ACTION_CHANGED')
             self._qualified()
-            # 3. 此处才允许副作用；SDK错误结果也是明确失败，不让模型另开票重试。
+            # 3. 此处才允许副作用；已确认的命令失败返回模型，修正仍需新许可。
             result = operation()
+            if action.get('tool') == 'execute' and type(getattr(result, 'exit_code', None)) is not int:
+                raise ImportPermissionStopped('IMPORT_PERMISSION_UNCONFIRMED')
             values = result if isinstance(result, list) else [result]
             succeeded = all(not getattr(value, 'error', None) and getattr(value, 'exit_code', 0) == 0 for value in values)
             self.emitter.emit('import.permission.result', editId=self.identity['editId'], permissionId=permission_id,
                               actionHash=digest, consumeProof=proof, state='RESULT_CONFIRMED', succeeded=succeeded)
-            if not succeeded:
+            if not succeeded and action.get('tool') != 'execute':
                 self._stopped = True
                 raise ImportPermissionStopped('IMPORT_PERMISSION_EXECUTION_FAILED')
             return result

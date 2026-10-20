@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from core.settings import ModelSettings, Settings, load_settings, validate_proxy_config
 from env_utils import get_env
 
-EFFORTS = ('low', 'medium', 'high')
+EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 MAX_CONFIG_BYTES = 65_536
 MAX_PROFILES = 32
 
@@ -117,7 +117,9 @@ class ModelProfile:
 
     def safe(self):
         mapping = strict_json(self.effort_mapping_json)
-        return {'id': self.id, 'name': self.name, 'provider': self.provider,
+        # 展示用真实模型名；name 是配置项名称（可能只是供应商别名），两者用途不同。
+        return {'id': self.id, 'name': self.name, 'model': self.settings.model_id,
+                'provider': self.provider,
                 'efforts': [item for item in EFFORTS if item in mapping], 'configured': self.configured}
 
     def select(self, effort=None):
@@ -230,12 +232,11 @@ def validate_import_windows(main: ModelSettings, summary: ModelSettings):
     return main_window
 
 
-def freeze_import_settings(request, settings):
-    """局部副本构造主模型，摘要保留原配置；不修改 Worker 全局 Settings。"""
-    profile_id = request.get('importModelProfileId')
+def _freeze_profile(profile_id, effort, settings):
+    """按选中 profile 构造主模型；摘要保留原配置，窗口必须可核对。"""
     if not isinstance(profile_id, str) or not profile_id:
         _fail('MODEL_PROFILE_REQUIRED')
-    main = select_profile(settings, profile_id, request.get('importThinkingEffort'))
+    main = select_profile(settings, profile_id, effort)
     original = settings.model
     summary = replace(original, model_id=original.summarizer_model_id or original.model_id,
                       base_url=original.summarizer_base_url or original.base_url,
@@ -247,6 +248,19 @@ def freeze_import_settings(request, settings):
         _fail('MODEL_PROFILE_SUMMARIZER_NOT_CONFIGURED')
     window = validate_import_windows(main, summary)
     return replace(settings, model=main), summary, window
+
+
+def freeze_import_settings(request, settings):
+    """导入编辑：身份与 profile 由 Java 冻结，不能用页面默认值代替。"""
+    return _freeze_profile(request.get('importModelProfileId'), request.get('importThinkingEffort'), settings)
+
+
+def freeze_selected_profile(request, settings):
+    """普通应用的应用级偏好；未选择时返回 None，由调用方回落全局配置。"""
+    profile_id = request.get('modelProfileId')
+    if not isinstance(profile_id, str) or not profile_id:
+        return None
+    return _freeze_profile(profile_id, request.get('thinkingEffort'), settings)
 
 
 def main():

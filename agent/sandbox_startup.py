@@ -7,6 +7,15 @@ from backends.docker_sandbox import DockerSandboxManager, SandboxError
 from env_utils import REPO_ROOT, get_env
 
 
+def verify_image_runtime() -> None:
+    manager = DockerSandboxManager()
+    try:
+        manager.verify_image_runtime()
+        print("Sandbox runtime ready: " + manager.image, flush=True)
+    finally:
+        manager.shutdown()
+
+
 def ensure_sandbox_ready() -> None:
     # 1. 使用与 Agent 相同的配置和 Docker 入口，健康时不重复启动。
     backend = get_env("AGENT_SANDBOX_BACKEND", get_env("AGENT_SANDBOX_TYPE", "local_shell"))
@@ -14,11 +23,13 @@ def ensure_sandbox_ready() -> None:
         return
     try:
         DockerSandboxManager._docker("info", "--format", "{{.ServerVersion}}", timeout=5)
-        print("Docker ready", flush=True)
-        return
     except SandboxError:
         if DockerSandboxManager._docker_command()[0] != "wsl.exe":
             raise SandboxError("Docker 不可用，请先启动配置的 Docker 服务；后端启动已中止")
+    else:
+        print("Docker ready", flush=True)
+        verify_image_runtime()
+        return
 
     # 2. 只启动尚未运行的 WSL dockerd，不切换 Docker 入口或修改系统配置。
     distro = get_env("AGENT_WSL_DISTRO", "Ubuntu")
@@ -44,12 +55,14 @@ def ensure_sandbox_ready() -> None:
     while True:
         try:
             DockerSandboxManager._docker("info", "--format", "{{.ServerVersion}}", timeout=2)
-            print("WSL Docker ready", flush=True)
-            return
         except SandboxError as exc:
             if time.monotonic() >= deadline:
                 raise SandboxError(f"WSL Docker 未就绪，后端启动已中止；日志：{log_path}") from exc
             time.sleep(1)
+        else:
+            print("WSL Docker ready", flush=True)
+            verify_image_runtime()
+            return
 
 
 if __name__ == "__main__":

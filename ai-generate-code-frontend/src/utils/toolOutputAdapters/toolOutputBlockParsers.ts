@@ -111,20 +111,3 @@ export function extractToolModifyFileNewContentBlocksFromText(
   return out
 }
 
-/**
- * 从工具执行结果全文中提取所有「[工具调用] 删除文件」的路径列表。
- * 用于历史回放时追踪被删除的文件路径。
- */
-export function extractToolDeleteFilePaths(text: string): string[] {
-  const out: string[] = []
-  if (!text) return out
-
-  const headerRe = /\[工具调用\]\s*删除文件\s+([^\r\n]+)\s*\r?\n/g
-  let m: RegExpExecArray | null
-  while ((m = headerRe.exec(text)) !== null) {
-    const p = (m[1] ?? '').trim()
-    if (p) out.push(p)
-  }
-  return out
-}
-

@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => {
       host: '127.0.0.1',
       proxy: {
         '/api': {
-          target: 'http://localhost:8124',
+          target: 'http://127.0.0.1:8124',
           changeOrigin: true,
           secure: false,
           // Agent 默认走 WebSocket（/api/ws/agent），代理必须开启升级转发，
@@ -47,7 +47,7 @@ export default defineConfig(({ mode }) => {
               const locStr = Array.isArray(loc) ? loc[0] : String(loc)
               try {
                 const u = new URL(locStr)
-                if (u.host === 'localhost:8124') {
+                if (u.host === 'localhost:8124' || u.host === '127.0.0.1:8124') {
                   proxyRes.headers.location = u.pathname + u.search + u.hash
                 }
               } catch {
@@ -58,7 +58,7 @@ export default defineConfig(({ mode }) => {
         },
         // 预览静态站点：保持 iframe 同源（通过 Vite 反向代理到后端静态目录）
         '/static': {
-          target: 'http://localhost:8124',
+          target: 'http://127.0.0.1:8124',
           changeOrigin: true,
           secure: false,
           configure: (proxy) => {
@@ -68,7 +68,7 @@ export default defineConfig(({ mode }) => {
               const locStr = Array.isArray(loc) ? loc[0] : String(loc)
               try {
                 const u = new URL(locStr)
-                if (u.host === 'localhost:8124') {
+                if (u.host === 'localhost:8124' || u.host === '127.0.0.1:8124') {
                   proxyRes.headers.location = u.pathname + u.search + u.hash
                 }
               } catch {

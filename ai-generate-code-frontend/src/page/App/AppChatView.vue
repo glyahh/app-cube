@@ -245,6 +245,10 @@ const StartupRunPreview = defineAsyncComponent(() => import('@/preview/project-i
 const importedWorkspace = ref<'pending' | 'imported' | 'plain'>('pending')
 const importedView = computed(() => props.importedProject === true || importedWorkspace.value === 'imported')
 const importedAgentBlocked = ref(true)
+// 普通应用的模型偏好保存期间才阻塞；读取失败不阻塞，执行侧回落全局配置。
+const projectAgentBlocked = ref(false)
+// 有权限卡片或候选审阅时隐藏输入框，处理完再恢复。
+const agentWaiting = ref(false)
 const importLookupBlocked = computed(() => props.importedProject !== true && importedWorkspace.value === 'pending')
 watch(() => [appId.value, userLoginStore.userLogin?.id] as const, async ([id, owner], _, onCleanup) => {
   importedWorkspace.value = 'pending'
@@ -3036,8 +3040,17 @@ function startAgentStream(streamId: string, prompt: string) {
           return
         }
         if (action.kind === 'error') {
-          appendAssistantChunkToStream(streamId, `\n\n❌ ${action.text}`)
-          message.error(action.text)
+          // 不可重试的错误要说清楚，否则用户会一直点重试。
+          // 限流其实过一会儿可以，所以措辞用「立即重试无效」而不是「重试无效」。
+          const hint = action.retryable === false ? '（立即重试无效，请按提示处理或稍后再试）' : ''
+          appendAssistantChunkToStream(streamId, `\n\n❌ ${action.text}${hint}`)
+          message.error(`${action.text}${hint}`)
+          stopStream(streamId)
+          return
+        }
+        if (action.kind === 'paused') {
+          // 等待审批超时：中性提示，不按错误处理。
+          appendAssistantChunkToStream(streamId, `\n\n${action.text}`)
           stopStream(streamId)
           return
         }
@@ -4255,9 +4268,8 @@ defineExpose({
               </template>
             </AAlert>
           </div>
-          <ImportedAgentControls v-if="importedView && appId && !isReadOnly" :key="appId" :app-id="appId" :streaming="streaming"
-            @blocked="importedAgentBlocked = $event" @merged="refreshProjectFilesEchoFromDisk(); refreshPreviewWithRetry()" />
           <AInput.TextArea
+            v-if="!agentWaiting"
             v-model:value="inputMessage"
             :placeholder="importedView ? '描述你想调整的内容…' : '描述你想生成的网页，例如：一个用于展示我技术博客的个人站点……'"
             :rows="3"
@@ -4266,7 +4278,16 @@ defineExpose({
             @press-enter.prevent="handleManualSend"
           />
           <div class="chat-input-actions">
-            <div class="chat-input-hint">
+            <ImportedAgentControls v-if="appId && !isReadOnly" :key="`${importedView}-${appId}`" :app-id="appId"
+              :streaming="streaming"
+              @blocked="importedView ? (importedAgentBlocked = $event) : (projectAgentBlocked = $event)"
+              @waiting="agentWaiting = $event"
+              @merged="refreshProjectFilesEchoFromDisk(); refreshPreviewWithRetry()" />
+            <div class="chat-input-buttons">
+              <button v-if="showScrollToBottom" type="button" class="scroll-bottom-btn"
+                @click="handleScrollToBottomClick">
+                <span class="scroll-bottom-icon">↓</span>
+              </button>
               <div v-show="streaming" class="vibing-status-pill" :class="{ 'vibing-status-pill--active': streaming }">
                 <span class="vibing-tag">vibing<span class="vibing-tilde">&nbsp;</span></span>
                 <div class="vibing-dots">
@@ -4276,12 +4297,6 @@ defineExpose({
                   <span class="vibing-dot dot-rose" :class="{ 'anim-vibe-4': streaming }" title="落盘差异校验" />
                 </div>
               </div>
-            </div>
-            <div class="chat-input-buttons">
-              <button v-if="showScrollToBottom" type="button" class="scroll-bottom-btn"
-                @click="handleScrollToBottomClick">
-                <span class="scroll-bottom-icon">↓</span>
-              </button>
               <AButton
                 v-if="!streaming"
                 class="ghost-btn"
@@ -5667,12 +5682,20 @@ body.is-splitter-resizing * {
 
 .chat-input-bar {
   margin-top: 8px;
-  border-radius: 16px;
-  background: var(--bg-soft, #f9fafb);
-  padding: 10px 12px;
+  box-sizing: border-box;
+  border: 1px solid #d4d4d4;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 6px #00000004;
+  /* 底部比上侧更紧，压缩操作栏下方的空白。 */
+  padding: 12px 12px 8px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+}
+
+.chat-input-bar:focus-within {
+  border-color: #a3a3a3;
 }
 
 .selected-element-alert :deep(.ant-alert) {
@@ -5698,9 +5721,21 @@ body.is-splitter-resizing * {
   opacity: 0.7;
 }
 
+/* 输入区与容器融合：去边框、透明底，焦点态交给外框。 */
 .chat-input :deep(.ant-input) {
-  border-radius: 12px;
-  resize: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0 4px;
+  box-shadow: none;
+  background: transparent;
+  resize: vertical;
+  min-height: 52px;
+}
+
+.chat-input :deep(.ant-input:focus-visible) {
+  outline: 2px solid #2563eb;
+  outline-offset: 4px;
+  border-radius: 2px;
 }
 
 .chat-input-readonly :deep(.ant-input) {
@@ -5710,10 +5745,26 @@ body.is-splitter-resizing * {
 
 .chat-input-actions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-wrap: nowrap;
+  /* 卡片展开时行会变高；按钮必须贴底，居中会浮在差异区中间挡住内容。 */
+  align-items: flex-end;
+  gap: 8px;
   font-size: 12px;
   color: var(--text-secondary, #6b7280);
+}
+
+/* 控件组占满左侧，按钮组靠右；与设计稿的 .send-action { margin-left: auto } 一致。 */
+.chat-input-actions > .agent-controls {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-input-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 /* vibing~ 高级微胶囊状态条 */
@@ -5816,11 +5867,6 @@ body.is-splitter-resizing * {
 .anim-vibe-2 { animation: vibe-dot-pulse-2 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.25s; }
 .anim-vibe-3 { animation: vibe-dot-pulse-3 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.5s; }
 .anim-vibe-4 { animation: vibe-dot-pulse-4 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.75s; }
-
-.chat-input-buttons {
-  display: flex;
-  gap: 8px;
-}
 
 .send-btn-readonly {
   cursor: not-allowed;

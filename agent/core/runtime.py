@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -90,6 +91,7 @@ def import_model_settings(request, settings):
 def run_one(request: dict[str, Any], settings: Settings, emitter: Emitter) -> None:
     """跑一次 run。"""
     run_id = request["runId"]
+    started = time.monotonic()
     thread_id = request.get("threadId") or ""
     message = ((request.get("input") or {}).get("message") or "").strip()
 
@@ -108,11 +110,28 @@ def run_one(request: dict[str, Any], settings: Settings, emitter: Emitter) -> No
         _run_title(request, settings, emitter, message)
         return
 
+    # 普通应用按应用级偏好替换模型；导入应用走独立入口，不经过这里。
+    # 未选择时保持全局配置，行为与之前一致。
+    summarizer_settings, window = None, 0
+    if request.get("modelProfileId"):
+        from core.model_profiles import freeze_selected_profile
+        try:
+            selected = freeze_selected_profile(request, settings)
+        except ValueError as error:
+            emitter.error(ErrorCode.MODEL_CALL_FAILED, f"模型配置不可用：{error}", retryable=False)
+            return
+        if selected is not None:
+            settings, summarizer_settings, window = selected
+    logger.info("runOne freeze profile ms=%d runId=%s",
+                (time.monotonic() - started) * 1000, run_id)
+
     try:
         workspace = resolve_workspace(request)
     except WorkspaceError as exc:
         emitter.error(ErrorCode.WORKSPACE_INIT_FAILED, str(exc))
         return
+    logger.info("runOne workspace ms=%d runId=%s workspace=%s",
+                (time.monotonic() - started) * 1000, run_id, workspace.name)
 
     if not message:
         emitter.error(ErrorCode.INTERNAL, "请求缺少 input.message")
@@ -139,7 +158,41 @@ def run_one(request: dict[str, Any], settings: Settings, emitter: Emitter) -> No
         _run_placeholder(message, workspace, emitter)
         return
 
-    _run_agent(request, settings, emitter, workspace, thread_id, task_kind, message)
+    agent_started = time.monotonic()
+    _run_agent(request, settings, emitter, workspace, thread_id, task_kind, message,
+               summarizer_settings=summarizer_settings, window=window)
+    logger.info("runOne agent done ms=%d runId=%s",
+                (time.monotonic() - agent_started) * 1000, run_id)
+
+
+def _attach_permissions(backend, request: dict[str, Any], session_id: str, emitter):
+    """给 backend 装工具许可门禁。
+
+    Java 冻结的 sessionId 是唯一票据归属；连不上数据库时直接失败，
+    不退回「无门禁」——那等于静默降低安全等级。
+    """
+    from core.tool_permissions import ToolPermissions
+    from env_utils import get_env as env
+
+    dsn = (env('AGENT_POSTGRES_DSN', '').strip() or env('POSTGRES_DSN', '').strip())
+    if not dsn:
+        raise RuntimeError('PERMISSION_SESSION_REQUIRES_POSTGRES')
+    import psycopg
+    # 必须设连接超时：数据库不可达时 psycopg 默认会一直等，
+    # 整轮 run 就此挂住，前端只看到「分析中」永不结束。
+    try:
+        connection = psycopg.connect(dsn, autocommit=True, connect_timeout=10)
+    except psycopg.OperationalError as error:
+        raise RuntimeError(f'PERMISSION_GATE_UNAVAILABLE: {error}') from error
+    permissions = ToolPermissions(
+        connection, session_id,
+        # 会话是否仍可写由 Java 的票据状态判定；这里只保证连接可用。
+        eligible=lambda: not connection.closed,
+        emitter=emitter,
+        # 变更账本要读写入前后的内容。
+        workspace=backend.workspace)
+    backend._permissions = permissions
+    return backend
 
 
 def _classify(request: dict[str, Any], message: str) -> TaskKind:
@@ -166,6 +219,9 @@ def _run_agent(
     thread_id: str,
     task_kind: TaskKind,
     message: str,
+    *,
+    summarizer_settings=None,
+    window: int = 0,
 ) -> None:
     from backends.local_shell import GuardedShellBackend
     from env_utils import get_env
@@ -181,6 +237,8 @@ def _run_agent(
 
     backend = None
     sandbox_busy_types = ()
+    permission_session = str(request.get("permissionSessionId") or "").strip()
+    sandbox_mode = str(request.get("permissionSandboxMode") or "").strip()
     try:
         backend_kind = get_env("AGENT_SANDBOX_BACKEND", get_env("AGENT_SANDBOX_TYPE", "local_shell")).strip().lower()
         if backend_kind == "docker":
@@ -191,14 +249,30 @@ def _run_agent(
                                            run_id=str(request.get("runId") or ""))
         else:
             backend = GuardedShellBackend(workspace)
+        # 只读档位直接拒绝一切写入与命令，先于审批生效；
+        # 因此门禁装在内层，只读拒绝时不会先弹批准再拒绝。
+        if permission_session:
+            backend = _attach_permissions(backend, request, permission_session, emitter)
+        if sandbox_mode == 'READ_ONLY':
+            from backends.read_only import ReadOnlyBackend
+            backend = ReadOnlyBackend(backend)
     except Exception as exc:
         logger.exception("工作区初始化失败")
+        gate_failed = str(exc).startswith('PERMISSION_GATE_UNAVAILABLE')        # 门禁连不上数据库与沙箱无关：先判它，否则 Docker 部署下会被误报成
+        # 「沙箱不可用」，用户去查 Docker 而真正的问题在数据库。
+        if gate_failed:
+            emitter.error(ErrorCode.WORKSPACE_INIT_FAILED, str(exc), retryable=False)
+            return
         if get_env("AGENT_SANDBOX_BACKEND", get_env("AGENT_SANDBOX_TYPE", "local_shell")).lower() == "docker":
             code = ErrorCode.SANDBOX_BUSY if isinstance(exc, sandbox_busy_types) else ErrorCode.SANDBOX_UNAVAILABLE
         else:
             code = ErrorCode.WORKSPACE_INIT_FAILED
         emitter.error(code, str(exc), retryable=True)
         return
+
+    logger.info("backend ready kind=%s sandbox=%s permission_session=%s workspace=%s",
+                backend_kind, sandbox_mode or "WORKSPACE_WRITE",
+                bool(permission_session), workspace.name)
 
     # 只读任务（知识问答、知识生成）套两层防护：
     #   1. ReadOnlyBackend —— 写文件、改文件、执行命令在执行侧被拒绝；
@@ -255,9 +329,13 @@ def _run_agent(
             checkpointer=checkpointer,
             store=store,
             task_kind=task_kind.value,
+            execution_backend=backend_kind,
             tools=CUSTOM_TOOLS,
             # 给第 0 层压缩指定外置目录：超阈值的大输出写到这里，原位只留引用
             workspace=workspace,
+            # 选了应用级模型时用冻结窗口；未选择时保持原有动态解析。
+            window=window,
+            summarizer_settings=summarizer_settings,
             overhead=overhead,
             compaction_out=compaction_sink,
             route_state=route_state,

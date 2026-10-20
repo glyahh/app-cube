@@ -48,6 +48,8 @@ public class AgentWorkerPool implements DisposableBean {
      * 关停时正被借出的进程会成为孤儿。
      */
     private final Set<AgentWorker> allWorkers = ConcurrentHashMap.newKeySet();
+    /** 本次模型配置变更前借出的进程；归还时丢弃，避免继续使用旧 .env。 */
+    private final Set<AgentWorker> staleWorkers = ConcurrentHashMap.newKeySet();
 
     /** 池内总进程数（空闲 + 借出）。 */
     private final AtomicInteger total = new AtomicInteger();
@@ -244,9 +246,26 @@ public class AgentWorkerPool implements DisposableBean {
 
     /** 把一个进程从账上抹掉：杀干净、从两个集合里摘除。 */
     private void forget(AgentWorker worker) {
+        staleWorkers.remove(worker);
         allWorkers.remove(worker);
         total.decrementAndGet();
         worker.destroyTree();
+    }
+
+    /**
+     * 模型配置写入 .env 后回收进程池：空闲进程立即重建，借出中的进程归还时丢弃。
+     * 这样新请求使用新配置，正在执行的任务不被中断。
+     */
+    public int recycleForModelReload() {
+        List<AgentWorker> idle = new ArrayList<>();
+        idleWorkers.drainTo(idle);
+        for (AgentWorker worker : idle) {
+            forget(worker);
+        }
+        staleWorkers.addAll(allWorkers);
+        replenishToCoreAsync();
+        log.info("模型配置变更：回收空闲 Python 进程 {} 个，活跃进程将在归还时替换", idle.size());
+        return idle.size();
     }
 
     /** 正常归还。 */
@@ -258,6 +277,11 @@ public class AgentWorkerPool implements DisposableBean {
 
         if (shutdown) {
             forget(worker);
+            return;
+        }
+        if (staleWorkers.remove(worker)) {
+            forget(worker);
+            replenishToCoreAsync();
             return;
         }
         if (!worker.isAlive() || worker.isEof()) {
@@ -385,6 +409,7 @@ public class AgentWorkerPool implements DisposableBean {
             worker.destroyTree();
         }
         allWorkers.clear();
+        staleWorkers.clear();
         idleWorkers.clear();
         total.set(0);
         active.set(0);

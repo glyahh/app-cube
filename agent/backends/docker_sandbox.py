@@ -25,9 +25,12 @@ from deepagents.backends.protocol import ExecuteResponse
 from backends.permissions import ensure_safe_command
 from core.masking import mask
 from backends.secret_files import SecretSafeFilesMixin
+from env_utils import get_env
 
 logger = logging.getLogger(__name__)
 MAX_OUTPUT_CHARS = 30_000
+DEFAULT_RUNTIME_IMAGE = "glyahh-sandbox-runtime:24.04"
+RUNTIME_CHECK = "set -e; node --version; npm --version; python3 --version; java -version; mvn --version; sqlite3 --version"
 
 
 class SandboxError(RuntimeError):
@@ -66,13 +69,15 @@ class DockerSandboxManager:
     def __init__(self, *, image: str | None = None, idle_cpu_minutes: int = 10,
                  stop_idle_minutes: int = 30, destroy_idle_minutes: int = 120,
                  max_lifetime_hours: int = 8):
-        self.image = image or os.getenv("AGENT_SANDBOX_IMAGE", "ubuntu:24.04")
+        self.image = image or get_env("AGENT_SANDBOX_IMAGE", DEFAULT_RUNTIME_IMAGE).strip() or DEFAULT_RUNTIME_IMAGE
         self.idle_cpu_seconds = idle_cpu_minutes * 60
         self.stop_idle_seconds = stop_idle_minutes * 60
         self.destroy_idle_seconds = destroy_idle_minutes * 60
         self.max_lifetime_seconds = max_lifetime_hours * 3600
         self._records: dict[str, SandboxRecord] = {}
         self._lock = threading.RLock()
+        # docker info 在 WSL 下要起一次 CLI，每次 acquire 都调会白白多几秒。
+        self._healthy_at = 0.0
         self._stop_reaper = threading.Event()
         self._reaper = threading.Thread(target=self._reap_loop, name="docker-sandbox-reaper",
                                          daemon=True)
@@ -129,8 +134,29 @@ class DockerSandboxManager:
         except subprocess.TimeoutExpired as exc:
             raise SandboxError("Docker 操作超时") from exc
         except subprocess.CalledProcessError as exc:
-            detail = (exc.stderr or exc.stdout or "").strip()[:500]
+            detail = cls._decode(exc.stderr or exc.stdout).strip()[:500]
             raise SandboxError(detail or "Docker 操作失败") from exc
+
+    def verify_image_runtime(self) -> None:
+        """不挂载工程，确认所选镜像的运行时；不自动拉取或安装。"""
+        self._docker("image", "inspect", self.image)
+        name = "glyahh-runtime-check-" + uuid.uuid4().hex
+        try:
+            self._docker("run", "--rm", "--pull", "never", "--name", name,
+                         "--network", "none", "--cap-drop", "ALL",
+                         "--security-opt", "no-new-privileges", "--pids-limit", "64",
+                         "--memory", "512m", "--cpus", "1", "--entrypoint", "bash",
+                         self.image, "-lc", RUNTIME_CHECK, timeout=30)
+        except Exception:
+            self._docker("rm", "-f", name, check=False)
+            result = self._docker("inspect", name, check=False)
+            if not self._confirmed_absent(result):
+                raise SandboxError("运行时预检容器清理未确认：" + name)
+            raise
+
+    def _verify_runtime(self, container_id: str) -> None:
+        # 从根目录检查工具版本，避免读取工程里的 Maven 启动配置。
+        self._docker("exec", "-w", "/", container_id, "bash", "-lc", RUNTIME_CHECK, timeout=30)
 
     @staticmethod
     def _decode(raw: bytes | None) -> str:
@@ -149,7 +175,12 @@ class DockerSandboxManager:
         return raw.decode("utf-8", errors="replace")
 
     def _healthy(self) -> None:
+        # 30 秒内复用上次结果：容器配置与 swap 仍每次核对，这里只省掉重复探活。
+        now = time.time()
+        if now - self._healthy_at < 30:
+            return
         self._docker("info", "--format", "{{.ServerVersion}}", timeout=10)
+        self._healthy_at = now
 
     def _swap_is_zero(self, container_id: str) -> bool:
         result = self._docker("exec", container_id, "cat",
@@ -357,7 +388,7 @@ class DockerSandboxManager:
         """创建并启动容器；若发生 Conflict 则重新 inspect 并安全复用。返回 (container_id, is_reused)。"""
         # 1. 执行 docker create 并注入 session 标识
         try:
-            result = self._docker("create", "--name", name, "--workdir", "/workspace",
+            result = self._docker("create", "--pull", "never", "--name", name, "--workdir", "/workspace",
                                   "--label", f"glyahh.session_id={session_id}",
                                   "--network", "bridge", "--pids-limit", "512",
                                   "--cpus", os.getenv("AGENT_SANDBOX_CPUS", "2"),
@@ -445,6 +476,7 @@ class DockerSandboxManager:
             self._records[session_id] = new_record
             try:
                 self._ensure_hard_swap(container_id)
+                self._verify_runtime(container_id)
             except Exception:
                 self._stop_after_guard_failure(new_record)
                 raise
@@ -467,8 +499,28 @@ class DockerSandboxManager:
             with self._lock:
                 self._stop_after_guard_failure(record)
             raise
-        return self._docker("exec", "-i", "-w", "/workspace", record.container_id,
-                            "bash", "-lc", command, timeout=timeout)
+        try:
+            return self.execute_confirmed(self._docker, record.container_id, command, timeout)
+        except (SandboxError, subprocess.TimeoutExpired):
+            # 执行状态不明时先确认容器停止；停止未确认必须继续占住资源。
+            with self._lock:
+                self._stop_after_guard_failure(record)
+            raise
+
+    @staticmethod
+    def execute_confirmed(docker, container_id: str, command: str, timeout: int) -> subprocess.CompletedProcess[str]:
+        """普通与导入容器共用执行回执，不推测 Docker 非零退出的来源。"""
+        # 1. 用独立回执确认 Shell 已执行结束，不能把 Docker 自身失败当命令退出。
+        marker = "GLYAHH_EXEC_DONE_" + uuid.uuid4().hex
+        script = command + '\n__glyahh_status=$?\nprintf "\\n' + marker + ':%s\\n" "$__glyahh_status" >&2\nexit "$__glyahh_status"'
+        result = docker("exec", "-i", "-w", "/workspace", container_id,
+                              "bash", "-lc", script, check=False, timeout=timeout)
+        receipt = f"\n{marker}:{result.returncode}\n"
+        if not result.stderr.endswith(receipt):
+            raise SandboxError("命令执行状态未确认：" + mask(result.stderr or result.stdout, 500))
+        # 2. 回执仅用于执行确认；真实退出码和错误正文原样交回工具层。
+        return subprocess.CompletedProcess(result.args, result.returncode, result.stdout,
+                                           result.stderr[:-len(receipt)])
 
     def reap(self, now: float | None = None) -> list[str]:
         """清理空闲容器；应由应用定时任务调用。"""
@@ -530,7 +582,10 @@ class DockerSandboxBackend(SecretSafeFilesMixin, LocalShellBackend):
         self.workspace = Path(workspace).resolve()
         self.session_id = session_id
         self.manager = manager or _MANAGER
+        acquire_started = time.monotonic()
         self.record = self.manager.acquire(session_id, self.workspace, run_id=run_id)
+        logger.info("sandbox acquire ms=%d reused=%s session=%s",
+                    (time.monotonic() - acquire_started) * 1000, self.record.reused, session_id)
         super().__init__(str(self.workspace), virtual_mode=True, timeout=timeout, **kwargs)
 
     def _prepare_command(self, command: str) -> str:
@@ -540,20 +595,79 @@ class DockerSandboxBackend(SecretSafeFilesMixin, LocalShellBackend):
         command = re.sub(r"(?m)^(\s*)dir(?=\s|$)", r"\1ls", command)
         return command
 
+    # ── 工具许可门禁 ──────────────────────────────────────────
+    # 与 GuardedShellBackend 同语义，但必须各自实现：裸 super() 在 mixin
+    # 里无法推断宿主类，显式 super(类名, self) 才能拿到正确的方法解析顺序。
+
+    def _permission_path(self, file_path: str) -> str:
+        text = str(file_path).strip().replace("\\", "/")
+        while text.startswith("/"):
+            text = text[1:]
+        target = Path(text)
+        if target.is_absolute():
+            target = target.resolve().relative_to(self.workspace)
+        return target.as_posix()
+
+    def _perform(self, tool, parameters, operation):
+        permissions = getattr(self, "_permissions", None)
+        if permissions is None:
+            return operation()
+        return permissions.perform(lambda: {"tool": tool, **parameters}, operation)
+
+    def write(self, file_path, content):
+        relative = self._permission_path(file_path)
+        return self._perform("write", {"path": relative, "content": content},
+                             lambda: super(DockerSandboxBackend, self).write(file_path, content))
+
+    def edit(self, file_path, old_string, new_string, replace_all=False):
+        relative = self._permission_path(file_path)
+        return self._perform(
+            "edit", {"path": relative, "oldString": old_string, "newString": new_string,
+                     "replaceAll": replace_all},
+            lambda: super(DockerSandboxBackend, self).edit(file_path, old_string, new_string, replace_all))
+
+    def delete(self, file_path):
+        relative = self._permission_path(file_path)
+        return self._perform("delete", {"path": relative},
+                             lambda: super(DockerSandboxBackend, self).delete(file_path))
+
+    def upload_files(self, files):
+        parameters = {"files": [{"path": self._permission_path(path)} for path, _ in files]}
+        return self._perform("upload_files", parameters,
+                             lambda: super(DockerSandboxBackend, self).upload_files(files))
+
+    async def _permission_blocking(self, fn, *args, **kwargs):
+        import asyncio
+        return await asyncio.to_thread(fn, *args, **kwargs)
+
+    async def awrite(self, file_path, content):
+        return await self._permission_blocking(self.write, file_path, content)
+
+    async def aedit(self, file_path, old_string, new_string, replace_all=False):
+        return await self._permission_blocking(self.edit, file_path, old_string, new_string, replace_all)
+
+    async def adelete(self, file_path):
+        return await self._permission_blocking(self.delete, file_path)
+
+    async def aupload_files(self, files):
+        return await self._permission_blocking(self.upload_files, files)
+
+    async def aexecute(self, command, *, timeout=None):
+        return await self._permission_blocking(self.execute, command, timeout=timeout)
+
     def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
         command = self._prepare_command(command)
+        # 命令也是副作用，必须过同一道门禁。
+        return self._perform("execute", {"argv": command.split(), "cwd": "."},
+                             lambda: self._execute_checked(command, timeout))
+
+    def _execute_checked(self, command: str, timeout: int | None = None) -> ExecuteResponse:
         self._refresh_secrets()
         effective_timeout = timeout or getattr(self, "_default_timeout", 120)
-        try:
-            proc = self.manager.execute(self.record, command, effective_timeout)
-        except (subprocess.TimeoutExpired, SandboxError) as exc:
-            if "超时" not in str(exc):
-                raise
-            return ExecuteResponse(output=f"命令超时（{effective_timeout} 秒）已终止。",
-                                   exit_code=124, truncated=False)
+        proc = self.manager.execute(self.record, command, effective_timeout)
         output = (proc.stdout or "")
         if proc.stderr:
-            output += "\n".join(line if line.startswith("[stderr]") else f"[stderr] {line}"
+            output += "\n" + "\n".join(line if line.startswith("[stderr]") else f"[stderr] {line}"
                                     for line in proc.stderr.splitlines())
         output = self._mask_output(output)
         truncated = len(output) > MAX_OUTPUT_CHARS
@@ -561,6 +675,9 @@ class DockerSandboxBackend(SecretSafeFilesMixin, LocalShellBackend):
             output = output[:MAX_OUTPUT_CHARS] + "\n…（输出已截断）"
         if truncated or proc.returncode != 0:
             output += f"\n\nExit code: {proc.returncode}"
+        if proc.returncode != 0:
+            # 非零退出码是业务结果，但现场需要知道具体命令与码值。
+            logger.info("命令失败 command=%s exit=%s", command, proc.returncode)
         return ExecuteResponse(output=output, exit_code=proc.returncode, truncated=truncated)
 
     def close(self) -> None:

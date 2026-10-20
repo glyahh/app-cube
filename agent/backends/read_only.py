@@ -44,13 +44,10 @@ def _refuse_async(name: str):
     返回一个普通函数会在 await 处报 TypeError，错误信息变成「不能 await」，
     而不是我们想告诉模型的「只读任务不允许写」。
     """
+    refuse = _refuse(name)
 
     async def _blocked(self, *args, **kwargs):
-        logger.warning("只读任务尝试调用 %s，已拒绝", name)
-        raise ReadOnlyViolation(
-            f"当前是只读任务，不允许调用 {name}；"
-            f"如需修改代码或执行命令，请在生成对话里提出。"
-        )
+        return refuse(self, *args, **kwargs)
 
     _blocked.__name__ = name
     _blocked.__doc__ = f"只读任务禁用 {name}。"
@@ -67,9 +64,6 @@ _WRITE_METHODS = (
     # execute 也算：命令能改文件、能启动进程，「只读」不能只在文件工具上成立
     "execute",
 )
-
-# 只读任务允许的读操作。同步与异步两套都要显式定义。
-_READ_METHODS = ("ls", "read", "grep", "glob")
 
 
 def _forward(name: str):

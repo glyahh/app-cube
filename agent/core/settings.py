@@ -120,6 +120,7 @@ def load_settings() -> Settings:
             summarizer_api_key=get_env("AGENT_SUMMARIZER_API_KEY"),
             proxy_enabled=proxy_enabled,
             proxy_url=proxy_url,
+            request_kwargs_json=get_env("AGENT_MODEL_REQUEST_KWARGS_JSON").strip() or None,
             summarizer_context_window_override=int(get_env("AGENT_SUMMARIZER_CONTEXT_WINDOW", "0")),
         ),
         limits=Limits(

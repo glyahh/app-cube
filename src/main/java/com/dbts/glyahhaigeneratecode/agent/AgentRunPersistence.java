@@ -129,18 +129,34 @@ public class AgentRunPersistence {
             java.util.concurrent.atomic.AtomicReference<com.fasterxml.jackson.databind.JsonNode> usage =
                     new java.util.concurrent.atomic.AtomicReference<>();
             java.util.concurrent.atomic.AtomicReference<String> outcome = new java.util.concurrent.atomic.AtomicReference<>("FAILED");
+            // 首个错误事件的码与说明。留到最终落库，否则 run 只留一个 FAILED，
+            // 事后完全查不出为什么失败 —— 线上 89 条 FAILED 的 error_message 都是空的。
+            java.util.concurrent.atomic.AtomicReference<String> failureCode =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            java.util.concurrent.atomic.AtomicReference<String> failureMessage =
+                    new java.util.concurrent.atomic.AtomicReference<>();
 
             return events
                     .handle((AgentEvent event, SynchronousSink<AgentEvent> sink) -> {
                         accumulate(event, buffer, thinking);
                         if ("import.review.requested".equals(event.event())) outcome.set("WAITING_REVIEW");
                         if (AgentEvent.RUN_COMPLETED.equals(event.event())) {
-                            outcome.set("succeeded".equals(event.status()) ? "SUCCEEDED" : "FAILED");
+                            // cancelled 是「等待审批超时」这类主动暂停，不是失败。
+                            outcome.set(switch (event.status()) {
+                                case "succeeded" -> "SUCCEEDED";
+                                case "cancelled" -> "CANCELLED";
+                                default -> "FAILED";
+                            });
                             if (event.frame().path("usage").isObject()) {
                                 usage.set(event.frame().path("usage").deepCopy());
                             }
                         }
-                        if (AgentEvent.ERROR.equals(event.event())) outcome.set("FAILED");
+                        if (AgentEvent.ERROR.equals(event.event())) {
+                            outcome.set("FAILED");
+                            // compareAndSet 保留第一条：后面的往往是第一条的连带产物。
+                            failureCode.compareAndSet(null, event.errorCode());
+                            failureMessage.compareAndSet(null, event.frame().path("message").asText());
+                        }
                         if (AgentEvent.MODEL_ROUTE_FALLBACK.equals(event.event())
                                 && !recordModelFallback(appId, runId, event)) {
                             return;
@@ -150,7 +166,7 @@ public class AgentRunPersistence {
                     .doOnComplete(() -> {
                         persistOnce(appId, userId, roundId, buffer, thinking, persisted);
                         persistUsageOnce(runId, usage.get(), usagePersisted);
-                        if (finishRun(runId, outcome.get(), null, null, settled)) {
+                        if (finishRun(runId, outcome.get(), failureCode.get(), failureMessage.get(), settled)) {
                             publishFinished(appId, userId, runId, outcome.get());
                         }
                     })
@@ -284,6 +300,10 @@ public class AgentRunPersistence {
             // 终稿是权威文本，整体替换而不是追加 —— 增量可能因为网络或过滤有缺口
             buffer.setLength(0);
             buffer.append(event.frame().path("content").asText(""));
+        } else if (AgentEvent.RUN_COMPLETED.equals(event.event()) && buffer.length() == 0) {
+            // 只有终态摘要、没有正文事件的路径（例如异常终止）也要落一句，避免占位文案。
+            String summary = event.frame().path("summary").asText("");
+            if (!summary.isBlank()) buffer.append(summary);
         }
     }
 
@@ -300,7 +320,7 @@ public class AgentRunPersistence {
         thinking.forEach(item -> { if ("running".equals(item.get("status"))) item.put("status", "failed"); });
         try {
             chatHistoryService.saveAgentMessage(appId, userId,
-                    text.isBlank() ? "本轮未产生最终回答。" : text, objectMapper.writeValueAsString(thinking));
+                    text.isBlank() ? "本轮已执行，未生成文字总结。" : text, objectMapper.writeValueAsString(thinking));
         } catch (Exception e) {
             // 落 AI 行失败不该影响已经推给前端的流
             log.error("落 AI 消息失败：appId={}, roundId={}", appId, roundId, e);

@@ -1,7 +1,5 @@
 package com.dbts.glyahhaigeneratecode.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import jakarta.annotation.Resource;
 import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Bean;
@@ -22,21 +20,15 @@ public class RedisCacheManagerConfig {
 
     @Bean
     public CacheManager cacheManager() {
-        // 配置 ObjectMapper 支持 Java8 时间类型
-        ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.registerModule(new JavaTimeModule());
-        
-        // 默认配置
+        // 1. 保留默认序列化方式，设置缓存有效期和空值策略。
         RedisCacheConfiguration defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(Duration.ofMinutes(30)) // 默认 30 分钟过期
                 .disableCachingNullValues() // 禁用 null 值缓存
                 // key 使用 String 序列化器
                 .serializeKeysWith(RedisSerializationContext.SerializationPair
                         .fromSerializer(new StringRedisSerializer()));
-                // value 使用 JSON 序列化器（支持复杂对象）, 无法反序列化,
-//                .serializeValuesWith(RedisSerializationContext.SerializationPair
-//                        .fromSerializer(new GenericJackson2JsonRedisSerializer(objectMapper)));
         
+        // 2. 为应用精选分页单独设置有效期。
         return RedisCacheManager.builder(redisConnectionFactory)
                 .cacheDefaults(defaultConfig)
                 // 针对 good_app_page 配置5分钟过期

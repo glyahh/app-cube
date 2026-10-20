@@ -48,6 +48,14 @@ public final class UserFacingOutputHandler {
             case "MODEL_QUOTA_EXCEEDED" -> "生成服务额度不足，请稍后重试";
             case "RUN_DEADLINE_EXCEEDED", "SANDBOX_TIMEOUT" -> "处理超时，请稍后重试";
             case "SANDBOX_BUSY" -> "当前任务正在处理中，请稍后重试";
+            // 下面这些不是「稍后重试」能好的：要么配置错，要么环境不可用。
+            // 提示要让人知道该去改什么，否则用户只会反复点重试。
+            case "MODEL_CALL_FAILED" -> "模型调用失败，请检查模型配置与密钥是否有效";
+            case "WORKSPACE_INIT_FAILED" -> "工作区初始化失败，请检查数据库连接与产物目录权限";
+            case "SANDBOX_UNAVAILABLE", "SANDBOX_CREATE_FAILED" -> "沙箱不可用，请确认 Docker 服务已启动";
+            case "SANDBOX_EXEC_FAILED", "SANDBOX_TERMINATED" -> "沙箱执行中断，请重新发起本次生成";
+            case "TOOL_EXECUTION_FAILED" -> "工具执行失败，本轮已停止";
+            case "CHECKPOINT_ERROR" -> "会话状态写入失败，请重新发起本次对话";
             default -> "本次处理未完成，请稍后重试";
         };
     }
@@ -94,8 +102,12 @@ public final class UserFacingOutputHandler {
                         // 仅 execute 安全转发预览，其余工具不暴露参数和输出
                         if ("execute".equals(tool)) {
                             safePreview(in, out, "inputPreview");
-                            if (AgentEvent.TOOL_FINISHED.equals(event.event()))
+                            if (AgentEvent.TOOL_FINISHED.equals(event.event())) {
                                 safePreview(in, out, "outputPreview");
+                                if (in.path("exitCode").isIntegralNumber() && in.path("exitCode").canConvertToInt()) {
+                                    out.put("exitCode", in.path("exitCode").intValue());
+                                }
+                            }
                         }
                     }
                     case AgentEvent.STATUS, AgentEvent.STEP, AgentEvent.TODO_DELTA -> {
@@ -151,6 +163,11 @@ public final class UserFacingOutputHandler {
                     }
                     case "import.review.requested" -> {
                         copy(in, out, "editId", "hash", "risk", "status", "revision");
+                    }
+                    case "agent.permission.requested" -> {
+                        // 普通应用的工具许可：只转发服务端投影，不含动作正文。
+                        copy(in, out, "permissionId", "tool", "highRisk", "status", "revision");
+                        out.set("display", in.path("display").deepCopy());
                     }
                     case AgentEvent.RUN_STARTED, AgentEvent.HEARTBEAT, AgentEvent.END -> { }
                     case AgentEvent.ARTIFACT_CHANGED, AgentEvent.ARTIFACT_MANIFEST -> {

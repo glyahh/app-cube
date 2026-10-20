@@ -14,8 +14,10 @@ const props = withDefaults(
     models: AgentModelOption[]
     busy?: boolean
     saving?: boolean
+    /** 普通应用暂不支持授权模式，只展示模型与思考力度。 */
+    showMode?: boolean
   }>(),
-  { busy: false, saving: false },
+  { busy: false, saving: false, showMode: true },
 )
 const emit = defineEmits<{ change: [settings: AgentComposerSettings] }>()
 const options = [
@@ -27,10 +29,17 @@ const effortLabels = {
   low: { label: '低', description: '快速响应' },
   medium: { label: '中', description: '速度与深度均衡' },
   high: { label: '高', description: '更深入地思考' },
+  xhigh: { label: '超高', description: '复杂问题的深度推理' },
+  max: { label: '最大', description: '用于最难的任务，耗时更长' },
 }
 const locked = computed(() => props.busy || props.saving)
 const modelOptions = computed(() =>
-  props.models.map((model) => ({ value: model.id, label: model.name, provider: model.provider })),
+  props.models.map((model) => ({
+    value: model.id,
+    // 优先展示真实模型名；旧配置没有 model 字段时回退到配置项名称。
+    label: model.model || model.name,
+    provider: model.provider,
+  })),
 )
 const efforts = computed(
   () => props.models.find((model) => model.id === props.settings.modelId)?.efforts ?? [],
@@ -66,7 +75,7 @@ function changeEffort(value: unknown) {
 
 <template>
   <div class="composer-controls">
-    <div class="mode-control">
+    <div v-if="showMode" class="mode-control">
       <Select
         :value="settings.mode"
         :options="options"
@@ -97,28 +106,26 @@ function changeEffort(value: unknown) {
         @change="changeModel"
       >
         <template #option="item">
-          <span class="model-option"
-            ><span>{{ item.label }}</span
-            ><span class="model-provider">
-              {{ item.provider }}
-              <svg
-                v-if="item.value === settings.modelId"
-                class="selected-check"
-                width="14"
-                height="14"
-                viewBox="0 0 16 16"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="m3 8 3 3 7-7"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg> </span
-          ></span>
+          <span class="model-option">
+            <span>{{ item.label }}</span>
+            <svg
+              v-if="item.value === settings.modelId"
+              class="selected-check"
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="m3 8 3 3 7-7"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </span>
         </template>
       </Select>
       <span class="control-divider" aria-hidden="true"></span>
@@ -160,9 +167,9 @@ function changeEffort(value: unknown) {
 .composer-controls,
 .model-controls {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 .composer-controls {
@@ -170,6 +177,7 @@ function changeEffort(value: unknown) {
 }
 .mode-control {
   flex: 0 0 auto;
+  margin-right: 4px;
 }
 .mode-control :deep(.ant-select) {
   width: auto;
@@ -178,13 +186,15 @@ function changeEffort(value: unknown) {
   background: #f5f5f5;
   border-radius: 16px;
 }
+/* 模型与力度紧邻同排：模型名可收缩，力度紧随其后。 */
 .model-select {
   width: auto;
-  min-width: 104px;
-  max-width: 100%;
+  min-width: 0;
+  max-width: 220px;
 }
 .effort-select {
   width: auto;
+  min-width: 0;
 }
 .model-controls :deep(.ant-select-selector) {
   border-radius: 6px;
@@ -210,7 +220,6 @@ function changeEffort(value: unknown) {
   justify-content: space-between;
   align-items: center;
 }
-.model-provider,
 .effort-description {
   font-size: 12px;
   color: #737373;
@@ -222,7 +231,8 @@ function changeEffort(value: unknown) {
 }
 @media (max-width: 767px) {
   .composer-controls {
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 6px;
   }
   .model-controls {
     gap: 2px;

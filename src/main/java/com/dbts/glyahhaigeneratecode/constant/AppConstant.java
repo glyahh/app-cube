@@ -53,7 +53,9 @@ public interface AppConstant {
             "target",
             ".mvn",
             ".idea",
-            ".vscode"
+            ".vscode",
+            // prompt 要求模型把临时自检脚本放这里并删掉；模型没删时不能随产物交付。
+            ".scratch"
     );
 
 }

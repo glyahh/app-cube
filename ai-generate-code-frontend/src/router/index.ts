@@ -45,6 +45,15 @@ const router = createRouter({
       name: 'user-chats',
       component: () => import('@/page/User/UserChatHistory.vue'),
     },
+    {
+      path: '/model-config',
+      redirect: '/user/models',
+    },
+    {
+      path: '/user/models',
+      name: 'user-models',
+      component: () => import('@/page/User/UserModels.vue'),
+    },
     // 管理员管理用户界面
     {
       path: '/admin/users',
