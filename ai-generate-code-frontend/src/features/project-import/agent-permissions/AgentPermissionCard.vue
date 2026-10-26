@@ -14,7 +14,7 @@ const emit = defineEmits<{ decision: [event: AgentToolDecisionEvent] }>()
 const lines = computed(() => props.request.detailText.split('\n'))
 
 function decide(decision: AgentToolDecision) {
-  if (props.busy) return
+  if (props.busy || (decision === 'APPROVE_SIMILAR' && props.request.allowSimilar === false)) return
   emit('decision', {
     requestId: props.request.id,
     revision: props.request.revision,
@@ -47,6 +47,7 @@ function decide(decision: AgentToolDecision) {
         >仅批准本次</Button
       >
       <Button
+        v-if="request.allowSimilar !== false"
         :disabled="busy"
         data-testid="approve-similar"
         title="仅本会话内同风险、同目标范围的工具请求；不包含整批合入"

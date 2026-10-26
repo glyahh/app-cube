@@ -21,6 +21,13 @@ class ImportExecutionLedgerTest {
     ImportExecutionLedger.Row row=new ImportExecutionLedger.Row(id,1,7,UUID.randomUUID(),123,Instant.now(),"n",null,"PREPARING",null,"PENDING",2);
     ImportExecutionLedger.Entry entry(){return new ImportExecutionLedger.Entry(id,1,7,UUID.randomUUID(),"a".repeat(64),"b".repeat(64),".","c".repeat(64),ImportExecutionSandbox.Limits.defaults(),123,Instant.now());}
 
+    @Test void stopSlotQueryIncludesFinishedButUncleanRows(){
+        ledger.activeSlots(7,"service:");
+        var sql=ArgumentCaptor.forClass(String.class);
+        verify(jdbc).query(sql.capture(),any(RowMapper.class),eq(7L),eq("service:%"));
+        assertTrue(sql.getValue().contains("(finished_at IS NULL OR cleanup<>'DONE')"));
+    }
+
     @Test void entryRejectsMissingIdentity(){
         assertThrows(IllegalArgumentException.class,()->new ImportExecutionLedger.Entry(id,1,7,UUID.randomUUID(),"x","b".repeat(64),".","c".repeat(64),ImportExecutionSandbox.Limits.defaults(),123,Instant.now()));
         assertThrows(IllegalArgumentException.class,()->new ImportExecutionLedger.Entry(id,1,7,UUID.randomUUID(),"a".repeat(64),"b".repeat(64),".","c".repeat(64),ImportExecutionSandbox.Limits.defaults(),0,Instant.now()));

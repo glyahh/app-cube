@@ -100,16 +100,16 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        // 一个连接同时只跑一个 run —— 覆盖前先停掉旧的，避免两个流往同一个 socket 写
-        handleCancel(raw);
-
         AgentRunRequest runRequest;
         Long roundId = null;
         try {
             // 限流 + 归属校验。注意顺序：先限流，避免越权探测把配额也烧掉。
             rateLimiterService.tryAcquire(rateLimiterService.userKey(userId),
                     RATE, RATE_INTERVAL_SECONDS, RATE_MESSAGE);
-            // 落 USER 行拿 roundId（失败返回 null，不阻断生成）
+            requestFactory.requireOwnedApp(appId, userId);
+            // 拒绝的请求不能取消已获授权的当前运行；归属通过后才替换旧流。
+            handleCancel(raw);
+            // 归属校验通过后落 USER 行拿 roundId（失败返回 null，不阻断生成）
             roundId = persistence.beginRound(appId, userId, message, null);
             runRequest = requestFactory.build(appId, userId, message, roundId);
         } catch (MyException e) {

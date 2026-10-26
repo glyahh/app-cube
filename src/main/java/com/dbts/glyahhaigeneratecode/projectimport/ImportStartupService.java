@@ -318,6 +318,14 @@ public class ImportStartupService {
         });
     }
 
+    /** 停止既有资源仅校验当前应用归属，不要求内容、目录或识别仍可启动。 */
+    public void requireCleanupOwner(User user,long appId){
+        if(user==null||user.getId()==null||appId<=0)throw new MyException(ErrorCode.PARAMS_ERROR,"应用或登录状态无效。");
+        var app=apps.getById(appId);
+        if(app==null||app.getUserId()==null||!app.getUserId().equals(user.getId()))
+            throw new MyException(ErrorCode.NOT_FOUND_ERROR,"应用不存在。");
+    }
+
     private ImportTaskRepository.Publication qualified(User user,long appId){
         if(user==null||user.getId()==null||appId<=0)throw new MyException(ErrorCode.PARAMS_ERROR,"应用或登录状态无效。");
         var publication=repository.publicationByApp(appId);

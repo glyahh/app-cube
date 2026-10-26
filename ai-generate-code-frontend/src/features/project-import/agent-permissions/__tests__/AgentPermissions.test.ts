@@ -313,3 +313,40 @@ describe('完整候选审阅', () => {
     ])
   })
 })
+
+describe('F11 candidate application semantics', () => {
+  it('normal app explains already written changes, retain and attempted rollback', async () => {
+    const wrapper = review({
+      candidate: { ...candidate, applicationMode: 'APPLIED', rollbackAvailable: false },
+    })
+    expect(wrapper.text()).toContain('修改已写入工作区')
+    expect(wrapper.text()).toContain('不能自动回滚')
+    expect(wrapper.text()).not.toContain('尚未合入源码')
+    expect(wrapper.text()).not.toContain('确认整批合入')
+    expect(wrapper.get('[data-testid="approve"]').text()).toBe('确认整批保留')
+    await wrapper.get('[data-testid="approve"]').trigger('click')
+    expect(wrapper.emitted('decision')![0]).toEqual([{ ...reviewIdentity, decision: 'APPROVE' }])
+    const reject = wrapper
+      .findAllComponents(Button)
+      .find((button) => button.text() === '拒绝并尝试回滚')!
+    await reject.trigger('click')
+    expect(wrapper.emitted('decision')![1]).toEqual([{ ...reviewIdentity, decision: 'REJECT' }])
+  })
+  it('import app retains staged/not-yet-merged semantics', () => {
+    const wrapper = review({ candidate: { ...candidate, applicationMode: 'STAGED' } })
+    expect(wrapper.text()).toContain('尚未合入源码')
+    expect(wrapper.get('[data-testid="approve"]').text()).toBe('确认整批合入')
+    expect(wrapper.text()).not.toContain('修改已写入工作区')
+    expect(wrapper.text()).not.toContain('不能自动回滚')
+  })
+})
+
+it('F04 execution requests offer only one-time approval, file requests retain similar approval', () => {
+  const execution = track(
+    mount(AgentPermissionCard, { props: { request: { ...request, allowSimilar: false } } }),
+  )
+  expect(execution.find('[data-testid="approve-similar"]').exists()).toBe(false)
+  expect(execution.find('[data-testid="approve"]').exists()).toBe(true)
+  const file = track(mount(AgentPermissionCard, { props: { request } }))
+  expect(file.find('[data-testid="approve-similar"]').exists()).toBe(true)
+})

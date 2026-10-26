@@ -25,7 +25,7 @@ public class AgentChangeLedgerRepository {
     public record Change(String path, String change, String beforeHash, String afterHash,
                          String beforeBlob, String afterBlob, boolean truncated) { }
 
-    /** 同一路径重复改动时按最终状态覆盖，保留最初的 before 与最新 after。 */
+    /** 同一路径保留最初 before 与最新 after；原文一旦缺失，后续小改动不得恢复可回滚标记。 */
     public void record(UUID sessionId, Change change) {
         boolean truncated = change.truncated()
                 || (change.beforeBlob() != null && change.beforeBlob().length() > MAX_BLOB_CHARS)
@@ -40,7 +40,7 @@ public class AgentChangeLedgerRepository {
                     change=EXCLUDED.change,
                     after_hash=EXCLUDED.after_hash,
                     after_blob=EXCLUDED.after_blob,
-                    truncated=EXCLUDED.truncated
+                    truncated=agent_change_ledger.truncated OR EXCLUDED.truncated
                 """, sessionId, change.path(), change.change(), change.beforeHash(), change.afterHash(),
                 before, after, truncated);
     }
@@ -55,10 +55,10 @@ public class AgentChangeLedgerRepository {
                 row.getBoolean("truncated")), sessionId);
     }
 
-    /** 回滚所需的最小集合：只剩 before 内容与变更类型。 */
+    /** 原始摘要与正文一起保留：缺少正文但有摘要表示未知原文，不是新增文件。 */
     public List<Map<String, Object>> rollbackPlan(UUID sessionId) {
         return jdbc.queryForList("""
-                SELECT path,change,before_blob,truncated FROM biz.agent_change_ledger
+                SELECT path,change,before_hash,before_blob,truncated FROM biz.agent_change_ledger
                 WHERE session_id=? ORDER BY path
                 """, sessionId);
     }

@@ -47,6 +47,8 @@ export function useAgentSession(input: {
   const candidate = computed<AgentChangeCandidate | null>(() =>
     review.value
       ? {
+          applicationMode: isImportApp.value ? 'STAGED' : 'APPLIED',
+          rollbackAvailable: !review.value.body.changes.some((change) => change.truncated),
           id: review.value.editId,
           revision: String(review.value.revision),
           reviewHash: review.value.hash,
@@ -84,6 +86,7 @@ export function useAgentSession(input: {
     tool.value
       ? {
           ...tool.value,
+          allowSimilar: isImportApp.value || tool.value.action !== 'execute',
           action: tool.value.display.title,
           object: tool.value.display.object,
           reason: tool.value.display.reason,

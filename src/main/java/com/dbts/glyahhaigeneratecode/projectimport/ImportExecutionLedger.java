@@ -120,9 +120,9 @@ public class ImportExecutionLedger {
     public List<Row> forApp(long appId){
         return jdbc.query("SELECT * FROM biz.project_import_startup_execution WHERE app_id=? ORDER BY created_at",this::read,appId);
     }
-    /** 该应用当前未结束的指定前缀槽位执行；取消安装时按它停掉正在跑的命令。 */
+    /** 该应用未结束或清理未确认的指定前缀槽位执行；停止必须覆盖结束后的残留。 */
     public List<UUID> activeSlots(long appId,String slotPrefix){
-        return jdbc.query("SELECT execution_id FROM biz.project_import_startup_execution WHERE app_id=? AND finished_at IS NULL AND slot LIKE ?",
+        return jdbc.query("SELECT execution_id FROM biz.project_import_startup_execution WHERE app_id=? AND (finished_at IS NULL OR cleanup<>'DONE') AND slot LIKE ?",
             (row,index)->row.getObject(1,UUID.class),appId,slotPrefix+"%");
     }
     /** 安装槽位的未结束或未确认清理行，覆盖任务关联前的崩溃窗口。 */

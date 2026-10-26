@@ -24,6 +24,7 @@ class ImportStartupPreparationServiceTest {
     ImportStartupPlan.Content pair;
 
     @BeforeEach void setup(){
+        when(plans.forCleanup(user,42,planId)).thenAnswer(call->plans.get(user,42,planId));
         node=ImportStartupPlan.build(inspection(new ImportStartupScanner.Candidate("web","web",".","npm run dev",null,"STATIC","package.json")),
             Map.of("package.json","{\"name\":\"a\"}"),List.of(),List.of("web"));
         plain=ImportStartupPlan.build(inspection(new ImportStartupScanner.Candidate("site/index.html","site","site",null,null,"STATIC","site/index.html")),
@@ -268,6 +269,48 @@ class ImportStartupPreparationServiceTest {
             assertEquals("STOP_FAILED",service.run(user,42,planId,revision(pair)).reason());
             verify(execution,times(1)).execute(eq(user),eq(42L),eq(planId),anyString(),anyString(),any(),any(),any(),any(),nullable(Integer.class));
         }finally{release.countDown();}
+    }
+
+    @Test void repeatedFailedStopRetainsExecutionAndCannotBecomeFalseStopped(){
+        when(plans.get(user,42,planId)).thenReturn(view(pair));
+        var id=UUID.randomUUID();
+        var saved=new java.util.concurrent.atomic.AtomicReference<>(row(pair,"RUN","APPROVED","READY",null,
+            List.of(new ImportStartupPreparation.ServiceView("web","READY","READY",null,id,"http://127.0.0.1:9/"))));
+        when(preparations.find(7L,42,planId,revision(pair),"RUN")).thenAnswer(call->saved.get());
+        when(preparations.save(any())).thenAnswer(call->{var value=call.getArgument(0,ImportStartupPreparationRepository.Row.class);saved.set(value);return value;});
+        when(execution.activeSlots(42,"service:")).thenReturn(List.of(id));
+        when(execution.stopExecution(id)).thenReturn("STOP_FAILED");
+        assertEquals("STOP_FAILED",service.stop(user,42,planId,revision(pair)).reason());
+        assertEquals(id,saved.get().services().getFirst().executionId());
+        // Even if a legacy active-only query loses the finished row, its saved identity survives.
+        when(execution.activeSlots(42,"service:")).thenReturn(List.of());
+        assertEquals("STOP_FAILED",service.stop(user,42,planId,revision(pair)).reason());
+        assertEquals(id,saved.get().services().getFirst().executionId());
+        when(execution.stopExecution(id)).thenReturn("STOPPED");
+        assertEquals("STOPPED",service.stop(user,42,planId,revision(pair)).reason());
+        verify(execution,times(3)).stopExecution(id);
+    }
+
+    @Test void stalePlanCanStopItsResourcesButCannotStartNewOnes(){
+        var original=view(pair);
+        var stale=new ImportStartupPlanService.View(planId,"42",pair.scanId(),revision(pair),"STALE","2",false,original.confirmedAt(),false,pair,"PLAN_CHANGED",List.of(),null);
+        when(plans.get(user,42,planId)).thenReturn(stale);
+        var id=UUID.randomUUID();
+        when(preparations.find(7L,42,planId,revision(pair),"RUN")).thenReturn(row(pair,"RUN","APPROVED","READY",null,
+            List.of(new ImportStartupPreparation.ServiceView("web","READY","READY",null,id))));
+        when(execution.stopExecution(id)).thenReturn("STOPPED");
+        assertEquals("STOPPED",service.stop(user,42,planId,revision(pair)).reason());
+        verify(execution).stopExecution(id);
+        assertThrows(MyException.class,()->service.run(user,42,planId,revision(pair)));
+        verify(execution,never()).execute(any(),anyLong(),any(),any(),any(),any());
+    }
+
+    @Test void stopStillRejectsWrongRevisionAndUnauthorizedPlan(){
+        when(plans.get(user,42,planId)).thenReturn(view(pair));
+        assertThrows(MyException.class,()->service.stop(user,42,planId,"0".repeat(64)));
+        when(plans.forCleanup(user,42,planId)).thenThrow(new MyException(com.dbts.glyahhaigeneratecode.exception.ErrorCode.NOT_FOUND_ERROR,"not owned"));
+        assertThrows(MyException.class,()->service.stop(user,42,planId,revision(pair)));
+        verifyNoInteractions(execution);
     }
 
     private ImportStartupPreparationRepository.Row row(ImportStartupPlan.Content content,String kind,String decision,String state,String reason,List<ImportStartupPreparation.ServiceView> services){

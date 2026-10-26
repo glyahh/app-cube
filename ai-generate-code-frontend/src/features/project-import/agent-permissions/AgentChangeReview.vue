@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch } from 'vue'
+import { computed, watch } from 'vue'
 import { Button } from 'ant-design-vue'
 import type {
   AgentChangeCandidate,
@@ -21,6 +21,7 @@ const emit = defineEmits<{
   decision: [event: AgentReviewDecisionEvent]
   loadFile: [event: AgentReviewFileEvent]
 }>()
+const alreadyApplied = computed(() => props.candidate.applicationMode === 'APPLIED')
 const changeLabels = { ADDED: '新增', MODIFIED: '修改', DELETED: '删除' }
 
 function identity() {
@@ -66,7 +67,16 @@ watch(
       <h2>确认整批代码修改</h2>
       <span v-if="candidate.highRisk" class="risk">含高风险修改</span>
     </div>
-    <p class="approval-reason">请核对以下候选修改，尚未合入源码。</p>
+    <p class="approval-reason">
+      {{
+        alreadyApplied
+          ? '修改已写入工作区，请确认保留；拒绝将尝试回滚。'
+          : '请核对以下候选修改，尚未合入源码。'
+      }}
+    </p>
+    <p v-if="alreadyApplied && candidate.rollbackAvailable === false" role="alert" class="risk">
+      部分原文未完整保留，不能自动回滚；拒绝可能失败，请先手动核对文件。
+    </p>
     <details
       v-for="(file, index) in candidate.files"
       :key="`${candidate.id}:${candidate.revision}:${candidate.reviewHash}:${file.path}`"
@@ -78,7 +88,7 @@ watch(
       </summary>
       <p v-if="file.binary" class="muted diff-status">二进制文件，不提供文本差异。</p>
       <template v-else>
-        <template v-for="diff in [fileDiff(file.path)]" :key="file.path">
+        <template v-for="(diff, diffIndex) in [fileDiff(file.path)]" :key="diffIndex">
           <template v-if="diff.status === 'loaded'">
             <pre><span v-for="(line, lineIndex) in diff.text.split('\n')" :key="lineIndex" class="diff-line" :class="{ 'diff-added': line.startsWith('+'), 'diff-removed': line.startsWith('-') }">{{ line }}{{ lineIndex < diff.text.split('\n').length - 1 ? '\n' : '' }}</span></pre>
             <p v-if="diff.startLine > 1" class="muted diff-status">
@@ -111,16 +121,24 @@ watch(
         </template>
       </template>
     </details>
-    <p class="muted approval-scope">确认后合入以上全部修改；工具批准不能代替整批确认。</p>
+    <p class="muted approval-scope">
+      {{
+        alreadyApplied
+          ? '确认后保留以上全部修改；拒绝不等于已经回滚，回滚结果以实际执行为准。'
+          : '确认后合入以上全部修改；工具批准不能代替整批确认。'
+      }}
+    </p>
     <div class="buttons">
-      <Button danger :disabled="busy" @click="decide('REJECT')">拒绝并停止本轮</Button>
+      <Button danger :disabled="busy" @click="decide('REJECT')">{{
+        alreadyApplied ? '拒绝并尝试回滚' : '拒绝并停止本轮'
+      }}</Button>
       <Button
         type="primary"
         :loading="busy"
         :disabled="busy"
         data-testid="approve"
         @click="decide('APPROVE')"
-        >确认整批合入</Button
+        >{{ alreadyApplied ? '确认整批保留' : '确认整批合入' }}</Button
       >
     </div>
   </article>

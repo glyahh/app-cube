@@ -168,4 +168,38 @@ class UserFacingOutputHandlerTest {
 
         assertTrue(UserFacingOutputHandler.apply(Flux.just(raw)).collectList().block().isEmpty());
     }
+    @Test void completeStopMessageAndCancelledSummarySurviveProjection() {
+        String text = "本轮已停止。";
+        AgentEvent terminal = event(AgentEvent.RUN_COMPLETED, "ignored");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) terminal.frame())
+                .put("status", "cancelled").put("summary", text);
+        var events = UserFacingOutputHandler.apply(Flux.just(
+                event(AgentEvent.TEXT_DELTA, "private unfinished candidate"),
+                event(AgentEvent.TEXT_MESSAGE, text), terminal, event(AgentEvent.END, "")))
+                .collectList().block();
+        assertNotNull(events);
+        assertEquals(List.of(AgentEvent.TEXT_DELTA, AgentEvent.TEXT_MESSAGE, AgentEvent.RUN_COMPLETED, AgentEvent.END),
+                events.stream().map(AgentEvent::event).toList());
+        assertEquals(text, events.getFirst().textContent());
+        var completion = events.get(2);
+        assertEquals("cancelled", completion.status());
+        assertEquals(text, completion.frame().path("summary").asText());
+        assertTrue(completion.frame().path("summaryDelivered").asBoolean());
+        assertFalse(events.toString().contains("private unfinished candidate"));
+    }
+
+    @Test void terminalSummaryIsSanitizedAndDoesNotFlushUnconfirmedDelta() {
+        AgentEvent terminal = event(AgentEvent.RUN_COMPLETED, "ignored");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) terminal.frame())
+                .put("status", "cancelled").put("summary", "docker /tmp/private-data");
+        var events = UserFacingOutputHandler.apply(Flux.just(
+                event(AgentEvent.TEXT_DELTA, "unconfirmed answer"), terminal)).collectList().block();
+        assertNotNull(events);
+        assertEquals(1, events.size());
+        assertEquals("cancelled", events.getFirst().status());
+        assertEquals(UserFacingOutputHandler.OMITTED, events.getFirst().frame().path("summary").asText());
+        assertFalse(events.getFirst().frame().path("summaryDelivered").asBoolean());
+        assertFalse(events.toString().contains("unconfirmed answer"));
+    }
+
 }

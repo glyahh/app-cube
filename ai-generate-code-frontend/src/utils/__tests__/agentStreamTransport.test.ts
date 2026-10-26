@@ -340,3 +340,54 @@ describe('openAgentStream · 关闭', () => {
     expect(stream.transport()).toBeNull()
   })
 })
+
+describe('F05 stale WebSocket callbacks', () => {
+  it.each(['error', 'timeout'])(
+    'ignores queued close/open/message/error after %s fallback',
+    (reason) => {
+      vi.useFakeTimers()
+      try {
+        const { factories, sockets, sources } = harness()
+        const c = collect()
+        const stream = openAgentStream(
+          '/api',
+          { appId: 1, message: 'x', wsTimeoutMs: 10 },
+          {
+            ...c.handlers,
+            onError: (error) => {
+              c.errors.push(error)
+              stream.close()
+            },
+          },
+          factories,
+        )
+        const socket = sockets[0]!
+        // Capture already queued callbacks, not just the properties cleared during fallback.
+        const late = {
+          close: socket.onclose!,
+          open: socket.onopen!,
+          message: socket.onmessage!,
+          error: socket.onerror!,
+        }
+        if (reason === 'error') socket.fail()
+        else vi.advanceTimersByTime(10)
+        late.close({})
+        late.open({})
+        late.error({})
+        late.message({ data: JSON.stringify({ event: 'text.delta', content: 'stale' }) })
+        sources[0]!.emit('text.delta', { event: 'text.delta', content: 'current' })
+        expect(c.errors).toEqual([])
+        expect(c.transports).toEqual(['sse'])
+        expect(stream.transport()).toBe('sse')
+        expect(sources).toHaveLength(1)
+        expect(sources[0]!.closed).toBe(false)
+        expect(socket.closed).toBe(true)
+        expect(socket.sent).toEqual([])
+        expect(c.events.map((event) => event.payload.content)).toEqual(['current'])
+        stream.close()
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
+})

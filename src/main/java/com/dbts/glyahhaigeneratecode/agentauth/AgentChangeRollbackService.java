@@ -46,18 +46,24 @@ public class AgentChangeRollbackService {
                 "本轮变更记录已丢失，无法自动回滚，请手动核对工作区。");
         Path root = workspace(appId);
         int restored = 0;
-        // 删除类变更先处理，避免中途失败留下半新半旧的工作区。
+        // 预检后先撤销新增文件；文件系统 I/O 错误仍可能中断执行，失败时账本保留。
         var ordered = plan.stream()
                 .sorted(Comparator.comparing(row -> !"ADDED".equals(row.get("change"))))
                 .toList();
+        // 先完整预检，任何一项无法恢复时都不修改文件或清空账本。
         for (var row : ordered) {
             String relative = String.valueOf(row.get("path"));
-            if (Boolean.TRUE.equals(row.get("truncated"))) {
+            if (Boolean.TRUE.equals(row.get("truncated"))
+                    || (row.get("before_blob") == null && row.get("before_hash") != null)) {
                 // 没有正文就无法安全回滚；明确失败，不猜内容。
                 throw new com.dbts.glyahhaigeneratecode.exception.MyException(
                         ErrorCode.OPERATION_ERROR,
-                        "文件 " + relative + " 内容过大未保留，无法自动回滚，请手动处理。");
+                        "文件 " + relative + " 原始内容未完整保留，无法自动回滚，请手动处理。");
             }
+            resolve(root, relative);
+        }
+        for (var row : ordered) {
+            String relative = String.valueOf(row.get("path"));
             Path target = resolve(root, relative);
             Object before = row.get("before_blob");
             try {

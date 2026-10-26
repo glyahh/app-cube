@@ -148,7 +148,7 @@ public class ImportStartupPreparationService {
 
     /** 停止本次运行里已登记的服务。容器没有消失时保持停止失败，不允许立刻重试。 */
     public View stop(User user,long appId,UUID planId,String planRevision){
-        var plan=confirmed(user,appId,planId,planRevision);
+        var plan=cleanupPlan(user,appId,planId,planRevision);
         var assessment=ImportStartupPreparation.assess(plan.plan());
         var idle=new RunControl();idle.finished.complete(null);
         var control=running.compute(appId,(id,active)->{
@@ -164,7 +164,12 @@ public class ImportStartupPreparationService {
             try{control.finished.get(60,java.util.concurrent.TimeUnit.SECONDS);}
             catch(InterruptedException error){Thread.currentThread().interrupt();stopped=false;}
             catch(java.util.concurrent.ExecutionException|java.util.concurrent.TimeoutException error){stopped=false;}
-            if(!stopped)return view(plan,save(user,plan,"RUN","APPROVED","FAILED","STOP_FAILED",List.of()),assessment);
+            if(!stopped){
+                // 保留原执行身份，后续停止必须能重试未确认的资源，不能清空后虚报 STOPPED。
+                var current=preparations.find(user.getId(),appId,planId,planRevision,"RUN");
+                return view(plan,save(user,plan,"RUN","APPROVED","FAILED","STOP_FAILED",
+                    current==null?List.of():current.services()),assessment);
+            }
             return stopObserved(user,appId,planId,planRevision,control!=idle);
         }finally{
             // 未确认命令结束时保留占用，后续必须继续停止确认，不能立即重新运行。
@@ -173,7 +178,7 @@ public class ImportStartupPreparationService {
     }
 
     private View stopObserved(User user,long appId,UUID planId,String planRevision,boolean interruptedRun){
-        var plan=confirmed(user,appId,planId,planRevision);
+        var plan=cleanupPlan(user,appId,planId,planRevision);
         var assessment=ImportStartupPreparation.assess(plan.plan());
         var current=preparations.find(user.getId(),appId,planId,planRevision,"RUN");
         if(current==null)return view(plan,save(user,plan,"RUN","APPROVED","FAILED",interruptedRun?"STOPPED":"NOT_RUNNING",List.of()),assessment);
@@ -314,6 +319,14 @@ public class ImportStartupPreparationService {
     }
 
     private static String slot(String kind,String id){return kind+":"+ImportExecutionRunner.sha(id).substring(0,32);}
+
+    /** 清理绑定原计划及归属，不要求旧计划仍可创建新执行。 */
+    private ImportStartupPlanService.View cleanupPlan(User user,long appId,UUID planId,String planRevision){
+        if(planRevision==null||!planRevision.matches("[0-9a-f]{64}"))throw new MyException(ErrorCode.PARAMS_ERROR,"缺少有效计划版本。");
+        var plan=plans.forCleanup(user,appId,planId);
+        if(!plan.planRevision().equals(planRevision))throw new MyException(ErrorCode.CONFLICT_ERROR,"计划版本不一致。");
+        return plan;
+    }
 
     private ImportStartupPlanService.View confirmed(User user,long appId,UUID planId,String planRevision){
         if(planRevision==null||!planRevision.matches("[0-9a-f]{64}"))throw new MyException(ErrorCode.PARAMS_ERROR,"缺少有效计划版本。");

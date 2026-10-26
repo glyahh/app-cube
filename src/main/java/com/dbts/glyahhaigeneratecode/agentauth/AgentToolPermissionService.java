@@ -61,12 +61,17 @@ public class AgentToolPermissionService {
                 ErrorCode.NO_AUTH_ERROR, "当前会话为只读，不允许执行该操作。");
 
         String risk = highRisk(action) ? "HIGH" : "ORDINARY";
-        String scope = AgentCanonicalJson.hash(json.createObjectNode().put("scope", action.path("path").asText()));
+        // execute 的 argv/cwd 不能证明脚本或其他输入未变化，暂不支持同类授权。
+        // 记录完整动作范围用于审计，但每次仍必须取得独立票据。
+        boolean reusable = !"execute".equals(tool);
+        String scope = reusable
+                ? AgentCanonicalJson.hash(json.createObjectNode().put("scope", action.path("path").asText()))
+                : hash;
 
         // 2. 审批策略必须在落库之前算完：独立审查可能十几秒，
         //    先 insert 会让前端轮询读到 REQUESTED，自动批准也会弹卡片。
         String source = null;
-        if (permissions.granted(sessionId, tool, risk, scope)) {
+        if (reusable && permissions.granted(sessionId, tool, risk, scope)) {
             source = "SESSION";
         } else if ("AUTO".equals(session.approvalMode())) {
             source = "AUTO";
@@ -155,6 +160,8 @@ public class AgentToolPermissionService {
         sessions.qualified(session);
         boolean reject = "REJECT".equals(input.decision());
         boolean similar = "APPROVE_SIMILAR".equals(input.decision());
+        ThrowUtils.throwIf(similar && "execute".equals(row.tool()), ErrorCode.PARAMS_ERROR,
+                "执行命令不支持同类授权，请选择仅批准本次。");
         permissions.decide(id, reject ? "REJECTED" : "APPROVED", "USER", input.requestId(), input.revision());
         if (similar) {
             permissions.grant(id, row.sessionId(), row.tool(), row.risk(), row.scopeHash(),
@@ -186,10 +193,10 @@ public class AgentToolPermissionService {
         sessions.qualified(sessions.require(sessionId, ownerId));
     }
 
-    /** 高风险判定：删除、配置、脚本与不可见内容的变更都归 HIGH。 */
+    /** 高风险判定：执行、删除、配置、脚本与不可见内容的变更都归 HIGH。 */
     static boolean highRisk(JsonNode action) {
         String tool = action.path("tool").asText();
-        if ("delete".equals(tool) || "upload_files".equals(tool)) return true;
+        if ("execute".equals(tool) || "delete".equals(tool) || "upload_files".equals(tool)) return true;
         // Windows 上执行侧会用反斜杠：不归一化时文件名会被当成目录部分，判定直接失效。
         String path = action.path("path").asText().replace('\\', '/').toLowerCase(java.util.Locale.ROOT);
         if (path.isEmpty()) return false;

@@ -175,3 +175,25 @@ it('preserves the actual tool label instead of the generic server status', () =>
   expect(mapAgentEvent('tool.finished', { toolName: 'execute', label: '正在检查结果' }))
     .toMatchObject({ kind: 'tool_finished', label: '执行命令' })
 })
+
+it('does not repeat a cancellation summary already delivered as complete text', () => {
+  const actions = [
+    mapAgentEvent('text.delta', { content: '本轮已停止。' }),
+    mapAgentEvent('text.message', { content: '本轮已停止。' }),
+    mapAgentEvent('run.completed', { status: 'cancelled', summary: '本轮已停止。', summaryDelivered: true }),
+    mapAgentEvent('done', {}),
+  ]
+  expect(actions).toEqual([
+    { kind: 'text', text: '本轮已停止。' },
+    { kind: 'ignore' },
+    { kind: 'ignore' },
+    { kind: 'done' },
+  ])
+})
+
+it('a cancellation without a delivered answer still shows its actual reason', () => {
+  expect(mapAgentEvent('run.completed', { status: 'cancelled', summary: '用户拒绝操作。' }))
+    .toEqual({ kind: 'paused', text: '用户拒绝操作。' })
+  expect(mapAgentEvent('run.completed', { status: 'cancelled' }))
+    .toEqual({ kind: 'paused', text: '本轮已停止' })
+})

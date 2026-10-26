@@ -111,7 +111,14 @@ public class ImportExecutionService implements ImportExecutionActions {
     @Override public boolean installClean(List<UUID> ids){return ids.stream().allMatch(id->{var row=ledger.find(id);return row!=null&&!row.active()&&"DONE".equals(row.cleanup())&&!"STOP_FAILED".equals(row.state());});}
     @Override public boolean installAppClean(long appId){return ledger.unresolvedInstall(appId).isEmpty();}
     @Override public java.util.List<UUID> activeSlots(long appId,String slotPrefix){return runner.activeSlots(appId,slotPrefix);}
-    @Override public String stopExecution(UUID id){var row=runner.stop(id,Duration.ofSeconds(60));return row==null?"STOPPED":row.state();}
+    @Override public String stopExecution(UUID id){
+        var row=runner.stop(id,Duration.ofSeconds(60));
+        if(row==null)return "STOPPED";
+        if(row.active())return row.state();
+        if(!"DONE".equals(row.cleanup()))return "STOP_FAILED";
+        // 原失败状态保留审计；清理已确认后，当前停止操作才可以报告成功。
+        return "STOP_FAILED".equals(row.state())?"STOPPED":row.state();
+    }
     @Override public String executionState(User user,long appId,UUID planId,UUID id){return runner.executionState(user.getId(),appId,planId,id);}
     @Override public String executionReason(User user,long appId,UUID planId,UUID id){return runner.executionReason(user.getId(),appId,planId,id);}
 

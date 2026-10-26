@@ -144,8 +144,8 @@ def _run_locked(agent, messages, config, emitter, tracker, state, overhead, impo
         logger.warning("工具许可终止本轮：%s", code)
         _complete_thinking(emitter, state, status="failed")
         state.text = text
-        # 只写 summary 不够：Java 的落库缓冲只认 text.delta / text.message。
-        emitter.emit(Event.TEXT_DELTA, messageId=state.message_id, content=text, mode="append")
+        # 完整收尾是展示出口的确认边界；不能只发会被终态丢弃的 delta。
+        emitter.emit(Event.TEXT_MESSAGE, messageId=state.message_id, content=text)
         status = "cancelled" if code in ('TOOL_PERMISSION_REJECTED', 'TOOL_PERMISSION_CANCELLED', 'TOOL_PERMISSION_REVOKED') else "failed"
         summary = state.summary(status=status)
         summary["text"] = text
@@ -274,7 +274,7 @@ async def _drive(agent, messages, config, emitter: Emitter, tracker: RunLimitTra
     elif state.tool_calls:
         # 模型没给终稿：用本轮实际执行结果补一句，避免前端只剩空占位。
         state.text = _fallback_summary(state)
-        emitter.emit(Event.TEXT_DELTA, messageId=state.message_id, content=state.text, mode="append")
+        emitter.emit(Event.TEXT_MESSAGE, messageId=state.message_id, content=state.text)
 
 
 def _on_model_stream(ev: dict, emitter: Emitter, state: _RunState) -> None:

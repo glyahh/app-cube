@@ -33,6 +33,18 @@ class ImportStartupServiceTest {
         when(configurations.current(42,7,task)).thenReturn(state);when(configurations.read(42,7,task)).thenReturn(state);
         return new ImportStartupService(apps,repository,tasks,coordinator,properties,new ImportPythonStartupReader(properties),configurations,inspections,approvals);
     }
+    @Test void cleanupOwnershipDoesNotRequireCurrentSourceOrImportEligibility()throws Exception{
+        var service=setup();
+        when(repository.publicationByApp(42L)).thenReturn(null);
+        when(apps.resolveWorkspaceDir(user,42L)).thenThrow(new MyException(com.dbts.glyahhaigeneratecode.exception.ErrorCode.NOT_FOUND_ERROR,"missing source"));
+        service.requireCleanupOwner(user,42);
+        verify(apps,never()).resolveWorkspaceDir(any(),anyLong());
+        verifyNoInteractions(repository,tasks,coordinator);
+        user.setId(8L);
+        assertThrows(MyException.class,()->service.requireCleanupOwner(user,42));
+        assertThrows(MyException.class,()->service.requireCleanupOwner(null,42));
+    }
+
     @Test void publishedOwnerGetsBoundInspectionAndTemporaryInputIsRemoved()throws Exception{
         var service=setup();var result=service.inspect(user,42,".");
         assertEquals("42",result.appId());assertEquals(task,result.importTaskId());assertEquals(64,result.contentHash().length());

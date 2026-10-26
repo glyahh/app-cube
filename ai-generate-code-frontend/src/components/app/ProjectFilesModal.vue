@@ -10,7 +10,9 @@
     <!-- 未保存草稿的确认条：关闭前必须显式选择保存 / 放弃 / 取消 -->
     <div v-if="pendingClose" class="pf-confirm-bar">
       <span class="pf-confirm-text">有未保存的修改</span>
-      <a-button size="small" type="primary" :loading="saving" @click="saveThenClose">保存并关闭</a-button>
+      <a-button size="small" type="primary" :loading="saving" @click="saveThenClose"
+        >保存并关闭</a-button
+      >
       <a-button size="small" danger @click="discardThenClose">放弃修改</a-button>
       <a-button size="small" @click="pendingClose = false">取消</a-button>
     </div>
@@ -20,7 +22,9 @@
       <div class="pf-tree">
         <div class="pf-tree-head">
           <span class="pf-root">项目根</span>
-          <a-button size="small" type="link" :loading="loadingRoot" @click="reloadTree">刷新</a-button>
+          <a-button size="small" type="link" :loading="loadingRoot" @click="reloadTree"
+            >刷新</a-button
+          >
         </div>
         <a-spin :spinning="loadingRoot">
           <a-tree
@@ -84,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 // 项目没有全局注册 ant-design-vue 组件（main.ts 只 use(pinia/router)），
 // 模板里的 <a-xxx> 必须靠这里的命名 import 才能解析，否则会被当成未知 HTML 标签原样输出
 import {
@@ -147,25 +151,33 @@ const fileError = ref('')
 const draft = ref('')
 const dirty = ref(false)
 const pendingClose = ref(false)
-
-const canEdit = computed(
-  () => !props.readOnly && !props.generating && !!fileInfo.value?.isText,
-)
-
-/** 草稿与磁盘内容不一致才算脏，改回原样会自动清掉标记 */
-watch(draft, () => {
-  if (!fileInfo.value?.isText) return
-  dirty.value = (fileInfo.value.content ?? '') !== draft.value
+let viewerEpoch = 0
+let rootEpoch = 0
+let saveEpoch = 0
+onBeforeUnmount(() => {
+  viewerEpoch++
+  rootEpoch++
+  saveEpoch++
 })
 
+const canEdit = computed(() => !props.readOnly && !props.generating && !!fileInfo.value?.isText)
+
+/** 草稿与磁盘内容不一致才算脏，改回原样会自动清掉标记 */
 watch(
-  () => props.open,
-  (opened) => {
-    if (opened) {
-      pendingClose.value = false
-      resetViewer()
-      void loadRoot()
-    }
+  [draft, fileInfo],
+  () => {
+    dirty.value = !!fileInfo.value?.isText && (fileInfo.value.content ?? '') !== draft.value
+  },
+  { flush: 'sync' },
+)
+
+watch(
+  () => [props.open, props.appId, props.apiBaseUrl] as const,
+  ([opened]) => {
+    pendingClose.value = false
+    resetViewer()
+    treeData.value = []
+    if (opened) void loadRoot()
   },
   // 挂载时就处于打开状态也要加载，否则树一直是空的
   { immediate: true },
@@ -183,6 +195,12 @@ function toNode(entry: ProjectTreeEntry): TreeNodeData {
 }
 
 function resetViewer() {
+  viewerEpoch++
+  rootEpoch++
+  saveEpoch++
+  saving.value = false
+  loadingFile.value = false
+  loadingRoot.value = false
   selectedKeys.value = []
   activeEntry.value = null
   fileInfo.value = null
@@ -192,15 +210,18 @@ function resetViewer() {
 }
 
 async function loadRoot() {
+  const epoch = ++rootEpoch
   loadingRoot.value = true
   try {
     const entries = await loadProjectTree({ appId: props.appId, apiBaseUrl: props.apiBaseUrl })
+    if (epoch !== rootEpoch || !props.open) return
     treeData.value = entries.map(toNode)
   } catch (e) {
+    if (epoch !== rootEpoch || !props.open) return
     message.error((e as Error).message || '读取文件树失败')
     treeData.value = []
   } finally {
-    loadingRoot.value = false
+    if (epoch === rootEpoch) loadingRoot.value = false
   }
 }
 
@@ -208,12 +229,13 @@ async function loadRoot() {
 async function onLoadData(node: unknown): Promise<void> {
   const data = (node as { dataRef?: TreeNodeData } | undefined)?.dataRef
   if (!data || data.type !== 'dir' || data.children) return
+  const epoch = rootEpoch
   const entries = await loadProjectTree({
     appId: props.appId,
     path: data.path,
     apiBaseUrl: props.apiBaseUrl,
   })
-  data.children = entries.map(toNode)
+  if (epoch === rootEpoch && props.open) data.children = entries.map(toNode)
 }
 
 function onSelectNode(keys: (string | number)[], info: unknown): void {
@@ -228,6 +250,9 @@ function onSelectNode(keys: (string | number)[], info: unknown): void {
 }
 
 async function openFile(entry: TreeNodeData) {
+  const epoch = ++viewerEpoch
+  const appId = props.appId
+  const current = () => epoch === viewerEpoch && props.open && props.appId === appId
   loadingFile.value = true
   fileError.value = ''
   fileInfo.value = null
@@ -238,33 +263,49 @@ async function openFile(entry: TreeNodeData) {
       path: entry.path,
       apiBaseUrl: props.apiBaseUrl,
     })
+    if (!current()) return
     fileInfo.value = info
     draft.value = info.content ?? ''
     dirty.value = false
   } catch (e) {
+    if (!current()) return
     fileError.value = (e as Error).message || '读取文件失败'
   } finally {
-    loadingFile.value = false
+    if (current()) loadingFile.value = false
   }
 }
 
 async function handleSave(): Promise<boolean> {
-  if (!activeEntry.value || !canEdit.value || !dirty.value) return false
+  if (saving.value || !activeEntry.value || !canEdit.value || !dirty.value) return false
+  const epoch = viewerEpoch
+  const request = ++saveEpoch
+  const appId = props.appId
+  const path = activeEntry.value.path
+  const submitted = draft.value
+  const current = () =>
+    request === saveEpoch &&
+    epoch === viewerEpoch &&
+    props.open &&
+    props.appId === appId &&
+    activeEntry.value?.path === path
   saving.value = true
   try {
     const saved = await saveProjectFile({
-      appId: props.appId,
-      path: activeEntry.value.path,
-      content: draft.value,
+      appId,
+      path,
+      content: submitted,
       baseVersion: fileInfo.value?.version,
       apiBaseUrl: props.apiBaseUrl,
     })
+    if (!current()) return false
+    const unchanged = draft.value === submitted
     fileInfo.value = saved
-    draft.value = saved.content ?? draft.value
-    dirty.value = false
-    message.success('已保存')
-    return true
+    if (unchanged) draft.value = saved.content ?? submitted
+    dirty.value = (saved.content ?? submitted) !== draft.value
+    message.success(dirty.value ? '已保存提交版本，后续修改尚未保存' : '已保存')
+    return !dirty.value
   } catch (e) {
+    if (!current()) return false
     if (isProjectFileConflict(e)) {
       // 保留草稿不覆盖：让用户重新读取后再决定怎么合
       message.error('文件已被修改（可能是 AI 写入），请重新打开该文件读取最新内容后再保存')
@@ -273,7 +314,7 @@ async function handleSave(): Promise<boolean> {
     }
     return false
   } finally {
-    saving.value = false
+    if (request === saveEpoch) saving.value = false
   }
 }
 
@@ -300,6 +341,7 @@ function requestClose() {
 }
 
 function closeNow() {
+  resetViewer()
   pendingClose.value = false
   emit('update:open', false)
 }

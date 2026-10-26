@@ -83,7 +83,11 @@ public class WorkspacePathResolver {
     public Path resolveDeployResource(String deployKey, String resourcePath) {
         // 同 resolveOutputResource：两段解析，避免 ../ 跨到别的发布目录
         Path deployDir = guardWithin(props.getDeployRoot(), deployKey);
-        return guardWithin(deployDir, normalize(resourcePath));
+        String relative = normalize(resourcePath);
+        if (!PublicDeployFiles.isPublicPath(relative)) {
+            throw new MyException(ErrorCode.NOT_FOUND_ERROR, "发布资源不存在");
+        }
+        return guardWithin(deployDir, relative);
     }
 
     /**

@@ -67,6 +67,7 @@ public final class UserFacingOutputHandler {
             boolean[] overflow = {false};
             int[] seq = {0};
             String[] lastProcessEvent = {null};
+            String[] lastPublishedText = {null};
             return source.concatMapIterable(event -> {
                 List<AgentEvent> result = new ArrayList<>();
                 if (event.isTextDelta()) {
@@ -81,6 +82,7 @@ public final class UserFacingOutputHandler {
                     pending.setLength(0);
                     overflow[0] = false;
                     addText(result, event, text, seq);
+                    lastPublishedText[0] = text;
                     return result;
                 }
                 // 失败或取消不发布未经确认的候选回答。
@@ -136,7 +138,14 @@ public final class UserFacingOutputHandler {
                         if(failureKey.matches("IMPORT_[A-Z_]{1,70}"))out.put("failureKey",failureKey);
                     }
                     case AgentEvent.RUN_COMPLETED -> {
-                        out.put("status", "succeeded".equals(event.status()) ? "succeeded" : "failed");
+                        String status = event.status();
+                        out.put("status", Set.of("succeeded", "failed", "cancelled").contains(status) ? status : "failed");
+                        if (in.path("summary").isTextual()) {
+                            String summary = sanitize(in.path("summary").asText());
+                            out.put("summary", summary);
+                            // 只有已发布的完整正文匹配时才标记；未确认的 delta 永不参与。
+                            out.put("summaryDelivered", !summary.isBlank() && summary.equals(lastPublishedText[0]));
+                        }
                         copy(in, out, "durationMs");
                     }
                     case AgentEvent.MODEL_ROUTE_FALLBACK -> {

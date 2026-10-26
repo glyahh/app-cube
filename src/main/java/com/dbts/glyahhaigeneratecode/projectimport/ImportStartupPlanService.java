@@ -41,6 +41,12 @@ public class ImportStartupPlanService {
         var plan=require(user,appId,planId);
         return draft(refresh(user,plan));
     }
+    /** 清理读取冻结计划，仍核对原计划归属与当前应用所有者，不重新扫描工作区。 */
+    public View forCleanup(User user,long appId,UUID planId){
+        var plan=require(user,appId,planId);
+        startup.requireCleanupOwner(user,appId);
+        return view(plan,null,null);
+    }
     public View current(User user,long appId){
         if(user==null||user.getId()==null)throw new MyException(ErrorCode.PARAMS_ERROR,"登录状态无效。");
         var plan=plans.latest(user.getId(),appId);

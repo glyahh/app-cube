@@ -165,9 +165,10 @@ export function mapAgentEvent(name: string, payload: Record<string, unknown>): A
 
     case 'run.completed':
       // 终态不在这里收尾 —— 由随后的 done 事件统一处理，避免重复刷新。
-      // 只有「等待审批超时」需要额外提示：本轮是暂停，不是失败。
+      // 完整正文已展示时不重复追加取消摘要；旧生产者仍可用终态摘要收尾。
       if (payload.status === 'cancelled') {
-        return { kind: 'paused', text: String(payload.summary || '等待审批超时，本轮已暂停') }
+        if (payload.summaryDelivered === true) return { kind: 'ignore' }
+        return { kind: 'paused', text: String(payload.summary || '本轮已停止') }
       }
       return { kind: 'ignore' }
 

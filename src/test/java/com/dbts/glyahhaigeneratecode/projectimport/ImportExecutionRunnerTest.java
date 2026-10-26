@@ -67,6 +67,21 @@ class ImportExecutionRunnerTest {
         return map;
     }
 
+    @Test void stoppingFinishedFailedCleanupRetriesRemovalUntilConfirmed(){
+        UUID id=UUID.randomUUID();
+        var row=new ImportExecutionLedger.Row(id,1,7,UUID.randomUUID(),123,Instant.now(),"owned","c".repeat(64),"STOP_FAILED","CONTAINER_NOT_CONFIRMED_GONE","FAILED",1);
+        ledger.put(row);
+        when(sandbox.removed(anyString())).thenReturn(false);
+        assertEquals("FAILED",runner.stop(id,Duration.ZERO).cleanup());
+        assertEquals("FAILED",runner.stop(id,Duration.ZERO).cleanup());
+        verify(sandbox,times(2)).removed(row.containerId());
+        when(sandbox.removed(anyString())).thenReturn(true);
+        var stopped=runner.stop(id,Duration.ZERO);
+        assertEquals("DONE",stopped.cleanup());
+        assertEquals("STOP_FAILED",stopped.state(),"historical execution outcome remains intact");
+        assertFalse(ledger.unresolved(7));
+    }
+
     @Test void runtimeQueryChecksFrozenOwnershipAndFinalizesExitedContainer(){
         UUID id=UUID.randomUUID(),plan=UUID.randomUUID();
         var row=new ImportExecutionLedger.Row(id,1,7,plan,ProcessHandle.current().pid(),Instant.now(),"owned", "c".repeat(64),"RUNNING",null,"PENDING",0);

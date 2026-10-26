@@ -112,4 +112,35 @@ class AgentChangeRollbackServiceTest {
         assertThrows(com.dbts.glyahhaigeneratecode.exception.MyException.class,
                 () -> service(root, List.of()).rollback(1L, UUID.randomUUID(), 2L));
     }
+    @Test
+    void missingOriginalWithRetainedHashIsNeverTreatedAsNew(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("existing.txt"), "latest small edit");
+        var corruptedLegacyRow = row("existing.txt", "MODIFIED", null, false);
+        corruptedLegacyRow.put("before_hash", "a".repeat(64));
+        assertThrows(com.dbts.glyahhaigeneratecode.exception.MyException.class,
+                () -> service(root, List.of(corruptedLegacyRow)).rollback(1L, UUID.randomUUID(), 2L));
+        assertEquals("latest small edit", Files.readString(root.resolve("existing.txt")));
+    }
+
+    @Test
+    void preflightRejectsWholeBatchWithoutDeletingEarlierNewFile(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("added.txt"), "keep me");
+        Files.writeString(root.resolve("large.txt"), "latest small edit");
+        var plan = List.of(row("added.txt", "ADDED", null, false),
+                row("large.txt", "MODIFIED", null, true));
+        assertThrows(com.dbts.glyahhaigeneratecode.exception.MyException.class,
+                () -> service(root, plan).rollback(1L, UUID.randomUUID(), 2L));
+        assertEquals("keep me", Files.readString(root.resolve("added.txt")));
+        assertEquals("latest small edit", Files.readString(root.resolve("large.txt")));
+    }
+
+    @Test
+    void fileAddedThenEditedCanStillBeRemoved(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("new.txt"), "second edit");
+        var cumulativeRow = row("new.txt", "MODIFIED", null, false);
+        cumulativeRow.put("before_hash", null);
+        assertEquals(1, service(root, List.of(cumulativeRow)).rollback(1L, UUID.randomUUID(), 2L));
+        assertFalse(Files.exists(root.resolve("new.txt")));
+    }
+
 }

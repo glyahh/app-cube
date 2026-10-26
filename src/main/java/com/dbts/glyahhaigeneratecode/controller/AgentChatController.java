@@ -69,7 +69,9 @@ public class AgentChatController {
         ThrowUtils.throwIf(StrUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "用户消息不能为空");
         User user = userService.getUserInSession(request);
 
-        // 先落 USER 行拿到 roundId，它既进协议、也当幂等键。
+        requestFactory.requireOwnedApp(appId, user.getId());
+
+        // 归属校验通过后落 USER 行拿到 roundId，它既进协议、也当幂等键。
         // 放在同步阶段是有意的：与现有链路一致，且失败不阻断生成（返回 null）。
         Long roundId = persistence.beginRound(appId, user.getId(), message, loopId);
 

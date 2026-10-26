@@ -416,7 +416,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         Path deployDir = workspacePathResolver.deployDir(deployKey);
         String deployDirPath = deployDir.toString();
         try {
-            FileUtil.copyContent(sourceDir, deployDir.toFile(), true);
+            com.dbts.glyahhaigeneratecode.service.support.PublicDeployFiles.publish(sourceDir.toPath(), deployDir);
         } catch (Exception e) {
             throw new MyException(ErrorCode.SYSTEM_ERROR, "部署文件复制失败: " + e.getMessage());
         }

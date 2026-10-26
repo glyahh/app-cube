@@ -39,6 +39,19 @@ class ImportExecutionServiceTest {
         return new ImportStartupPlanService.View(planId,"7",content.scanId(),"b".repeat(64),state,"1",false,Instant.now(),false,content,null,List.of(),null);
     }
 
+    @Test void stopResultRequiresConfirmedCleanupEvenForFinishedExecution(){
+        var id=UUID.randomUUID();
+        var row=new ImportExecutionLedger.Row(id,1,7,planId,123,Instant.now(),"owned","c".repeat(64),"FAILED","EXIT_NONZERO","FAILED",1);
+        var runner=mock(ImportExecutionRunner.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service,"runner",runner);
+        when(runner.stop(eq(id),any())).thenReturn(row);
+        assertEquals("STOP_FAILED",service.stopExecution(id));
+        var cleaned=new ImportExecutionLedger.Row(id,1,7,planId,123,row.executorStart(),"owned",row.containerId(),"STOP_FAILED","CONTAINER_NOT_CONFIRMED_GONE","DONE",2);
+        when(runner.stop(eq(id),any())).thenReturn(cleaned);
+        assertEquals("STOPPED",service.stopExecution(id));
+        verify(ledger,never()).finish(any(),any(),any(),any(),anyLong(),any());
+    }
+
     @Test void productionPathNeverAcceptsUnguaranteedMemory(){
         var limits=new ImportExecutionSandbox.Limits(0.5,128L<<20,32,32L<<20,8L<<20,Duration.ofSeconds(20),4096,ImportExecutionSandbox.Memory.VERIFICATION_ONLY_UNGUARANTEED);
         assertThrows(MyException.class,()->service.execute(user,7,planId,".","sh ok.sh",limits));

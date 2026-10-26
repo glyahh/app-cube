@@ -104,7 +104,11 @@ describe('ProjectFilesModal', () => {
     await flushPromises()
 
     expect(mocks.save).toHaveBeenCalledWith(
-      expect.objectContaining({ path: 'index.html', content: '<h1>changed</h1>', baseVersion: 'v1' }),
+      expect.objectContaining({
+        path: 'index.html',
+        content: '<h1>changed</h1>',
+        baseVersion: 'v1',
+      }),
     )
     expect(q('.pf-dirty')).toBeNull()
   })
@@ -178,5 +182,135 @@ describe('ProjectFilesModal', () => {
     expect(labels.join('|')).toContain('取消')
     // 没有静默关闭
     expect(wrapper!.emitted('update:open')).toBeUndefined()
+  })
+})
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((ok, fail) => {
+    resolve = ok
+    reject = fail
+  })
+  return { promise, resolve, reject }
+}
+async function edit(value: string) {
+  const textarea = q<HTMLTextAreaElement>('textarea.pf-editor')!
+  textarea.value = value
+  textarea.dispatchEvent(new Event('input', { bubbles: true }))
+  await flushPromises()
+}
+async function select(index: number) {
+  document
+    .querySelectorAll('.ant-tree-node-content-wrapper')
+    [index]!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  await flushPromises()
+}
+
+describe('F06/F07 asynchronous editor identity', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.loadTree.mockResolvedValue([TEXT_ENTRY, { ...TEXT_ENTRY, name: 'b.txt', path: 'b.txt' }])
+    mocks.loadContent.mockResolvedValue(TEXT_CONTENT)
+    mocks.save.mockResolvedValue({ ...TEXT_CONTENT, content: '<h1>changed</h1>', version: 'v2' })
+  })
+  afterEach(() => {
+    wrapper?.unmount()
+    wrapper = undefined
+    document.body.innerHTML = ''
+  })
+
+  it('keeps edits made while saving and advances only the saved baseline/version', async () => {
+    const pending = deferred<typeof TEXT_CONTENT>()
+    mocks.save.mockReturnValueOnce(pending.promise)
+    await mountModal()
+    await makeDirty()
+    saveButton()!.click()
+    await flushPromises()
+    await edit('newer draft')
+    pending.resolve({ ...TEXT_CONTENT, content: '<h1>changed</h1>', version: 'v2' })
+    await flushPromises()
+    expect(q<HTMLTextAreaElement>('textarea.pf-editor')!.value).toBe('newer draft')
+    expect(q('.pf-dirty')).not.toBeNull()
+    mocks.save.mockResolvedValueOnce({ ...TEXT_CONTENT, content: 'newer draft', version: 'v3' })
+    saveButton()!.click()
+    await flushPromises()
+    expect(mocks.save).toHaveBeenLastCalledWith(
+      expect.objectContaining({ content: 'newer draft', baseVersion: 'v2' }),
+    )
+    expect(q('.pf-dirty')).toBeNull()
+  })
+
+  it('save-and-close does not discard edits typed during the save', async () => {
+    const pending = deferred<typeof TEXT_CONTENT>()
+    mocks.save.mockReturnValueOnce(pending.promise)
+    await mountModal()
+    await makeDirty()
+    wrapper!.findComponent({ name: 'AModal' }).vm.$emit('cancel')
+    await flushPromises()
+    q<HTMLButtonElement>('.pf-confirm-bar button')!.click()
+    await flushPromises()
+    await edit('keep me')
+    pending.resolve({ ...TEXT_CONTENT, content: '<h1>changed</h1>', version: 'v2' })
+    await flushPromises()
+    expect(wrapper!.emitted('update:open')).toBeUndefined()
+    expect(q<HTMLTextAreaElement>('textarea.pf-editor')!.value).toBe('keep me')
+    expect(q('.pf-dirty')).not.toBeNull()
+  })
+
+  it('late A response cannot replace B text/version/save target', async () => {
+    const a = deferred<typeof TEXT_CONTENT>()
+    const b = deferred<typeof TEXT_CONTENT>()
+    mocks.loadContent.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise)
+    await mountModal()
+    await select(0)
+    await select(1)
+    b.resolve({ ...TEXT_CONTENT, path: 'b.txt', content: 'B', version: 'vb' })
+    await flushPromises()
+    a.resolve({ ...TEXT_CONTENT, content: 'A' })
+    await flushPromises()
+    expect(q('.pf-path')!.textContent).toBe('b.txt')
+    expect(q<HTMLTextAreaElement>('textarea.pf-editor')!.value).toBe('B')
+    await edit('B edited')
+    saveButton()!.click()
+    await flushPromises()
+    expect(mocks.save).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'b.txt', content: 'B edited', baseVersion: 'vb' }),
+    )
+  })
+
+  it.each(['close', 'application'])('ignores a pending read after %s changes', async (kind) => {
+    const pending = deferred<typeof TEXT_CONTENT>()
+    mocks.loadContent.mockReturnValueOnce(pending.promise)
+    await mountModal()
+    await select(0)
+    await wrapper!.setProps(kind === 'close' ? { open: false } : { appId: '2' })
+    pending.resolve(TEXT_CONTENT)
+    await flushPromises()
+    expect(q('textarea.pf-editor')).toBeNull()
+    expect(q('.pf-path')).toBeNull()
+  })
+
+  it('ignores saved file A response after moving to file B', async () => {
+    const pending = deferred<typeof TEXT_CONTENT>()
+    mocks.save.mockReturnValueOnce(pending.promise)
+    await mountModal()
+    await makeDirty()
+    saveButton()!.click()
+    await flushPromises()
+    // Return draft to old baseline so the UI permits selecting another file.
+    await edit(TEXT_CONTENT.content)
+    mocks.loadContent.mockResolvedValueOnce({
+      ...TEXT_CONTENT,
+      path: 'b.txt',
+      content: 'B',
+      version: 'vb',
+    })
+    await select(1)
+    pending.resolve({ ...TEXT_CONTENT, content: '<h1>changed</h1>', version: 'v2' })
+    await flushPromises()
+    expect(q('.pf-path')!.textContent).toBe('b.txt')
+    expect(q<HTMLTextAreaElement>('textarea.pf-editor')!.value).toBe('B')
+    expect(q('.pf-dirty')).toBeNull()
   })
 })

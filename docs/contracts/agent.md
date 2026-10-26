@@ -5,6 +5,12 @@ Python Agent 运行时（`agent/`）与 Spring Boot 接入层的唯一契约。
 
 改动历史同步到本文档末尾。
 
+## 2026-10-26 完整收尾与取消状态
+
+- 普通工具许可终止和模型工具调用后无终稿的分支，必须在终态前发送 `text.message` 完整收尾；后者仅依据已执行结果生成，不复用未确认候选回答。
+- Java 展示出口仍只发布经过清洗的完整消息，不因 `run.completed`、`error` 或 `__end__` 刷出未确认的 delta。`run.completed.status` 保留 `succeeded / failed / cancelled`，`summary` 先经过与正文相同的展示清洗。
+- 展示投影新增布尔 `summaryDelivered`：仅当安全摘要与最近已发布的完整正文完全一致且非空时为 true。前端取消分支在该值为 true 时不重复追加摘要，仍等待正常终止事件收尾；未发送完整正文的旧链路仍展示摘要或中性“本轮已停止”。此标志不是执行许可或业务成功证明。
+
 ## 2026-10-20 独立审查 Worker 与模型计时
 
 - 独立审查入口为 `python -u -m core.permission_review_worker`，不占用编辑 Worker；最多两个进程，启动预热依赖后先输出 `{"type":"ready","protocol":1}`。

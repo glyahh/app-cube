@@ -266,7 +266,12 @@ public final class ImportExecutionRunner {
     /** 请求停止：本实例执行中的由执行线程结束容器并确认消失；执行者已不在时直接按账本核对。 */
     public ImportExecutionLedger.Row stop(UUID id,Duration timeout){
         var row=ledger.find(id);
-        if(row==null||!row.active())return row;
+        if(row==null)return null;
+        if(!row.active()){
+            // 结束执行不等于资源已消失。允许再次停止重试清理，但不重开执行账本。
+            if(!"DONE".equals(row.cleanup()))reconcileRow(row);
+            return ledger.find(id);
+        }
         var flag=active.get(id);
         if(flag!=null){
             try{ledger.stopping(row);}catch(MyException conflict){/* 状态已推进，以执行线程结果为准 */}

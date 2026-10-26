@@ -106,7 +106,9 @@ export function buildSseUrl(apiBase: string, options: AgentStreamOptions): strin
 }
 
 /** 解析一帧。解析不了就返回空载荷 —— 坏帧不该中断整条流。 */
-export function parseFrame(raw: unknown): { name: string; payload: Record<string, unknown> } | null {
+export function parseFrame(
+  raw: unknown,
+): { name: string; payload: Record<string, unknown> } | null {
   if (typeof raw !== 'string' || !raw.trim()) return null
   try {
     const parsed = JSON.parse(raw)
@@ -121,7 +123,8 @@ export function parseFrame(raw: unknown): { name: string; payload: Record<string
 
 const defaultFactories: TransportFactories = {
   createWebSocket: (url) => new WebSocket(url) as unknown as WebSocketLike,
-  createEventSource: (url) => new EventSource(url, { withCredentials: true }) as unknown as EventSourceLike,
+  createEventSource: (url) =>
+    new EventSource(url, { withCredentials: true }) as unknown as EventSourceLike,
 }
 
 export function openAgentStream(
@@ -150,6 +153,17 @@ export function openAgentStream(
 
   const startSse = () => {
     if (closed || transport === 'sse') return
+    cleanup()
+    const previous = ws
+    ws = null // Invalidate before close: a queued callback must not affect the new transport.
+    if (previous) {
+      previous.onopen = previous.onmessage = previous.onerror = previous.onclose = null
+      try {
+        previous.close()
+      } catch {
+        /* SSE remains the active transport. */
+      }
+    }
     transport = 'sse'
     handlers.onTransport?.('sse')
 
@@ -182,17 +196,13 @@ export function openAgentStream(
     // 而是一直挂着重试，用户看到的是「卡住」。
     fallbackTimer = setTimeout(() => {
       if (closed || transport) return
-      try {
-        ws?.close()
-      } catch {
-        // 关不掉也无所谓，后面会走 SSE
-      }
-      ws = null
       startSse()
     }, options.wsTimeoutMs ?? 3000)
 
-    ws.onopen = () => {
-      if (closed) return
+    const socket = ws
+    const isCurrent = () => !closed && ws === socket && transport !== 'sse'
+    socket.onopen = () => {
+      if (!isCurrent()) return
       cleanup()
       transport = 'websocket'
       handlers.onTransport?.('websocket')
@@ -205,13 +215,14 @@ export function openAgentStream(
       )
     }
 
-    ws.onmessage = (ev) => {
+    socket.onmessage = (ev) => {
+      if (!isCurrent()) return
       const frame = parseFrame(ev?.data)
       if (frame) emit(frame.name, frame.payload)
     }
 
-    ws.onerror = (error) => {
-      if (closed) return
+    socket.onerror = (error) => {
+      if (!isCurrent()) return
       if (!transport) {
         // 还没 open 就出错 —— 降级，不算失败
         cleanup()
@@ -221,8 +232,8 @@ export function openAgentStream(
       handlers.onError?.(error)
     }
 
-    ws.onclose = () => {
-      if (closed) return
+    socket.onclose = () => {
+      if (!isCurrent()) return
       if (!transport) {
         // 没连上就关了 —— 降级
         cleanup()

@@ -49,6 +49,12 @@ public class AgentRunPersistence {
      * @return 本轮消息主键；失败返回 null（调用方要能接受 null）
      */
     public Long beginRound(Long appId, Long userId, String message, Long loopId) {
+        // 权限失败不能被下方“数据库失败可降级”吞掉，也不能写入历史。
+        var app = appId == null ? null : appMapper.selectOneById(appId);
+        if (app == null || userId == null || !java.util.Objects.equals(app.getUserId(), userId)) {
+            throw new com.dbts.glyahhaigeneratecode.exception.MyException(
+                    com.dbts.glyahhaigeneratecode.exception.ErrorCode.NO_AUTH_ERROR, "只能操作自己的应用");
+        }
         try {
             return chatHistoryService.addChatMessageAndReturnId(
                     appId,

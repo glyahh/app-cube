@@ -17,6 +17,7 @@ export interface AgentComposerSettings {
 }
 
 export interface AgentPermissionRequest {
+  allowSimilar?: boolean
   id: string
   revision: string
   actionHash: string
@@ -44,6 +45,8 @@ export interface AgentReviewFile {
 }
 
 export interface AgentChangeCandidate {
+  applicationMode?: 'STAGED' | 'APPLIED'
+  rollbackAvailable?: boolean
   id: string
   revision: string
   reviewHash: string

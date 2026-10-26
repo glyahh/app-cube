@@ -8,6 +8,8 @@
 
 ## 近期重点
 
+- [11 项缺陷修复与红绿验证](bugfixes/eleven-bugs-20261026.md)：F01–F11、真实回归和未通过的基线测试分开记录。
+
 - [长对话与 Agent 量化提速](agent/chat-agent-performance-20261020.md)：原始样本、前后数据、真实任务失败与未确认原因。
 - [批准后命令失败恢复](agent/terminal-command-recovery-20261020.md)：根因、红绿测试、新票据与真实链路证据。
 - [导入安装超时修复](import/project-import-install-timeout-final-20261009.md)：失败现场与最终版本验证。

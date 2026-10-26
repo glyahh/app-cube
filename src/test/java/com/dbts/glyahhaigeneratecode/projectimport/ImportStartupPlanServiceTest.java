@@ -30,6 +30,16 @@ class ImportStartupPlanServiceTest {
     }
     void stored(ImportStartupPlanRepository.Plan plan){when(plans.find(7,42,plan.id())).thenReturn(plan);}
 
+    @Test void cleanupUsesFrozenPlanAndChecksCurrentOwnerWithoutRescanning(){
+        var stale=row(input("vite",web),"STALE");stored(stale);
+        assertEquals("STALE",service.forCleanup(user,42,stale.id()).state());
+        verify(startup).requireCleanupOwner(user,42);
+        verify(startup,never()).withPlanInput(any(),anyLong(),any(),any());
+        doThrow(new MyException(ErrorCode.NOT_FOUND_ERROR,"not owned")).when(startup).requireCleanupOwner(user,42);
+        assertThrows(MyException.class,()->service.forCleanup(user,42,stale.id()));
+        assertThrows(MyException.class,()->service.forCleanup(User.builder().id(8L).build(),42,stale.id()));
+    }
+
     @Test void staleInspectionOrInvalidSelectionCreatesNoPlan(){
         current(null);
         assertEquals(ErrorCode.CONFLICT_ERROR.getCode(),assertThrows(MyException.class,()->service.create(user,42,scan,List.of(web.id()))).getCode());

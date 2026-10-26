@@ -49,12 +49,7 @@ public class AgentRunRequestFactory {
      * @param roundId 本轮在 {@code chat_history} 里的主键，由 {@link AgentRunPersistence} 落 USER 行时产生
      */
     public AgentRunRequest build(Long appId, Long userId, String message, Long roundId) {
-        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID无效");
-
-        App app = appService.getById(appId);
-        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
-        ThrowUtils.throwIf(!Objects.equals(app.getUserId(), userId),
-                ErrorCode.NO_AUTH_ERROR, "只能操作自己的应用");
+        App app = requireOwnedApp(appId, userId);
         var publication = importGate.requireAgentEditAllowed(appId);
 
         CodeGenTypeEnum type = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
@@ -97,6 +92,17 @@ public class AgentRunRequestFactory {
                 .deadlineMs(agentProperties.getRunDeadline().toMillis())
                 .deployKey(app.getDeployKey())
                 .build();
+    }
+
+    /** 无副作用归属校验：必须在创建聊天记录等任何写入之前调用。 */
+    public App requireOwnedApp(Long appId, Long userId) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID无效");
+        ThrowUtils.throwIf(userId == null || userId <= 0, ErrorCode.NO_AUTH_ERROR, "用户未登录");
+        App app = appService.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        ThrowUtils.throwIf(!Objects.equals(app.getUserId(), userId),
+                ErrorCode.NO_AUTH_ERROR, "只能操作自己的应用");
+        return app;
     }
 
     /** 拿到应用锁后重读路由状态，避免排队请求携带旧值。 */
