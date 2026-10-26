@@ -160,7 +160,7 @@ public final class ImportGitReader {
     }
 
     public static Map<String,String> askpass(Path python,Path helper,ImportCredentialBroker broker,Path ownedDirectory)throws IOException {
-        python=python.toAbsolutePath().normalize();helper=helper.toAbsolutePath().normalize();
+        python=canonicalExecutable(python);helper=canonicalExecutable(helper);
         ProjectImportStaging.guardManagedPath(python);ProjectImportStaging.guardManagedPath(helper);
         if(!Files.isRegularFile(python) || !Files.isRegularFile(helper))throw new IOException("凭据辅助程序未配置。");
         ownedDirectory=ownedDirectory.toAbsolutePath().normalize();ProjectImportStaging.guardManagedPath(ownedDirectory);
@@ -177,6 +177,11 @@ public final class ImportGitReader {
         String value=path.toString().replace('\\','/');
         if(value.chars().anyMatch(c->c<32 || "\"`$!%".indexOf(c)>=0))throw new IOException("凭据辅助路径无效。");
         return "\""+value+"\"";
+    }
+
+    private static Path canonicalExecutable(Path path) throws IOException {
+        Path absolute=path.toAbsolutePath().normalize();
+        return Files.isRegularFile(absolute) ? absolute.toRealPath() : absolute;
     }
 
     private ArrayList<String> command() {
