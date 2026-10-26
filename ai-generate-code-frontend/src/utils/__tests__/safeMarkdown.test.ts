@@ -8,7 +8,9 @@ describe('safeMarkdown', () => {
     expect(html).not.toContain('href="javascript:')
   })
   it('keeps legitimate paragraphs, links, and fenced code', () => {
-    const html = renderSafeMarkdown('一段\n\n\n\n二段\n\n[作品](/static/demo)\n\n```js\na\n\nb\n```')
+    const html = renderSafeMarkdown(
+      '一段\n\n\n\n二段\n\n[作品](/static/demo)\n\n```js\na\n\nb\n```',
+    )
     expect(html).not.toContain('<br>')
     expect(html).toContain('href="/static/demo"')
     expect(html).toContain('a\n\nb')

@@ -133,9 +133,7 @@ export async function submitKnowledgeTask(opts: BaseOpts): Promise<KnowledgeTask
 }
 
 /** 取消任务 */
-export async function cancelKnowledgeTask(
-  opts: BaseOpts & { taskId: number },
-): Promise<boolean> {
+export async function cancelKnowledgeTask(opts: BaseOpts & { taskId: number }): Promise<boolean> {
   const res = await fetch(`${base(opts)}/tasks/${encodeURIComponent(String(opts.taskId))}/cancel`, {
     method: 'POST',
     credentials: 'include',

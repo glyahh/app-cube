@@ -40,9 +40,17 @@ public final class PublicDeployFiles {
         Path staged = Files.createTempDirectory(target.getParent(), ".deploy-stage-");
         Path backup = null;
         try {
+            Path realRoot = root.toRealPath();
             Files.walkFileTree(root, new SimpleFileVisitor<>() {
                 @Override public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
                     if (dir.equals(root)) return FileVisitResult.CONTINUE;
+                    // Windows junction 不是 symbolic link，walkFileTree 会继续遍历；
+                    // 必须按真实路径确认目录仍在产物根内，否则公开部署会带出外部文件。
+                    try {
+                        if (!dir.toRealPath().startsWith(realRoot)) return FileVisitResult.SKIP_SUBTREE;
+                    } catch (IOException failure) {
+                        return FileVisitResult.SKIP_SUBTREE;
+                    }
                     String relative = root.relativize(dir).toString().replace('\\', '/');
                     for (String part : relative.split("/")) {
                         String name = part.toLowerCase(Locale.ROOT);

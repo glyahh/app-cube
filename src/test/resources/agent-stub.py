@@ -40,7 +40,7 @@ def handle(line: str) -> None:
     import pathlib
     root_path = pathlib.Path(root).resolve()
     resolved = (root_path / name).resolve()
-    if not str(resolved).startswith(str(root_path)):
+    if (root_path / name).resolve().is_relative_to(root_path) is False:
         emit(run_id, 0, "error", code="WORKSPACE_INIT_FAILED", message="工作区路径越界")
         emit(run_id, 1, "__end__")
         return
@@ -51,6 +51,15 @@ def handle(line: str) -> None:
         emit(run_id, 1, "__end__")
         return
 
+    if request.get("input", {}).get("taskKind") == "title":
+        emit(run_id, 0, "text.message", messageId="title", content="离线验收应用")
+        emit(run_id, 1, "run.completed", status="succeeded", summary="")
+        emit(run_id, 2, "__end__")
+        return
+
+    resolved.mkdir(parents=True, exist_ok=True)
+    generated = "<h1>E2E fixture</h1>\n<p>Initial generated content</p>\n"
+    (resolved / "index.html").write_text(generated, encoding="utf-8")
     seq = 0
     emit(run_id, seq, "run.started", threadId=request.get("threadId", ""),
          workspaceName=name, resumedFromCheckpoint=False)
@@ -60,14 +69,17 @@ def handle(line: str) -> None:
     emit(run_id, seq, "text.delta", messageId=f"{run_id}-a0",
          content=f"[stub] 已收到需求：{message}\n", mode="append")
     seq += 1
-    emit(run_id, seq, "tool.started", callId="c1", toolName="ls",
-         inputPreview='{"path": "/"}', inputDigest="abc123")
+    emit(run_id, seq, "tool.started", callId="c1", toolName="write_file",
+         inputPreview=json.dumps({"path": "/index.html", "content": generated}), inputDigest="abc123")
     seq += 1
-    emit(run_id, seq, "tool.finished", callId="c1", toolName="ls",
-         status="succeeded", durationMs=5, outputPreview="['/index.html']", truncated=False)
+    emit(run_id, seq, "tool.finished", callId="c1", toolName="write_file",
+         status="succeeded", durationMs=5, outputPreview="index.html", truncated=False)
+    seq += 1
+    answer = "离线模型替身已生成 index.html"
+    emit(run_id, seq, "text.message", messageId=f"{run_id}-a0", content=answer, mode="append")
     seq += 1
     emit(run_id, seq, "run.completed", status="succeeded",
-         summary="stub 完成", usage={"inputTokens": 0, "outputTokens": 0, "modelCalls": 1})
+         summary=answer, usage={"inputTokens": 0, "outputTokens": 0, "modelCalls": 0})
     seq += 1
     emit(run_id, seq, "__end__")
 

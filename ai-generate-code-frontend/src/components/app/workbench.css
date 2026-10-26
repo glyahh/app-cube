@@ -305,6 +305,13 @@
   color-scheme: light;
 }
 
-.cosmic-workbench { --wb-warning: #d5b876; }
-:root:not([data-theme='dark']) .cosmic-workbench { --wb-warning: #946200; }
-.cosmic-workbench .kn-alert { color:var(--wb-warning); border-color:color-mix(in srgb, var(--wb-warning) 25%, transparent); }
+.cosmic-workbench {
+  --wb-warning: #d5b876;
+}
+:root:not([data-theme='dark']) .cosmic-workbench {
+  --wb-warning: #946200;
+}
+.cosmic-workbench .kn-alert {
+  color: var(--wb-warning);
+  border-color: color-mix(in srgb, var(--wb-warning) 25%, transparent);
+}

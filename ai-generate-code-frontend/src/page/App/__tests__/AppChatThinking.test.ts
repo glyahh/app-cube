@@ -5,15 +5,38 @@ import AppChatView from '../AppChatView.vue'
 import type { AgentStreamHandlers } from '@/utils/agentStreamTransport'
 
 const mocks = vi.hoisted(() => ({
-  history: vi.fn(), app: vi.fn(), stream: vi.fn(), preference: {} as { expanded: boolean },
+  history: vi.fn(),
+  app: vi.fn(),
+  stream: vi.fn(),
+  preference: {} as { expanded: boolean },
 }))
 vi.mock('ant-design-vue', async () => {
   const { defineComponent, h } = await import('vue')
-  const shell = defineComponent({ setup: (_, { slots }) => () => h('div', slots.default?.()) })
+  const shell = defineComponent({
+    setup:
+      (_, { slots }) =>
+      () =>
+        h('div', slots.default?.()),
+  })
   return {
-    message: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), success: vi.fn(), loading: vi.fn(() => vi.fn()), destroy: vi.fn() },
-    Button: shell, Input: shell, Spin: shell, Empty: shell, Modal: shell,
-    Tooltip: shell, Alert: shell, Textarea: shell, Checkbox: shell, CheckboxGroup: shell,
+    message: {
+      info: vi.fn(),
+      warning: vi.fn(),
+      error: vi.fn(),
+      success: vi.fn(),
+      loading: vi.fn(() => vi.fn()),
+      destroy: vi.fn(),
+    },
+    Button: shell,
+    Input: shell,
+    Spin: shell,
+    Empty: shell,
+    Modal: shell,
+    Tooltip: shell,
+    Alert: shell,
+    Textarea: shell,
+    Checkbox: shell,
+    CheckboxGroup: shell,
   }
 })
 vi.mock('@/components/loop/AppLoopInjectBar.vue', () => ({ default: { template: '<div />' } }))
@@ -43,10 +66,15 @@ vi.mock('@/api/chatHistoryController', () => ({
   chatHistoryRoundCountAppIdUsingGet: vi.fn().mockResolvedValue({ data: { code: 0, data: 1 } }),
 }))
 vi.mock('@/stores/UserLogin', () => ({ UserLoginStore: () => ({ userLogin: { id: '7' } }) }))
-vi.mock('@/stores/appearance', () => ({ useAppearanceStore: () => ({ workflowEnabled: false, smoothScroll: true }) }))
+vi.mock('@/stores/appearance', () => ({
+  useAppearanceStore: () => ({ workflowEnabled: false, smoothScroll: true }),
+}))
 vi.mock('@/stores/executionPreference', () => ({ useExecutionPreference: () => mocks.preference }))
 vi.mock('@/utils/agentStreamTransport', () => ({ openAgentStream: mocks.stream }))
-vi.mock('@/utils/projectFilesEcho', () => ({ loadProjectFilesEchoFromDisk: vi.fn().mockResolvedValue([]), filterLockFiles: (items: unknown) => items }))
+vi.mock('@/utils/projectFilesEcho', () => ({
+  loadProjectFilesEchoFromDisk: vi.fn().mockResolvedValue([]),
+  filterLockFiles: (items: unknown) => items,
+}))
 
 if (typeof HTMLElement !== 'undefined' && !HTMLElement.prototype.scrollTo) {
   HTMLElement.prototype.scrollTo = () => {}
@@ -55,28 +83,29 @@ if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {}
 }
 
-const mountPage = (props: { importedProject?: boolean } = {}) => shallowMount(AppChatView, {
-  props,
-  global: {
-    renderStubDefaultSlot: true,
-    stubs: {
-      ThinkingStage: false,
-      ExecutionProcess: false,
-      ExecutionTerminal: false,
-      // shallowMount 会把 ProjectFilesModal 替换成空 stub，defineExpose 的方法就没了，
-      // 而父组件在发送消息前会调用它们
-      ProjectFilesModal: {
-        template: '<div />',
-        methods: {
-          hasUnsavedChanges: () => false,
-          save: () => Promise.resolve(true),
-          discardDraft: () => {},
-          promptUnsavedChoice: () => {},
+const mountPage = (props: { importedProject?: boolean } = {}) =>
+  shallowMount(AppChatView, {
+    props,
+    global: {
+      renderStubDefaultSlot: true,
+      stubs: {
+        ThinkingStage: false,
+        ExecutionProcess: false,
+        ExecutionTerminal: false,
+        // shallowMount 会把 ProjectFilesModal 替换成空 stub，defineExpose 的方法就没了，
+        // 而父组件在发送消息前会调用它们
+        ProjectFilesModal: {
+          template: '<div />',
+          methods: {
+            hasUnsavedChanges: () => false,
+            save: () => Promise.resolve(true),
+            discardDraft: () => {},
+            promptUnsavedChoice: () => {},
+          },
         },
       },
     },
-  },
-})
+  })
 
 describe('AppChatView thinking pipeline', () => {
   it('reuses unchanged display groups and invalidates same-length thinking and tool updates', async () => {
@@ -90,27 +119,53 @@ describe('AppChatView thinking pipeline', () => {
     }
     await vm.sendMessage('检查更新')
     const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
-    handlers.onEvent('thinking.started', { thinkingId: 'cache:1', summary: '检查甲', details: '检查甲' })
+    handlers.onEvent('thinking.started', {
+      thinkingId: 'cache:1',
+      summary: '检查甲',
+      details: '检查甲',
+    })
     await nextTick()
     const msg = vm.sessionMessages.at(-1)!
     const before = vm.executionSegments(msg)
     vm.inputMessage = '无关输入'
     await nextTick()
     expect(vm.executionSegments(msg)).toBe(before)
-    handlers.onEvent('thinking.delta', { thinkingId: 'cache:1', summary: '检查乙', details: '检查乙' })
+    handlers.onEvent('thinking.delta', {
+      thinkingId: 'cache:1',
+      summary: '检查乙',
+      details: '检查乙',
+    })
     await nextTick()
     expect(vm.executionSegments(msg)).not.toBe(before)
     expect(wrapper.text()).toContain('检查乙')
-    handlers.onEvent('thinking.started', { thinkingId: 'cache:2', summary: '新阶段', details: '新阶段' })
+    handlers.onEvent('thinking.started', {
+      thinkingId: 'cache:2',
+      summary: '新阶段',
+      details: '新阶段',
+    })
     await nextTick()
     const firstStage = vm.executionSegments(msg)[0]!.segment
-    handlers.onEvent('thinking.delta', { thinkingId: 'cache:2', summary: '新内容', details: '新内容' })
+    handlers.onEvent('thinking.delta', {
+      thinkingId: 'cache:2',
+      summary: '新内容',
+      details: '新内容',
+    })
     await nextTick()
     expect(vm.executionSegments(msg)[0]!.segment).toBe(firstStage)
-    handlers.onEvent('tool.started', { callId: 'cache:tool', toolName: 'execute', input: { command: 'node --version' } })
+    handlers.onEvent('tool.started', {
+      callId: 'cache:tool',
+      toolName: 'execute',
+      input: { command: 'node --version' },
+    })
     await nextTick()
     const pending = vm.executionSegments(msg)
-    handlers.onEvent('tool.finished', { callId: 'cache:tool', toolName: 'execute', status: 'failed', exitCode: 1, outputPreview: '真实错误' })
+    handlers.onEvent('tool.finished', {
+      callId: 'cache:tool',
+      toolName: 'execute',
+      status: 'failed',
+      exitCode: 1,
+      outputPreview: '真实错误',
+    })
     await nextTick()
     expect(vm.executionSegments(msg)).not.toBe(pending)
     expect(wrapper.text()).toContain('失败')
@@ -119,12 +174,34 @@ describe('AppChatView thinking pipeline', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.preference = reactive({ expanded: false })
-    mocks.app.mockResolvedValue({ data: { code: 0, data: { id: '1', userId: '7', codeGenType: 'html' } } })
-    mocks.history.mockResolvedValue({ data: { code: 0, data: { records: [
-      { id: 10, messageType: 'ai', message: '旧回答', createTime: '2026-09-13 10:00:00' },
-      { id: 11, messageType: 'ai', message: '校徽已完成', createTime: '2026-09-14 10:00:00',
-        thinkingSegments: JSON.stringify([{ thinkingId: 'run:1', summary: '构思星空校徽', details: ['采用环绕构图'], status: 'completed' }]) },
-    ], totalRow: 2 } } })
+    mocks.app.mockResolvedValue({
+      data: { code: 0, data: { id: '1', userId: '7', codeGenType: 'html' } },
+    })
+    mocks.history.mockResolvedValue({
+      data: {
+        code: 0,
+        data: {
+          records: [
+            { id: 10, messageType: 'ai', message: '旧回答', createTime: '2026-09-13 10:00:00' },
+            {
+              id: 11,
+              messageType: 'ai',
+              message: '校徽已完成',
+              createTime: '2026-09-14 10:00:00',
+              thinkingSegments: JSON.stringify([
+                {
+                  thinkingId: 'run:1',
+                  summary: '构思星空校徽',
+                  details: ['采用环绕构图'],
+                  status: 'completed',
+                },
+              ]),
+            },
+          ],
+          totalRow: 2,
+        },
+      },
+    })
     mocks.stream.mockReturnValue({ close: vi.fn(), transport: () => 'websocket' })
   })
 
@@ -177,20 +254,42 @@ describe('AppChatView thinking pipeline', () => {
   it('streams a timeline, preserves terminal identity and manual state, hides placeholders', async () => {
     const wrapper = mountPage()
     await flushPromises()
-    await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage('制作星空校徽')
+    await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage(
+      '制作星空校徽',
+    )
     const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
-    handlers.onEvent('thinking.started', { thinkingId: 'new:1', summary: '构思校徽', details: '比较构图' })
+    handlers.onEvent('thinking.started', {
+      thinkingId: 'new:1',
+      summary: '构思校徽',
+      details: '比较构图',
+    })
     await nextTick()
     const process = wrapper.findAll('.execution-process').at(-1)!
     expect(process.get('button').attributes('aria-expanded')).toBe('true')
-    handlers.onEvent('thinking.delta', { thinkingId: 'new:1', summary: '确定蓝紫配色', details: '确定蓝紫配色' })
-    handlers.onEvent('tool.started', { callId: 'cmd:1', toolName: 'execute', input: { command: 'node --version' } })
+    handlers.onEvent('thinking.delta', {
+      thinkingId: 'new:1',
+      summary: '确定蓝紫配色',
+      details: '确定蓝紫配色',
+    })
+    handlers.onEvent('tool.started', {
+      callId: 'cmd:1',
+      toolName: 'execute',
+      input: { command: 'node --version' },
+    })
     await nextTick()
     const terminal = process.get('details')
     ;(terminal.element as HTMLDetailsElement).open = true
     await process.get('button').trigger('click')
-    handlers.onEvent('tool.finished', { callId: 'cmd:1', toolName: 'execute', status: 'succeeded', outputPreview: 'v22.0.0' })
-    handlers.onEvent('thinking.completed', { thinkingId: 'new:1', details: '部分内部执行信息已省略' })
+    handlers.onEvent('tool.finished', {
+      callId: 'cmd:1',
+      toolName: 'execute',
+      status: 'succeeded',
+      outputPreview: 'v22.0.0',
+    })
+    handlers.onEvent('thinking.completed', {
+      thinkingId: 'new:1',
+      details: '部分内部执行信息已省略',
+    })
     await nextTick()
     expect(process.get('button').attributes('aria-expanded')).toBe('false')
     expect(process.get('details').element).toBe(terminal.element)
@@ -199,7 +298,12 @@ describe('AppChatView thinking pipeline', () => {
     expect(process.get('details').text()).toContain('v22.0.0')
     expect(process.get('details').text()).toContain('成功')
     expect(wrapper.text()).not.toContain('部分内部执行信息已省略')
-    expect(process.get('.thinking-line').text().match(/确定蓝紫配色/g)).toHaveLength(1)
+    expect(
+      process
+        .get('.thinking-line')
+        .text()
+        .match(/确定蓝紫配色/g),
+    ).toHaveLength(1)
     await process.get('button').trigger('click')
     handlers.onEvent('done', {})
     await flushPromises()
@@ -210,7 +314,9 @@ describe('AppChatView thinking pipeline', () => {
   it('automatically closes an untouched process when the stream ends', async () => {
     const wrapper = mountPage()
     await flushPromises()
-    await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage('检查')
+    await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage(
+      '检查',
+    )
     const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
     handlers.onEvent('thinking.started', { thinkingId: 'new:2', summary: '检查页面', details: '' })
     await nextTick()
@@ -223,8 +329,19 @@ describe('AppChatView thinking pipeline', () => {
   })
 
   it('omits empty historical thinking and removes placeholders from answers without changing records', async () => {
-    const record = { id: 12, messageType: 'ai', message: '完成\n部分内部执行信息已省略\n正常内容',
-      thinkingSegments: JSON.stringify([{ thinkingId: 'empty', summary: '部分内部执行信息已省略', details: ['部分内部执行信息已省略'], status: 'completed' }]) }
+    const record = {
+      id: 12,
+      messageType: 'ai',
+      message: '完成\n部分内部执行信息已省略\n正常内容',
+      thinkingSegments: JSON.stringify([
+        {
+          thinkingId: 'empty',
+          summary: '部分内部执行信息已省略',
+          details: ['部分内部执行信息已省略'],
+          status: 'completed',
+        },
+      ]),
+    }
     mocks.history.mockResolvedValue({ data: { code: 0, data: { records: [record], totalRow: 1 } } })
     const wrapper = mountPage()
     await flushPromises()
@@ -234,29 +351,49 @@ describe('AppChatView thinking pipeline', () => {
     expect(record.message).toContain('部分内部执行信息已省略')
     wrapper.unmount()
   })
-  it.each(['failed', 'cancelled'])('keeps terminal %s visible as a status with no fabricated output', async (status) => {
-    const wrapper = mountPage()
-    await flushPromises()
-    await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage('检查')
-    const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
-    handlers.onEvent('tool.started', { callId: 'failure:1', toolName: 'execute' })
-    handlers.onEvent('tool.finished', { callId: 'failure:1', toolName: 'execute', status })
-    await nextTick()
-    const terminal = wrapper.get('details')
-    expect(terminal.attributes('open')).toBeUndefined()
-    expect(terminal.text()).toContain(status === 'failed' ? '执行失败，无可显示的错误详情' : '已取消')
-    expect(terminal.text()).toContain(status === 'failed' ? '执行失败，无可显示的错误详情' : '暂无可显示的输出')
-    expect(terminal.find('pre').exists()).toBe(false)
-    wrapper.unmount()
-  })
+  it.each(['failed', 'cancelled'])(
+    'keeps terminal %s visible as a status with no fabricated output',
+    async (status) => {
+      const wrapper = mountPage()
+      await flushPromises()
+      await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage(
+        '检查',
+      )
+      const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
+      handlers.onEvent('tool.started', { callId: 'failure:1', toolName: 'execute' })
+      handlers.onEvent('tool.finished', { callId: 'failure:1', toolName: 'execute', status })
+      await nextTick()
+      const terminal = wrapper.get('details')
+      expect(terminal.attributes('open')).toBeUndefined()
+      expect(terminal.text()).toContain(
+        status === 'failed' ? '执行失败，无可显示的错误详情' : '已取消',
+      )
+      expect(terminal.text()).toContain(
+        status === 'failed' ? '执行失败，无可显示的错误详情' : '暂无可显示的输出',
+      )
+      expect(terminal.find('pre').exists()).toBe(false)
+      wrapper.unmount()
+    },
+  )
 
   it('shows 执行成功，无输出 when succeeded with empty output', async () => {
     const wrapper = mountPage()
     await flushPromises()
-    await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage('测试空输出')
+    await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage(
+      '测试空输出',
+    )
     const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
-    handlers.onEvent('tool.started', { callId: 'empty:1', toolName: 'execute', input: { command: 'true' } })
-    handlers.onEvent('tool.finished', { callId: 'empty:1', toolName: 'execute', status: 'succeeded', outputPreview: '' })
+    handlers.onEvent('tool.started', {
+      callId: 'empty:1',
+      toolName: 'execute',
+      input: { command: 'true' },
+    })
+    handlers.onEvent('tool.finished', {
+      callId: 'empty:1',
+      toolName: 'execute',
+      status: 'succeeded',
+      outputPreview: '',
+    })
     await nextTick()
     const terminal = wrapper.get('details')
     expect(terminal.text()).toContain('成功')
@@ -268,10 +405,21 @@ describe('AppChatView thinking pipeline', () => {
   it('shows error summary when tool fails with outputPreview', async () => {
     const wrapper = mountPage()
     await flushPromises()
-    await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage('测试失败输出')
+    await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage(
+      '测试失败输出',
+    )
     const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
-    handlers.onEvent('tool.started', { callId: 'err:1', toolName: 'execute', input: { command: 'cat /not/exist' } })
-    handlers.onEvent('tool.finished', { callId: 'err:1', toolName: 'execute', status: 'failed', outputPreview: 'No such file or directory' })
+    handlers.onEvent('tool.started', {
+      callId: 'err:1',
+      toolName: 'execute',
+      input: { command: 'cat /not/exist' },
+    })
+    handlers.onEvent('tool.finished', {
+      callId: 'err:1',
+      toolName: 'execute',
+      status: 'failed',
+      outputPreview: 'No such file or directory',
+    })
     await nextTick()
     const terminal = wrapper.get('details')
     expect(terminal.text()).toContain('失败')
@@ -283,10 +431,21 @@ describe('AppChatView thinking pipeline', () => {
   it('shows placeholder when content is filtered by backend', async () => {
     const wrapper = mountPage()
     await flushPromises()
-    await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage('测试过滤')
+    await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage(
+      '测试过滤',
+    )
     const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
-    handlers.onEvent('tool.started', { callId: 'filt:1', toolName: 'execute', input: { command: 'env' } })
-    handlers.onEvent('tool.finished', { callId: 'filt:1', toolName: 'execute', status: 'succeeded', outputPreview: '部分内部执行信息已省略' })
+    handlers.onEvent('tool.started', {
+      callId: 'filt:1',
+      toolName: 'execute',
+      input: { command: 'env' },
+    })
+    handlers.onEvent('tool.finished', {
+      callId: 'filt:1',
+      toolName: 'execute',
+      status: 'succeeded',
+      outputPreview: '部分内部执行信息已省略',
+    })
     await nextTick()
     const terminal = wrapper.get('details')
     expect(terminal.text()).toContain('成功')
@@ -297,9 +456,15 @@ describe('AppChatView thinking pipeline', () => {
   it('shows 已结束（未收到结果） when stream completes without tool.finished', async () => {
     const wrapper = mountPage()
     await flushPromises()
-    await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage('测试未收到结果')
+    await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage(
+      '测试未收到结果',
+    )
     const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
-    handlers.onEvent('tool.started', { callId: 'pend:1', toolName: 'execute', input: { command: 'sleep 10' } })
+    handlers.onEvent('tool.started', {
+      callId: 'pend:1',
+      toolName: 'execute',
+      input: { command: 'sleep 10' },
+    })
     await nextTick()
     handlers.onEvent('done', {})
     await flushPromises()
@@ -320,7 +485,8 @@ describe('AppChatView thinking pipeline', () => {
       if (!HTMLElement.prototype.scrollTo) {
         HTMLElement.prototype.scrollTo = () => {}
       }
-      originalIntersectionObserver = (globalThis as unknown as { IntersectionObserver?: unknown }).IntersectionObserver
+      originalIntersectionObserver = (globalThis as unknown as { IntersectionObserver?: unknown })
+        .IntersectionObserver
       observerCallback = null
       class MockIntersectionObserver {
         constructor(cb: (entries: Array<{ isIntersecting: boolean }>) => void) {
@@ -330,12 +496,14 @@ describe('AppChatView thinking pipeline', () => {
         unobserve = vi.fn()
         disconnect = vi.fn()
       }
-      ;(globalThis as unknown as { IntersectionObserver: unknown }).IntersectionObserver = MockIntersectionObserver
+      ;(globalThis as unknown as { IntersectionObserver: unknown }).IntersectionObserver =
+        MockIntersectionObserver
     })
 
     const restoreObserver = () => {
       if (originalIntersectionObserver !== undefined) {
-        ;(globalThis as unknown as { IntersectionObserver: unknown }).IntersectionObserver = originalIntersectionObserver
+        ;(globalThis as unknown as { IntersectionObserver: unknown }).IntersectionObserver =
+          originalIntersectionObserver
       } else {
         delete (globalThis as unknown as { IntersectionObserver?: unknown }).IntersectionObserver
       }
@@ -349,21 +517,33 @@ describe('AppChatView thinking pipeline', () => {
     }
 
     it('thinking events only scroll chat container with behavior auto and never scrollIntoView or window', async () => {
-      const scrollIntoViewSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
+      const scrollIntoViewSpy = vi
+        .spyOn(Element.prototype, 'scrollIntoView')
+        .mockImplementation(() => {})
       const windowScrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
 
       const wrapper = mountPage()
       await flushPromises()
 
       const container = wrapper.get('.chat-messages').element as HTMLElement
-      Object.defineProperty(container, 'scrollHeight', { value: 2400, configurable: true, writable: true })
+      Object.defineProperty(container, 'scrollHeight', {
+        value: 2400,
+        configurable: true,
+        writable: true,
+      })
       const containerScrollToSpy = vi.spyOn(container, 'scrollTo').mockImplementation(() => {})
 
-      await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage('开始思考测试')
+      await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage(
+        '开始思考测试',
+      )
       const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
 
       // 1. 思考开始
-      handlers.onEvent('thinking.started', { thinkingId: 'think:1', summary: '开始构思', details: '分析结构' })
+      handlers.onEvent('thinking.started', {
+        thinkingId: 'think:1',
+        summary: '开始构思',
+        details: '分析结构',
+      })
       await waitForAutoScroll()
       expect(containerScrollToSpy).toHaveBeenCalledWith({ top: 2400, behavior: 'auto' })
       expect(scrollIntoViewSpy).not.toHaveBeenCalled()
@@ -374,7 +554,11 @@ describe('AppChatView thinking pipeline', () => {
       windowScrollToSpy.mockClear()
 
       // 2. 思考更新
-      handlers.onEvent('thinking.delta', { thinkingId: 'think:1', summary: '正在思考', details: '调整布局' })
+      handlers.onEvent('thinking.delta', {
+        thinkingId: 'think:1',
+        summary: '正在思考',
+        details: '调整布局',
+      })
       await waitForAutoScroll()
       expect(containerScrollToSpy).toHaveBeenCalledWith({ top: 2400, behavior: 'auto' })
       expect(scrollIntoViewSpy).not.toHaveBeenCalled()
@@ -398,21 +582,33 @@ describe('AppChatView thinking pipeline', () => {
     })
 
     it('does not auto scroll when bottom has left the viewport', async () => {
-      const scrollIntoViewSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
+      const scrollIntoViewSpy = vi
+        .spyOn(Element.prototype, 'scrollIntoView')
+        .mockImplementation(() => {})
       const windowScrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
 
       const wrapper = mountPage()
       await flushPromises()
 
       const container = wrapper.get('.chat-messages').element as HTMLElement
-      Object.defineProperty(container, 'scrollHeight', { value: 2400, configurable: true, writable: true })
+      Object.defineProperty(container, 'scrollHeight', {
+        value: 2400,
+        configurable: true,
+        writable: true,
+      })
       const containerScrollToSpy = vi.spyOn(container, 'scrollTo').mockImplementation(() => {})
 
-      await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage('上翻测试')
+      await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage(
+        '上翻测试',
+      )
       const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
 
       // 先触发一次以初始化 observer
-      handlers.onEvent('thinking.started', { thinkingId: 'think:2', summary: '初始化', details: '' })
+      handlers.onEvent('thinking.started', {
+        thinkingId: 'think:2',
+        summary: '初始化',
+        details: '',
+      })
       await waitForAutoScroll()
       containerScrollToSpy.mockClear()
 
@@ -422,7 +618,11 @@ describe('AppChatView thinking pipeline', () => {
       await nextTick()
 
       // 再次产生思考输出
-      handlers.onEvent('thinking.delta', { thinkingId: 'think:2', summary: '继续思考', details: '新内容' })
+      handlers.onEvent('thinking.delta', {
+        thinkingId: 'think:2',
+        summary: '继续思考',
+        details: '新内容',
+      })
       await waitForAutoScroll()
 
       expect(containerScrollToSpy).not.toHaveBeenCalled()
@@ -436,21 +636,33 @@ describe('AppChatView thinking pipeline', () => {
     })
 
     it('clicking scroll-to-bottom button resumes auto-scroll and uses smooth behavior', async () => {
-      const scrollIntoViewSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
+      const scrollIntoViewSpy = vi
+        .spyOn(Element.prototype, 'scrollIntoView')
+        .mockImplementation(() => {})
       const windowScrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
 
       const wrapper = mountPage()
       await flushPromises()
 
       const container = wrapper.get('.chat-messages').element as HTMLElement
-      Object.defineProperty(container, 'scrollHeight', { value: 3000, configurable: true, writable: true })
+      Object.defineProperty(container, 'scrollHeight', {
+        value: 3000,
+        configurable: true,
+        writable: true,
+      })
       const containerScrollToSpy = vi.spyOn(container, 'scrollTo').mockImplementation(() => {})
 
-      await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage('回到底部测试')
+      await (wrapper.vm as unknown as { sendMessage(text: string): Promise<void> }).sendMessage(
+        '回到底部测试',
+      )
       const handlers = mocks.stream.mock.calls[0]![2] as AgentStreamHandlers
 
       // 产生消息并模拟底部离开可视区域
-      handlers.onEvent('thinking.started', { thinkingId: 'think:3', summary: '思考中', details: '' })
+      handlers.onEvent('thinking.started', {
+        thinkingId: 'think:3',
+        summary: '思考中',
+        details: '',
+      })
       await waitForAutoScroll()
       observerCallback!([{ isIntersecting: false }])
       await nextTick()
@@ -475,9 +687,6 @@ describe('AppChatView thinking pipeline', () => {
     })
 
     it('does not throw when scrollToBottom is invoked without mounted container', () => {
-      const vm = {
-        scrollToBottom: (AppChatView as unknown as { setup: () => { scrollToBottom: (opts?: { smooth?: boolean }) => void } })
-      }
       const wrapper = mountPage()
       const comp = wrapper.vm as unknown as {
         chatMessagesRef: { value: HTMLElement | null }

@@ -49,13 +49,22 @@ export class IncrementalMarkdownParser {
     parsed.forEach((segment, index) => {
       const previous = this.blocks[index]
       const complete = forceComplete || index < activeIndex || isClosed(this.source, segment)
-      const same = previous && previous.type === segment.type && previous.content === segment.content &&
-        previous.language === segment.language && previous.fileLabel === segment.fileLabel && previous.status === (complete ? 'complete' : 'active')
-      next.push(same ? previous : {
-        ...segment,
-        id: previous?.id ?? `md-block-${this.sequence++}`,
-        status: complete ? 'complete' : 'active',
-      })
+      const same =
+        previous &&
+        previous.type === segment.type &&
+        previous.content === segment.content &&
+        previous.language === segment.language &&
+        previous.fileLabel === segment.fileLabel &&
+        previous.status === (complete ? 'complete' : 'active')
+      next.push(
+        same
+          ? previous
+          : {
+              ...segment,
+              id: previous?.id ?? `md-block-${this.sequence++}`,
+              status: complete ? 'complete' : 'active',
+            },
+      )
     })
     this.blocks = next
     return next

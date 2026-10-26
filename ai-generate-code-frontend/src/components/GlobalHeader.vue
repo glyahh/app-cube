@@ -10,7 +10,13 @@ import {
   message,
 } from 'ant-design-vue'
 import { userLogoutUsingPost } from '@/api/userController'
-import { RightOutlined, SettingOutlined, SkinOutlined, AppstoreOutlined, ApiOutlined } from '@ant-design/icons-vue'
+import {
+  RightOutlined,
+  SettingOutlined,
+  SkinOutlined,
+  AppstoreOutlined,
+  ApiOutlined,
+} from '@ant-design/icons-vue'
 
 const userLoginStore = UserLoginStore()
 const isAdmin = computed(() => userLoginStore.userLogin?.userRole === 'admin')
@@ -39,7 +45,7 @@ const menuItems = computed(() => {
 
 // ref,computed都是响应式数据,需要加上value
 const menuItemsForMenu = computed(() =>
-  menuItems.value.map((m) => ({ key: m.key, label: m.label }))
+  menuItems.value.map((m) => ({ key: m.key, label: m.label })),
 )
 
 const router = useRouter()
@@ -140,8 +146,13 @@ async function handleLogout() {
       <router-link to="/main_index" class="logo-wrap">
         <span class="site-title">应用魔方</span>
       </router-link>
-      <a-menu mode="horizontal" :selected-keys="selectedKeys" :items="menuItemsForMenu" class="header-menu"
-        @select="onMenuSelect" />
+      <a-menu
+        mode="horizontal"
+        :selected-keys="selectedKeys"
+        :items="menuItemsForMenu"
+        class="header-menu"
+        @select="onMenuSelect"
+      />
     </div>
     <div class="header-right">
       <div v-if="userLoginStore.userLogin.id" class="user-area-wrapper">
@@ -149,7 +160,9 @@ async function handleLogout() {
         <div class="user-area" @mouseenter="showUserMenu = true" @mouseleave="showUserMenu = false">
           <a-space class="user-info">
             <a-avatar :src="userLoginStore.userLogin.userAvatar" />
-            <span class="user-name">{{ userLoginStore.userLogin.userName ?? '默认id 114514' }}</span>
+            <span class="user-name">{{
+              userLoginStore.userLogin.userName ?? '默认id 114514'
+            }}</span>
           </a-space>
 
           <!-- 用户菜单下拉框 -->
@@ -171,7 +184,11 @@ async function handleLogout() {
                 <ApiOutlined class="menu-icon" />
                 <span class="menu-text">模型配置</span>
               </div>
-              <div class="menu-item logout-item" @click="handleLogout" :class="{ 'loading': isLoggingOut }">
+              <div
+                class="menu-item logout-item"
+                @click="handleLogout"
+                :class="{ loading: isLoggingOut }"
+              >
                 <RightOutlined class="menu-icon" />
                 <span class="menu-text">退出登录</span>
               </div>

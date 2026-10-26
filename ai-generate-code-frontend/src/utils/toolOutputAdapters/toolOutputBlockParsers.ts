@@ -64,9 +64,7 @@ export function extractToolWriteFileBlocksFromText(text: string): Array<{
  * 工具执行结果里：从全文提取「[工具调用] 修改文件」块的“替换后”内容
  * 用于历史回放时更新“生成文件”回显列表。
  */
-export function extractToolModifyFileNewContentBlocksFromText(
-  text: string,
-): Array<{
+export function extractToolModifyFileNewContentBlocksFromText(text: string): Array<{
   filePath: string
   content: string
 }> {
@@ -110,4 +108,3 @@ export function extractToolModifyFileNewContentBlocksFromText(
 
   return out
 }
-

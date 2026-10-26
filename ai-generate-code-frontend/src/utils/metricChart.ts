@@ -113,7 +113,9 @@ export function drawMetricChart(
       ctx.moveTo(point.x, point.y)
     }
   })
-  ctx.strokeStyle = options.lineColor ?? (document.documentElement.dataset.theme === 'dark' ? DEFAULT_LINE : '#6266cf')
+  ctx.strokeStyle =
+    options.lineColor ??
+    (document.documentElement.dataset.theme === 'dark' ? DEFAULT_LINE : '#6266cf')
   ctx.lineWidth = 1.5
   ctx.lineJoin = 'round'
   ctx.stroke()
@@ -126,7 +128,10 @@ export function drawMetricChart(
  *
  * @returns null 表示「暂无数据」—— 调用方要显示这几个字，而不是 0
  */
-export function formatMetricValue(value: number | null, unit: 'percent' | 'bytes' | 'qps'): string | null {
+export function formatMetricValue(
+  value: number | null,
+  unit: 'percent' | 'bytes' | 'qps',
+): string | null {
   if (value == null || !Number.isFinite(value)) {
     return null
   }

@@ -31,10 +31,21 @@ class PublicDeployFilesTest {
     }
     @Test void skipsLinksRatherThanFollowingThem() throws Exception {
         Path source=temp.resolve("source"), destination=temp.resolve("deploy/key");
-        put(source,"index.html"); put(temp,"outside.txt");
-        Files.createSymbolicLink(source.resolve("public.txt"),temp.resolve("outside.txt"));
+        Path outside=temp.resolve("outside");
+        Files.createDirectories(outside);
+        Files.writeString(outside.resolve("keep.txt"),"outside");
+        put(source,"index.html");
+        Path link=source.resolve("public-link");
+        if (System.getProperty("os.name").startsWith("Windows")) {
+            Process process=new ProcessBuilder("cmd.exe","/d","/c","mklink","/J",link.toString(),outside.toString())
+                    .redirectErrorStream(true).start();
+            assertTrue(process.waitFor(5,java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(0,process.exitValue(),new String(process.getInputStream().readAllBytes()));
+        } else {
+            Files.createSymbolicLink(link,outside);
+        }
         PublicDeployFiles.publish(source,destination);
-        assertFalse(Files.exists(destination.resolve("public.txt"),LinkOption.NOFOLLOW_LINKS));
+        assertFalse(Files.exists(destination.resolve("public-link"),LinkOption.NOFOLLOW_LINKS));
     }
     @Test void publicEndpointDeniesLegacySecretsWith404ButServesHomepage() throws Exception {
         WorkspaceProperties props=new WorkspaceProperties(); props.setDeployRoot(temp.resolve("deploy"));

@@ -1,0 +1,36 @@
+spring:
+  config:
+    import: optional:file:${E2E_EMPTY_CONFIG:target/e2e-empty.properties}[.properties]
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: ${E2E_DB_URL:jdbc:postgresql://127.0.0.1:1/app_cube_e2e?currentSchema=biz}
+    username: ${E2E_DB_USER:e2e}
+    password: ${E2E_DB_PASSWORD:e2e}
+  flyway:
+    enabled: true
+    user: ${E2E_DB_USER:e2e}
+    password: ${E2E_DB_PASSWORD:e2e}
+    schemas: biz
+    default-schema: biz
+    create-schemas: true
+    baseline-on-migrate: true
+    baseline-version: 2
+  data:
+    redis:
+      host: ${E2E_REDIS_HOST:127.0.0.1}
+      port: ${E2E_REDIS_PORT:1}
+      password: ${E2E_REDIS_PASSWORD:}
+  session:
+    store-type: redis
+server:
+  port: 8124
+agent:
+  runtime:
+    python-executable: ${E2E_PYTHON:python}
+    script-path: ${E2E_AGENT_STUB:src/test/resources/agent-stub.py}
+  pool:
+    core-size: 1
+    max-size: 2
+workspace:
+  output-root: ${E2E_WORKSPACE_ROOT:target/e2e/code_output}
+  deploy-root: ${E2E_DEPLOY_ROOT:target/e2e/code_deploy}

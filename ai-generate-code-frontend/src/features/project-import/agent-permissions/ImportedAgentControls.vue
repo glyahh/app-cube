@@ -14,16 +14,28 @@ const agent = useAgentSession({
   streaming: toRef(props, 'streaming'),
 })
 const {
-  options, toolRequest, candidate, diffs, state, saving, deciding, error, settings,
+  options,
+  toolRequest,
+  candidate,
+  diffs,
+  state,
+  saving,
+  deciding,
+  error,
+  settings,
   isImportApp,
 } = agent
 
 watch(agent.blocked, (value) => emit('blocked', value), { immediate: true })
 watch(agent.merged, () => emit('merged'))
 // 有卡片要用户处理时隐藏输入框：此时发送没有意义，留着只会分散注意力。
-watch(() => !!(toolRequest.value || candidate.value), (value) => emit('waiting', value), {
-  immediate: true,
-})
+watch(
+  () => !!(toolRequest.value || candidate.value),
+  (value) => emit('waiting', value),
+  {
+    immediate: true,
+  },
+)
 
 onMounted(agent.load)
 onBeforeUnmount(agent.dispose)

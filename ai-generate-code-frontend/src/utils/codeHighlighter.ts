@@ -108,17 +108,26 @@ function withStashedTokens(
       return `__TOK_${id}__`
     })
   })
-  return { text: result, restore: (s) => s.replace(/__TOK_(\d+)__/g, (_, index) => stash[Number(index)] ?? '') }
+  return {
+    text: result,
+    restore: (s) => s.replace(/__TOK_(\d+)__/g, (_, index) => stash[Number(index)] ?? ''),
+  }
 }
 
-function withStashedHighlightedSpans(source: string): { text: string; restore: (s: string) => string } {
+function withStashedHighlightedSpans(source: string): {
+  text: string
+  restore: (s: string) => string
+} {
   const stash: string[] = []
   const text = source.replace(/<span class="code-[^"]+">[\s\S]*?<\/span>/g, (match) => {
     const id = stash.length
     stash.push(match)
     return `__SPAN_${id}__`
   })
-  return { text, restore: (s) => s.replace(/__SPAN_(\d+)__/g, (_, index) => stash[Number(index)] ?? '') }
+  return {
+    text,
+    restore: (s) => s.replace(/__SPAN_(\d+)__/g, (_, index) => stash[Number(index)] ?? ''),
+  }
 }
 
 function highlightJsLike(raw: string): string {
@@ -129,12 +138,19 @@ function highlightJsLike(raw: string): string {
     { re: /(["'`])(?:\\.|(?!\1)[\s\S])*?\1/g, className: 'code-string' },
   ])
   const primary = text
-    .replace(/\b(const|let|var|function|return|if|else|switch|case|break|default|for|while|do|continue|import|from|export|class|extends|new|this|async|await|try|catch|finally|throw|typeof|instanceof|in|of|static|get|set|super|null|undefined|true|false)\b/g, '<span class="code-keyword">$1</span>')
+    .replace(
+      /\b(const|let|var|function|return|if|else|switch|case|break|default|for|while|do|continue|import|from|export|class|extends|new|this|async|await|try|catch|finally|throw|typeof|instanceof|in|of|static|get|set|super|null|undefined|true|false)\b/g,
+      '<span class="code-keyword">$1</span>',
+    )
     .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="code-number">$1</span>')
   const { text: safeText, restore: restoreSpans } = withStashedHighlightedSpans(primary)
-  return restore(restoreSpans(safeText
-    .replace(/([=+\-*/%<>!&|^~?:]+)/g, '<span class="code-operator">$1</span>')
-    .replace(/\b([A-Za-z_$][\w$]*)(?=\s*\()/g, '<span class="code-function">$1</span>')))
+  return restore(
+    restoreSpans(
+      safeText
+        .replace(/([=+\-*/%<>!&|^~?:]+)/g, '<span class="code-operator">$1</span>')
+        .replace(/\b([A-Za-z_$][\w$]*)(?=\s*\()/g, '<span class="code-function">$1</span>'),
+    ),
+  )
 }
 
 function highlightCss(raw: string): string {
@@ -143,12 +159,17 @@ function highlightCss(raw: string): string {
     { re: /\/\*[\s\S]*?\*\//g, className: 'code-comment' },
     { re: /(["'])(?:\\.|(?!\1)[\s\S])*?\1/g, className: 'code-string' },
   ])
-  return restore(text
-    .replace(/([.#][\w-]+)/g, '<span class="code-selector">$1</span>')
-    .replace(/(@[\w-]+)/g, '<span class="code-keyword">$1</span>')
-    .replace(/([\w-]+)(\s*:)/g, '<span class="code-property">$1</span>$2')
-    .replace(/(:\s*)([^;}{\n]+)(;?)/g, '$1<span class="code-value">$2</span>$3')
-    .replace(/\b(\d+(?:\.\d+)?(?:px|em|rem|vh|vw|%|s|ms|deg)?)\b/g, '<span class="code-number">$1</span>'))
+  return restore(
+    text
+      .replace(/([.#][\w-]+)/g, '<span class="code-selector">$1</span>')
+      .replace(/(@[\w-]+)/g, '<span class="code-keyword">$1</span>')
+      .replace(/([\w-]+)(\s*:)/g, '<span class="code-property">$1</span>$2')
+      .replace(/(:\s*)([^;}{\n]+)(;?)/g, '$1<span class="code-value">$2</span>$3')
+      .replace(
+        /\b(\d+(?:\.\d+)?(?:px|em|rem|vh|vw|%|s|ms|deg)?)\b/g,
+        '<span class="code-number">$1</span>',
+      ),
+  )
 }
 
 function highlightHtml(raw: string): string {
@@ -156,7 +177,10 @@ function highlightHtml(raw: string): string {
   return escaped
     .replace(/&lt;!--[\s\S]*?--&gt;/g, '<span class="code-comment">$&</span>')
     .replace(/(&lt;\/?)([\w-]+)([\s\S]*?)(&gt;)/g, (_, prefix, tag, attrs, suffix) => {
-      const safeAttrs = String(attrs).replace(/([:@\w-]+)(\s*=\s*)(["'])([\s\S]*?)(\3)/g, '<span class="code-attr">$1</span>$2$3<span class="code-string">$4</span>$5')
+      const safeAttrs = String(attrs).replace(
+        /([:@\w-]+)(\s*=\s*)(["'])([\s\S]*?)(\3)/g,
+        '<span class="code-attr">$1</span>$2$3<span class="code-string">$4</span>$5',
+      )
       return `${prefix}<span class="code-tag">${tag}</span>${safeAttrs}${suffix}`
     })
 }
@@ -168,8 +192,12 @@ function highlightVue(raw: string): string {
   let match: RegExpExecArray | null
   while ((match = blockRe.exec(raw)) !== null) {
     if (match.index > cursor) out += highlightHtml(raw.slice(cursor, match.index))
-    if (match[1] != null) out += highlightHtml(match[1]) + highlightJsLike(match[2] ?? '') + highlightHtml(match[3] ?? '')
-    else out += highlightHtml(match[4] ?? '') + highlightCss(match[5] ?? '') + highlightHtml(match[6] ?? '')
+    if (match[1] != null)
+      out +=
+        highlightHtml(match[1]) + highlightJsLike(match[2] ?? '') + highlightHtml(match[3] ?? '')
+    else
+      out +=
+        highlightHtml(match[4] ?? '') + highlightCss(match[5] ?? '') + highlightHtml(match[6] ?? '')
     cursor = match.index + match[0].length
   }
   return out + (cursor < raw.length ? highlightHtml(raw.slice(cursor)) : '')

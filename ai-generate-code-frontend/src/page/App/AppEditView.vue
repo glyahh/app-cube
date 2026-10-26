@@ -10,7 +10,12 @@ import {
   Card as ACard,
 } from 'ant-design-vue'
 import type { AppVO, AppUpdateRequest, AppAdminUpdateRequest } from '@/api'
-import { appGetVoUsingGet, appAdminGetVoUsingGet, appUpdateUsingPost, appAdminUpdateUsingPost } from '@/api/appController'
+import {
+  appGetVoUsingGet,
+  appAdminGetVoUsingGet,
+  appUpdateUsingPost,
+  appAdminUpdateUsingPost,
+} from '@/api/appController'
 import { UserLoginStore } from '@/stores/UserLogin'
 
 const route = useRoute()
@@ -138,7 +143,11 @@ onMounted(() => {
       </div>
 
       <a-form ref="formRef" :model="form" layout="vertical" class="edit-form">
-        <a-form-item label="应用名称" name="appName" :rules="[{ required: true, message: '请输入应用名称' }]">
+        <a-form-item
+          label="应用名称"
+          name="appName"
+          :rules="[{ required: true, message: '请输入应用名称' }]"
+        >
           <AInput v-model:value="form.appName" placeholder="请输入应用名称" />
         </a-form-item>
 
@@ -150,16 +159,15 @@ onMounted(() => {
         </a-form-item>
 
         <a-form-item v-if="isAdmin" label="优先级" name="priority">
-          <AInput v-model:value="(form.priority as any)" placeholder="可选，数值越大展示越靠前，精选可设置为 99" />
+          <AInput
+            v-model:value="form.priority as any"
+            placeholder="可选，数值越大展示越靠前，精选可设置为 99"
+          />
         </a-form-item>
 
         <div class="edit-actions">
-          <AButton @click="router.back()">
-            取消
-          </AButton>
-          <AButton type="primary" :loading="loading" @click="handleSubmit">
-            保存
-          </AButton>
+          <AButton @click="router.back()"> 取消 </AButton>
+          <AButton type="primary" :loading="loading" @click="handleSubmit"> 保存 </AButton>
         </div>
       </a-form>
     </ACard>

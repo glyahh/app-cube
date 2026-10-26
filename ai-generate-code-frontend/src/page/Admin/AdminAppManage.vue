@@ -4,7 +4,11 @@ import { useRouter } from 'vue-router'
 import { Table, Button, Modal, Form, Input, InputNumber, Tag, Space, message } from 'ant-design-vue'
 import type { ColumnsType } from 'ant-design-vue/es/table'
 import type { AppVO, AppQueryRequest } from '@/api'
-import { appAdminListPageVoUsingPost, appAdminOpenApiDeleteUsingPost, appAdminUpdateUsingPost } from '@/api/appController'
+import {
+  appAdminListPageVoUsingPost,
+  appAdminOpenApiDeleteUsingPost,
+  appAdminUpdateUsingPost,
+} from '@/api/appController'
 import { UserLoginStore } from '@/stores/UserLogin'
 
 const router = useRouter()
@@ -341,26 +345,15 @@ onMounted(async () => {
             />
           </Form.Item>
           <Form.Item label="用户 ID">
-            <InputNumber
-              v-model:value="searchForm.userId"
-              :min="1"
-              style="width: 140px"
-            />
+            <InputNumber v-model:value="searchForm.userId" :min="1" style="width: 140px" />
           </Form.Item>
           <Form.Item label="优先级">
-            <InputNumber
-              v-model:value="searchForm.priority"
-              style="width: 120px"
-            />
+            <InputNumber v-model:value="searchForm.priority" style="width: 120px" />
           </Form.Item>
           <Form.Item>
             <Space>
-              <Button type="primary" @click="handleSearch">
-                查询
-              </Button>
-              <Button @click="resetSearch">
-                重置
-              </Button>
+              <Button type="primary" @click="handleSearch"> 查询 </Button>
+              <Button @click="resetSearch"> 重置 </Button>
             </Space>
           </Form.Item>
         </Form>
@@ -407,11 +400,7 @@ onMounted(async () => {
           <Input v-model:value="editForm.cover" />
         </Form.Item>
         <Form.Item label="优先级" name="priority">
-          <InputNumber
-            v-model:value="editForm.priority"
-            :min="0"
-            style="width: 100%"
-          />
+          <InputNumber v-model:value="editForm.priority" :min="0" style="width: 100%" />
         </Form.Item>
       </Form>
     </Modal>

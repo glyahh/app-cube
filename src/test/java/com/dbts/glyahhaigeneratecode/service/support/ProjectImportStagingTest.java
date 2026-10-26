@@ -216,7 +216,6 @@ class ProjectImportStagingTest {
 
     @Test
     void windowsJunctionRootCannotBecomeManagedStaging() throws Exception {
-        org.junit.jupiter.api.Assumptions.assumeTrue(System.getProperty("os.name").startsWith("Windows"));
         Path outside = Files.createDirectory(temp.resolve("outside"));
         Path link = temp.resolve("junction");
         createJunction(link, outside);
@@ -227,7 +226,6 @@ class ProjectImportStagingTest {
 
     @Test
     void childJunctionCleanupNeverDeletesItsOutsideTarget() throws Exception {
-        org.junit.jupiter.api.Assumptions.assumeTrue(System.getProperty("os.name").startsWith("Windows"));
         var store = staging();
         UUID id = UUID.randomUUID();
         store.create(id);
@@ -244,6 +242,10 @@ class ProjectImportStagingTest {
     private void createJunction(Path link, Path target) throws Exception {
         assertTrue(link.toAbsolutePath().normalize().startsWith(temp.toAbsolutePath().normalize()));
         assertTrue(target.toAbsolutePath().normalize().startsWith(temp.toAbsolutePath().normalize()));
+        if (!System.getProperty("os.name").startsWith("Windows")) {
+            Files.createSymbolicLink(link, target);
+            return;
+        }
         Process process = new ProcessBuilder("cmd.exe", "/d", "/c", "mklink", "/J", link.toString(), target.toString())
                 .redirectErrorStream(true).start();
         assertTrue(process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS));

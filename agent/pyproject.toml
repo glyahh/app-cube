@@ -26,6 +26,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "external: real infrastructure tests, only with --external",
+]
 
 [tool.uv]
 package = false

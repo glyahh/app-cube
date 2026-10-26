@@ -14,11 +14,7 @@ interface ProjectFileRaw {
 }
 
 /** 前端回显不展示的锁文件（磁盘保留，构建正常使用） */
-const LOCK_FILE_PATTERNS = [
-  'package-lock.json',
-  'yarn.lock',
-  'pnpm-lock.yaml',
-]
+const LOCK_FILE_PATTERNS = ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml']
 
 function isLockFile(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, '/')

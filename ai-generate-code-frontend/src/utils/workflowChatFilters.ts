@@ -6,7 +6,12 @@ import {
 /** 从 SSE 片段中解析出的工作流步骤（与后端 CodeGenWorkflow 文案一致） */
 export type WorkflowStepStatus = 'success' | 'failed' | 'pending'
 export type WorkflowStepRow = { step: number; label: string; status?: WorkflowStepStatus }
-export type WorkflowStageKey = 'initializing' | 'image_collecting' | 'code_generating' | 'code_checking' | 'ready'
+export type WorkflowStageKey =
+  | 'initializing'
+  | 'image_collecting'
+  | 'code_generating'
+  | 'code_checking'
+  | 'ready'
 export type WorkflowHistoryOutcome = 'success' | 'failed' | 'unknown'
 
 const WORKFLOW_STEP_LINE_RE = /^\[workflow\]\s*第\s*(\d+)\s*步完成[：:]\s*(.+)\s*$/
@@ -14,7 +19,8 @@ const WORKFLOW_STEP_GLOBAL_RE = /\[workflow\]\s*第\s*(\d+)\s*步完成[：:]\s*
 const WORKFLOW_DONE_LINE_RE = /^\[workflow\]\s*(代码生成完成|工作流结束，生成完成)\s*[。.]?\s*$/
 const WORKFLOW_NOTICE_MERMAID_ERROR_RE = /^\[workflow_notice\]\s*mermaid_error\s*$/
 const WORKFLOW_STAGE_STATUS_LINE_RE = /^\[workflow_stage_status\]\s*(.+)\s*$/m
-const WORKFLOW_STAGE_STATUS_ITEM_RE = /(initializing|image_collecting|code_generating|code_checking|ready)\s*=\s*(success|failed|pending)/gi
+const WORKFLOW_STAGE_STATUS_ITEM_RE =
+  /(initializing|image_collecting|code_generating|code_checking|ready)\s*=\s*(success|failed|pending)/gi
 const WORKFLOW_STAGE_ORDER: WorkflowStageKey[] = [
   'initializing',
   'image_collecting',
@@ -38,14 +44,19 @@ function getWorkflowStageLabel(stage: WorkflowStageKey, done: boolean): string {
   return `${WORKFLOW_STAGE_BASE_LABEL[stage]}中...`
 }
 
-function getWorkflowStageLabelByStatus(stage: WorkflowStageKey, status: WorkflowStepStatus): string {
+function getWorkflowStageLabelByStatus(
+  stage: WorkflowStageKey,
+  status: WorkflowStepStatus,
+): string {
   if (status === 'failed') return `${WORKFLOW_STAGE_BASE_LABEL[stage]}出现问题`
   if (status === 'pending') return `${WORKFLOW_STAGE_BASE_LABEL[stage]}中...`
   if (stage === 'ready') return '就绪！'
   return `${WORKFLOW_STAGE_BASE_LABEL[stage]}已完成！`
 }
 
-function parseWorkflowStageStatusFromContent(rawContent: string): Partial<Record<WorkflowStageKey, WorkflowStepStatus>> | null {
+function parseWorkflowStageStatusFromContent(
+  rawContent: string,
+): Partial<Record<WorkflowStageKey, WorkflowStepStatus>> | null {
   const text = (rawContent ?? '').trim()
   if (!text) return null
   const markerMatch = text.match(WORKFLOW_STAGE_STATUS_LINE_RE)
@@ -60,7 +71,9 @@ function parseWorkflowStageStatusFromContent(rawContent: string): Partial<Record
   return Object.keys(stageStatusMap).length > 0 ? stageStatusMap : null
 }
 
-function buildWorkflowRowsFromStageStatus(stageStatusMap: Partial<Record<WorkflowStageKey, WorkflowStepStatus>>): WorkflowStepRow[] {
+function buildWorkflowRowsFromStageStatus(
+  stageStatusMap: Partial<Record<WorkflowStageKey, WorkflowStepStatus>>,
+): WorkflowStepRow[] {
   return WORKFLOW_STAGE_ORDER.map((stage, index) => {
     const status = stageStatusMap[stage] ?? 'success'
     return {
@@ -100,7 +113,8 @@ const STACK_JARGON_LINE_RES: RegExp[] = [
   /技术栈/i,
 ]
 // Agent 内部工作日志（英文计划/沙箱说明）不属于用户答案，禁止泄漏到聊天正文。
-const INTERNAL_AGENT_LOG_LINE_RE = /^(?:i['’]?ll\s|the workspace\b|let me\s|now i['’]?ll\s|no (?:python|node)\b|all (?:the )?\w+ (?:is|are)\b|structure is\s)/i
+const INTERNAL_AGENT_LOG_LINE_RE =
+  /^(?:i['’]?ll\s|the workspace\b|let me\s|now i['’]?ll\s|no (?:python|node)\b|all (?:the )?\w+ (?:is|are)\b|structure is\s)/i
 
 function isStackJargonLine(trimmed: string): boolean {
   if (!trimmed) return false
@@ -124,7 +138,9 @@ const WORKFLOW_STAGE_FAILED_RE: Record<WorkflowStageKey, RegExp> = {
  * @param rawContent 历史消息全文
  * @return 历史消息终态
  */
-export function resolveWorkflowHistoryOutcomeFromContent(rawContent: string): WorkflowHistoryOutcome {
+export function resolveWorkflowHistoryOutcomeFromContent(
+  rawContent: string,
+): WorkflowHistoryOutcome {
   const text = (rawContent ?? '').trim()
   if (!text) return 'unknown'
   const stageStatusMap = parseWorkflowStageStatusFromContent(text)
@@ -143,7 +159,10 @@ export function resolveWorkflowHistoryOutcomeFromContent(rawContent: string): Wo
  * @param rawContent 历史消息全文
  * @return 失败阶段，无法推断时返回代码生成阶段
  */
-function resolveFailedStage(rows: WorkflowStepRow[] | undefined, rawContent: string): WorkflowStageKey {
+function resolveFailedStage(
+  rows: WorkflowStepRow[] | undefined,
+  rawContent: string,
+): WorkflowStageKey {
   const text = rawContent ?? ''
   for (const stage of WORKFLOW_STAGE_ORDER.slice().reverse()) {
     if (WORKFLOW_STAGE_FAILED_RE[stage].test(text)) {
@@ -186,7 +205,12 @@ export function resolveWorkflowStepsFromMessageContent(
 
 export function normalizeWorkflowStepsForUi(
   rows: WorkflowStepRow[] | undefined,
-  opts?: { historyMode?: boolean; streaming?: boolean; historyOutcome?: WorkflowHistoryOutcome; rawContent?: string },
+  opts?: {
+    historyMode?: boolean
+    streaming?: boolean
+    historyOutcome?: WorkflowHistoryOutcome
+    rawContent?: string
+  },
 ): WorkflowStepRow[] {
   const isHistoryMode = opts?.historyMode === true
   const rawContent = opts?.rawContent ?? ''
@@ -221,9 +245,10 @@ export function normalizeWorkflowStepsForUi(
     const displayStages = WORKFLOW_STAGE_ORDER.slice(0, failedIndex + 1)
     return displayStages.map((stage, index) => ({
       step: index + 1,
-      label: stage === failedStage
-        ? `${WORKFLOW_STAGE_BASE_LABEL[stage]}出现问题`
-        : getWorkflowStageLabel(stage, true),
+      label:
+        stage === failedStage
+          ? `${WORKFLOW_STAGE_BASE_LABEL[stage]}出现问题`
+          : getWorkflowStageLabel(stage, true),
     }))
   }
 
@@ -244,7 +269,7 @@ export function normalizeWorkflowStepsForUi(
   const latestIdx = displayStages.length - 1
 
   return displayStages.map((stage, index) => {
-    const done = isHistoryMode || (!isStreaming || index < latestIdx)
+    const done = isHistoryMode || !isStreaming || index < latestIdx
     return {
       step: index + 1,
       label: getWorkflowStageLabel(stage, done),
@@ -276,9 +301,7 @@ export function parseWorkflowStepsFromText(raw: string): WorkflowStepRow[] {
       byStep.set(item.step, item.label)
     }
   }
-  return [...byStep.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([step, label]) => ({ step, label }))
+  return [...byStep.entries()].sort((a, b) => a[0] - b[0]).map(([step, label]) => ({ step, label }))
 }
 
 function extractWorkflowStepsFromText(text: string): WorkflowStepRow[] {
@@ -297,7 +320,8 @@ function extractWorkflowStepsFromText(text: string): WorkflowStepRow[] {
 const INTERNAL_DIR_LINE_RE = /^(生成目录|构建目录)\s*[:：].+$/
 const SHORT_NOISE_ENGLISH_WORD_RE = /^[a-z]{1,14}$/i
 const PROTOCOL_FRAGMENT_RE = /^(data:|event:|id:|retry:|workflow_notice|workflow)\b/i
-const TRAILING_NOISE_TOKEN_RE = /\b(background|color|padding|margin|border|font|display|width|height)\s*$/i
+const TRAILING_NOISE_TOKEN_RE =
+  /\b(background|color|padding|margin|border|font|display|width|height)\s*$/i
 
 export type SseLineAccumulator = { carry: string }
 export type WorkflowSseFilterResult = {
@@ -314,9 +338,7 @@ function maybeAppendDoneStep(source: string, steps: WorkflowStepRow[]) {
 
 function normalizeUiText(text: string): string {
   if (!text) return ''
-  return text
-    .replace(/\r\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
+  return text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n')
 }
 
 function isLikelyReadableCarryText(text: string): boolean {
@@ -386,7 +408,10 @@ export function filterAssistantSseChunkForUi(
       return { uiText: '', newSteps, mermaidErrorNotice }
     }
     const immediate = extractWorkflowStepsFromText(singleLine)
-    if (immediate.length > 0 && singleLine.replace(WORKFLOW_STEP_GLOBAL_RE, '').trim().length === 0) {
+    if (
+      immediate.length > 0 &&
+      singleLine.replace(WORKFLOW_STEP_GLOBAL_RE, '').trim().length === 0
+    ) {
       newSteps.push(...immediate)
       acc.carry = ''
       return { uiText: '', newSteps, mermaidErrorNotice }
@@ -427,7 +452,9 @@ export function filterAssistantSseChunkForUi(
     return true
   })
 
-  const uiText = normalizeUiText(filteredKept.join('\n') + (endsWithBreak && completeLines.length > 0 ? '\n' : ''))
+  const uiText = normalizeUiText(
+    filteredKept.join('\n') + (endsWithBreak && completeLines.length > 0 ? '\n' : ''),
+  )
   return { uiText, newSteps, mermaidErrorNotice }
 }
 
@@ -524,7 +551,5 @@ export function mergeWorkflowSteps(
   for (const r of delta) {
     map.set(r.step, r.label)
   }
-  return [...map.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([step, label]) => ({ step, label }))
+  return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([step, label]) => ({ step, label }))
 }

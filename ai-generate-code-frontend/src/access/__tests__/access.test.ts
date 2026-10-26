@@ -64,8 +64,15 @@ describe('access guard', () => {
     await import('../access')
     const guard = mocks.registerGuard.mock.calls[0]?.[0]
     const next = vi.fn()
-    await guard({ name: 'project-import', path: '/project/import', fullPath: '/project/import' }, {}, next)
-    expect(next).toHaveBeenCalledWith({ path: '/user/login', query: { redirect: '/project/import' } })
+    await guard(
+      { name: 'project-import', path: '/project/import', fullPath: '/project/import' },
+      {},
+      next,
+    )
+    expect(next).toHaveBeenCalledWith({
+      path: '/user/login',
+      query: { redirect: '/project/import' },
+    })
   })
 
   it('allows authenticated users to open the import form', async () => {
@@ -74,7 +81,11 @@ describe('access guard', () => {
     await import('../access')
     const guard = mocks.registerGuard.mock.calls[0]?.[0]
     const next = vi.fn()
-    await guard({ name: 'project-import', path: '/project/import', fullPath: '/project/import' }, {}, next)
+    await guard(
+      { name: 'project-import', path: '/project/import', fullPath: '/project/import' },
+      {},
+      next,
+    )
     expect(next).toHaveBeenCalledWith()
   })
 })

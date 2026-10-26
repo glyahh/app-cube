@@ -192,7 +192,9 @@ const columns: ColumnsType<UserChatHistoryItemVO> = [
       if (type === 'ai') {
         const summary = record.summaryText || 'nothing'
         const nl = record.naturalLanguage
-          ? (record.naturalLanguage.length > 80 ? record.naturalLanguage.slice(0, 80) + '…' : record.naturalLanguage)
+          ? record.naturalLanguage.length > 80
+            ? record.naturalLanguage.slice(0, 80) + '…'
+            : record.naturalLanguage
           : 'nothing'
         return h('div', { style: 'line-height: 1.8;' }, [
           h('div', { style: 'font-size: 12px; color: #999; margin-bottom: 2px;' }, summary),
@@ -269,10 +271,20 @@ onMounted(async () => {
       <section class="search-bar">
         <Form layout="inline">
           <Form.Item label="消息类型">
-            <Input v-model:value="searchForm.messageType" placeholder="user / assistant" allow-clear style="width: 140px" />
+            <Input
+              v-model:value="searchForm.messageType"
+              placeholder="user / assistant"
+              allow-clear
+              style="width: 140px"
+            />
           </Form.Item>
           <Form.Item label="应用 ID/名称">
-            <Input v-model:value="searchForm.appName" placeholder="数字 ID 或名称关键字" allow-clear style="width: 160px" />
+            <Input
+              v-model:value="searchForm.appName"
+              placeholder="数字 ID 或名称关键字"
+              allow-clear
+              style="width: 160px"
+            />
           </Form.Item>
           <Form.Item>
             <Space>
@@ -345,7 +357,7 @@ onMounted(async () => {
 .user-chat-title {
   font-size: 28px;
   font-weight: 700;
-  color: var(--text-base, #0F172A);
+  color: var(--text-base, #0f172a);
   margin: 0;
   letter-spacing: -0.3px;
 }
@@ -364,7 +376,9 @@ onMounted(async () => {
 }
 
 .search-bar :deep(.ant-input) {
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .search-bar :deep(.ant-input:focus) {

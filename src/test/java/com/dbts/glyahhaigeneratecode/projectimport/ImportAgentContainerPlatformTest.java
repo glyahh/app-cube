@@ -16,7 +16,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 专用真实导入应用；生产准备/创建与真实数据库/Docker，脚本负责重启恢复和清理。 */
-@EnabledIfEnvironmentVariable(named="AGENT_TEST_CONTAINER_LIFECYCLE_FIXTURE",matches=".+")
+@com.dbts.glyahhaigeneratecode.ExternalTest
 class ImportAgentContainerPlatformTest {
     @Test void realProductionPreparationAndCreationBindActualContainerBeforeWorker()throws Exception{
         var json=new ObjectMapper();Path input=Path.of(System.getenv("AGENT_TEST_CONTAINER_LIFECYCLE_FIXTURE"));

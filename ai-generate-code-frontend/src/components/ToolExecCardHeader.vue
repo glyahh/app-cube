@@ -87,8 +87,9 @@ withDefaults(defineProps<Props>(), {
 .tool-exec-target-path {
   font-size: 11px;
   color: #64748b;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
-    'Courier New', monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
   word-break: break-all;
   line-height: 1.3;
 }

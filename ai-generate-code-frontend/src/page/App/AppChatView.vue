@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch, defineAsyncComponent } from 'vue'
+import {
+  ref,
+  onMounted,
+  onBeforeUnmount,
+  computed,
+  nextTick,
+  watch,
+  defineAsyncComponent,
+} from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   message,
@@ -83,10 +91,7 @@ import ToolExitHint from '@/components/ToolExitHint.vue'
 import ToolRequestHint from '@/components/ToolRequestHint.vue'
 import ToolExecCardHeader from '@/components/ToolExecCardHeader.vue'
 import CollapsibleCodeBlock from '@/components/CollapsibleCodeBlock.vue'
-import {
-  getToolExecHeaderTargetPath,
-  stripToolCallPrefix,
-} from '@/utils/toolExecDisplay'
+import { getToolExecHeaderTargetPath, stripToolCallPrefix } from '@/utils/toolExecDisplay'
 import {
   isToolWaitStatusTool,
   resolveToolWaitStatus,
@@ -125,7 +130,11 @@ import ExecutionProcess from '@/components/ExecutionProcess.vue'
 import ExecutionTerminal from '@/components/ExecutionTerminal.vue'
 import { cleanExecutionText } from '@/utils/executionDisplay'
 import ThinkingStage from '@/components/ThinkingStage.vue'
-import { parseThinkingSegments, mergeThinkingAction, type ThinkingSegment } from '@/utils/thinkingSegments'
+import {
+  parseThinkingSegments,
+  mergeThinkingAction,
+  type ThinkingSegment,
+} from '@/utils/thinkingSegments'
 
 const props = defineProps<{ importedProject?: boolean }>()
 
@@ -146,44 +155,84 @@ function computeDisplaySegments(m: ChatMessage) {
   const views = messageRenderCache.get(m)?.thinkingViews ?? new Map<number, ThinkingViewCache>()
   messageRenderCache.set(m, { ...messageRenderCache.get(m), thinkingViews: views })
   for (const key of views.keys()) if (key >= sources.length) views.delete(key)
-  return sources.map((source, idx) => {
-    let segment = source
-    if (source.kind === 'thinking') {
-      const previous = views.get(idx)
-      // 阶段详情只由 mergeThinkingAction 追加；未变化的阶段保持子组件 props 身份。
-      if (previous && previous.active === active && previous.summary === source.summary &&
-          previous.details === source.details && previous.count === source.details.length &&
-          previous.done === source.done && previous.id === source.thinkingId &&
-          previous.segment.segmentId === source.segmentId) segment = previous.segment
-      else {
-        segment = { ...source, summary: clean(source.summary), details: source.details.map(clean).filter(text => text.trim()) }
-        views.set(idx, { active, summary: source.summary, details: source.details, count: source.details.length,
-          done: source.done, id: source.thinkingId, segment })
+  return sources
+    .map((source, idx) => {
+      let segment = source
+      if (source.kind === 'thinking') {
+        const previous = views.get(idx)
+        // 阶段详情只由 mergeThinkingAction 追加；未变化的阶段保持子组件 props 身份。
+        if (
+          previous &&
+          previous.active === active &&
+          previous.summary === source.summary &&
+          previous.details === source.details &&
+          previous.count === source.details.length &&
+          previous.done === source.done &&
+          previous.id === source.thinkingId &&
+          previous.segment.segmentId === source.segmentId
+        )
+          segment = previous.segment
+        else {
+          segment = {
+            ...source,
+            summary: clean(source.summary),
+            details: source.details.map(clean).filter((text) => text.trim()),
+          }
+          views.set(idx, {
+            active,
+            summary: source.summary,
+            details: source.details,
+            count: source.details.length,
+            done: source.done,
+            id: source.thinkingId,
+            segment,
+          })
+        }
+      } else if (source.kind === 'markdown') {
+        segment = { ...source, content: clean(source.content) }
+      } else if (source.kind === 'tool_request') {
+        const isExec = source.agentToolName === 'execute'
+        segment = {
+          ...source,
+          toolName: clean(source.toolName),
+          targetPath: cleanExecutionText(source.targetPath ?? '', active, isExec),
+        }
+      } else if (source.kind === 'tool_executed_simple_tool') {
+        const isExec = source.agentToolName === 'execute'
+        segment = {
+          ...source,
+          toolTitle: clean(source.toolTitle),
+          filePath: cleanExecutionText(source.filePath, active, isExec),
+          message: cleanExecutionText(source.message, active, isExec),
+        }
+      } else if (source.kind === 'tool_executed_write_file') {
+        segment = { ...source, filePath: clean(source.filePath), content: clean(source.content) }
+      } else if (source.kind === 'tool_executed_modify_file') {
+        segment = {
+          ...source,
+          filePath: clean(source.filePath),
+          beforeContent: clean(source.beforeContent),
+          afterContent: clean(source.afterContent),
+        }
+      } else if (source.kind === 'generation_status') {
+        segment = { ...source, message: clean(source.message) }
       }
-    } else if (source.kind === 'markdown') {
-      segment = { ...source, content: clean(source.content) }
-    } else if (source.kind === 'tool_request') {
-      const isExec = source.agentToolName === 'execute'
-      segment = { ...source, toolName: clean(source.toolName), targetPath: cleanExecutionText(source.targetPath ?? '', active, isExec) }
-    } else if (source.kind === 'tool_executed_simple_tool') {
-      const isExec = source.agentToolName === 'execute'
-      segment = { ...source, toolTitle: clean(source.toolTitle), filePath: cleanExecutionText(source.filePath, active, isExec), message: cleanExecutionText(source.message, active, isExec) }
-    } else if (source.kind === 'tool_executed_write_file') {
-      segment = { ...source, filePath: clean(source.filePath), content: clean(source.content) }
-    } else if (source.kind === 'tool_executed_modify_file') {
-      segment = { ...source, filePath: clean(source.filePath), beforeContent: clean(source.beforeContent), afterContent: clean(source.afterContent) }
-    } else if (source.kind === 'generation_status') {
-      segment = { ...source, message: clean(source.message) }
-    }
-    if (source.kind !== 'thinking') views.delete(idx)
-    return { segment, idx }
-  }).filter(({ segment }) => segment.kind === 'thinking'
-    ? !!(segment.summary.trim() || segment.details.length)
-    : segment.kind !== 'markdown' || !!segment.content.trim())
+      if (source.kind !== 'thinking') views.delete(idx)
+      return { segment, idx }
+    })
+    .filter(({ segment }) =>
+      segment.kind === 'thinking'
+        ? !!(segment.summary.trim() || segment.details.length)
+        : segment.kind !== 'markdown' || !!segment.content.trim(),
+    )
 }
 
 function isExecutionSegment(segment: UiSegment): boolean {
-  return segment.kind === 'thinking' || segment.kind === 'tool_request' || isToolExecutedUiSegmentKind(segment.kind)
+  return (
+    segment.kind === 'thinking' ||
+    segment.kind === 'tool_request' ||
+    isToolExecutedUiSegmentKind(segment.kind)
+  )
 }
 
 function executionSegments(m: ChatMessage) {
@@ -199,12 +248,24 @@ function getDisplayGroups(m: ChatMessage) {
   const version = buildUiRenderVersion(m)
   const active = isStreamActiveForMessage(m)
   const first = isFirstSessionAssistantMessage(m)
-  if (cache.display && cache.display.version === version && cache.display.active === active &&
-      cache.display.first === first && cache.display.content === m.content &&
-      cache.display.thinking === m.thinkingSegments && cache.display.state === m.uiState) return cache.display
+  if (
+    cache.display &&
+    cache.display.version === version &&
+    cache.display.active === active &&
+    cache.display.first === first &&
+    cache.display.content === m.content &&
+    cache.display.thinking === m.thinkingSegments &&
+    cache.display.state === m.uiState
+  )
+    return cache.display
   const segments = computeDisplaySegments(m)
   const display = {
-    version, active, first, content: m.content, thinking: m.thinkingSegments, state: m.uiState,
+    version,
+    active,
+    first,
+    content: m.content,
+    thinking: m.thinkingSegments,
+    state: m.uiState,
     execution: segments.filter(({ segment }) => isExecutionSegment(segment)),
     answers: segments.filter(({ segment }) => !isExecutionSegment(segment)),
   }
@@ -213,8 +274,12 @@ function getDisplayGroups(m: ChatMessage) {
   return display
 }
 
-function terminalStatus(segment: UiToolRequestSegment | UiToolExecutedSimpleToolSegment, m: ChatMessage): string {
-  if (segment.kind === 'tool_request') return isStreamActiveForMessage(m) ? '执行中' : '已结束（未收到结果）'
+function terminalStatus(
+  segment: UiToolRequestSegment | UiToolExecutedSimpleToolSegment,
+  m: ChatMessage,
+): string {
+  if (segment.kind === 'tool_request')
+    return isStreamActiveForMessage(m) ? '执行中' : '已结束（未收到结果）'
   if (segment.status === 'cancelled') return '已取消'
   return segment.status === 'succeeded' ? '成功' : '失败'
 }
@@ -282,36 +347,54 @@ const isAdmin = computed(() => userLoginStore.userLogin?.userRole === 'admin')
 const isReadOnly = computed(() => !isOwner.value && !isAdmin.value)
 
 // 1. 导入工程改用启动识别与冻结计划入口；确认不是导入应用才显示原运行按钮。
-const StartupRunPreview = defineAsyncComponent(() => import('@/preview/project-import/StartupRunPreview.vue'))
+const StartupRunPreview = defineAsyncComponent(
+  () => import('@/preview/project-import/StartupRunPreview.vue'),
+)
 const importedWorkspace = ref<'pending' | 'imported' | 'plain'>('pending')
-const importedView = computed(() => props.importedProject === true || importedWorkspace.value === 'imported')
+const importedView = computed(
+  () => props.importedProject === true || importedWorkspace.value === 'imported',
+)
 const importedAgentBlocked = ref(true)
 // 普通应用的模型偏好保存期间才阻塞；读取失败不阻塞，执行侧回落全局配置。
 const projectAgentBlocked = ref(false)
 // 有权限卡片或候选审阅时隐藏输入框，处理完再恢复。
 const agentWaiting = ref(false)
-const importLookupBlocked = computed(() => props.importedProject !== true && importedWorkspace.value === 'pending')
-watch(() => [appId.value, userLoginStore.userLogin?.id] as const, async ([id, owner], _, onCleanup) => {
-  importedWorkspace.value = 'pending'
-  if (props.importedProject) return
-  if (!id || !owner) {
-    importedWorkspace.value = 'plain'
-    return
-  }
-  // 2. 只读查询导入资格。取消的结果丢掉；查失败时留在导入启动入口，不退回旧运行按钮。
-  const controller = new AbortController()
-  onCleanup(() => controller.abort())
-  try {
-    const imported = await importedApp({ appId: id, ownerId: String(owner), signal: controller.signal })
-    if (!controller.signal.aborted) importedWorkspace.value = imported ? 'imported' : 'plain'
-  } catch (cause) {
-    if (controller.signal.aborted || (cause as Error).name === 'AbortError') return
-    if (!controller.signal.aborted) {
-      importedWorkspace.value = 'imported'
-      message.warning(cause instanceof Error && cause.message ? cause.message : '暂时无法确认导入状态，已停用旧的运行入口')
+const importLookupBlocked = computed(
+  () => props.importedProject !== true && importedWorkspace.value === 'pending',
+)
+watch(
+  () => [appId.value, userLoginStore.userLogin?.id] as const,
+  async ([id, owner], _, onCleanup) => {
+    importedWorkspace.value = 'pending'
+    if (props.importedProject) return
+    if (!id || !owner) {
+      importedWorkspace.value = 'plain'
+      return
     }
-  }
-}, { immediate: true })
+    // 2. 只读查询导入资格。取消的结果丢掉；查失败时留在导入启动入口，不退回旧运行按钮。
+    const controller = new AbortController()
+    onCleanup(() => controller.abort())
+    try {
+      const imported = await importedApp({
+        appId: id,
+        ownerId: String(owner),
+        signal: controller.signal,
+      })
+      if (!controller.signal.aborted) importedWorkspace.value = imported ? 'imported' : 'plain'
+    } catch (cause) {
+      if (controller.signal.aborted || (cause as Error).name === 'AbortError') return
+      if (!controller.signal.aborted) {
+        importedWorkspace.value = 'imported'
+        message.warning(
+          cause instanceof Error && cause.message
+            ? cause.message
+            : '暂时无法确认导入状态，已停用旧的运行入口',
+        )
+      }
+    }
+  },
+  { immediate: true },
+)
 
 type ChatMessage = {
   id: number
@@ -469,12 +552,14 @@ function onLoopSelect(loopId: string | number) {
   // 获取 Loop 详情以获得 compiledPrompt（Snowflake ID 用字符串传递避免精度丢失）
   if (loopId) {
     const idStr = String(loopId)
-    loopGetVoById(idStr).then(res => {
+    loopGetVoById(idStr)
+      .then((res) => {
         if ((res.data.code === 0 || res.data.code === 20000) && res.data.data) {
           selectedLoopCompiledPrompt.value = res.data.data.compiledPrompt || ''
           selectedLoopName.value = res.data.data.loopName || ''
         }
-      }).catch(() => {
+      })
+      .catch(() => {
         selectedLoopCompiledPrompt.value = ''
         selectedLoopName.value = ''
       })
@@ -523,14 +608,23 @@ const sessionMessages = ref<ChatMessage[]>([])
 const historyMessages = ref<ChatMessage[]>([])
 
 type ThinkingViewCache = {
-  active: boolean; summary: string; details: string[]; count: number; done: boolean
-  id: string; segment: UiThinkingSegment
+  active: boolean
+  summary: string
+  details: string[]
+  count: number
+  done: boolean
+  id: string
+  segment: UiThinkingSegment
 }
 
 type MessageRenderCache = {
   thinkingViews?: Map<number, ThinkingViewCache>
   display?: {
-    version: string; active: boolean; first: boolean; content: string; thinking: unknown
+    version: string
+    active: boolean
+    first: boolean
+    content: string
+    thinking: unknown
     state: AssistantUiState | undefined
     execution: { segment: UiSegment; idx: number }[]
     answers: { segment: UiSegment; idx: number }[]
@@ -592,7 +686,9 @@ const lastPreviewProbing = ref<{
   timer: null,
 })
 const refreshAppCtaVisible = ref(false)
-const refreshAppCtaHint = ref('生成完成后建议刷新一次，以避免浏览器缓存 / 资源加载时序导致预览仍显示旧内容。')
+const refreshAppCtaHint = ref(
+  '生成完成后建议刷新一次，以避免浏览器缓存 / 资源加载时序导致预览仍显示旧内容。',
+)
 const refreshingApp = ref(false)
 
 const isVueProject = computed(() => {
@@ -632,7 +728,9 @@ function dedupHistoryRecords(records: ChatHistory[]): ChatHistory[] {
 
 /** 将 ChatHistory 转为 ChatMessage */
 function historyToMessage(r: ChatHistory): ChatMessage {
-  const role = (r.messageType?.toLowerCase() === 'user' ? 'user' : 'assistant') as 'user' | 'assistant'
+  const role = (r.messageType?.toLowerCase() === 'user' ? 'user' : 'assistant') as
+    | 'user'
+    | 'assistant'
   const msg: ChatMessage = {
     id: r.id ?? 0,
     role,
@@ -697,10 +795,12 @@ function precomputeMessageRenderCaches(m: ChatMessage) {
   m.cachedUiSegments = uiSegments
 
   cache.renderableVersion = `${workflowVersion}|${uiVersion}`
-  cache.renderable = normalizedWorkflow.length > 0 || uiSegments.some((seg) => {
-    if (seg.kind !== 'markdown') return true
-    return (seg.content ?? '').trim().length > 0
-  })
+  cache.renderable =
+    normalizedWorkflow.length > 0 ||
+    uiSegments.some((seg) => {
+      if (seg.kind !== 'markdown') return true
+      return (seg.content ?? '').trim().length > 0
+    })
   messageRenderCache.set(m, cache)
 }
 
@@ -772,11 +872,7 @@ const splitterVisible = computed(() => isSplitterVisible(splitLayout.value))
 const gridColumns = computed(() => computeGridColumns(splitLayout.value))
 const chatHidden = computed(() => isChatHidden(focusedSide.value, isNarrowScreen.value))
 const previewHidden = computed(() =>
-  isPreviewHidden(
-    appearanceStore.previewExpanded,
-    focusedSide.value,
-    isNarrowScreen.value,
-  ),
+  isPreviewHidden(appearanceStore.previewExpanded, focusedSide.value, isNarrowScreen.value),
 )
 const leftRestoreVisible = computed(() =>
   isLeftRestoreTriggerVisible(
@@ -894,11 +990,12 @@ function handleSplitterDblClick() {
   focusedSide.value = 'none'
 }
 
-
 const chatMessagesRef = ref<HTMLElement | null>(null)
 const chatBottomRef = ref<HTMLElement | null>(null)
 const shouldAutoScroll = ref(appearanceStore.smoothScroll)
-const showScrollToBottom = computed(() => !shouldAutoScroll.value && displayMessages.value.length > 0)
+const showScrollToBottom = computed(
+  () => !shouldAutoScroll.value && displayMessages.value.length > 0,
+)
 
 const previewIframeRef = ref<HTMLIFrameElement | null>(null)
 const workflowCollapsedMap = ref<Record<string, boolean>>({})
@@ -910,7 +1007,11 @@ const selectedElementDisplay = computed(() => {
   return (
     info.cssSelector ||
     info.xpath ||
-    [info.tagName, info.id ? `#${info.id}` : '', info.className ? `.${String(info.className).split(/\s+/)[0]}` : '']
+    [
+      info.tagName,
+      info.id ? `#${info.id}` : '',
+      info.className ? `.${String(info.className).split(/\s+/)[0]}` : '',
+    ]
       .filter(Boolean)
       .join('')
   )
@@ -919,7 +1020,9 @@ const selectedElementDisplay = computed(() => {
 const selectedElementTextPreview = computed(() => {
   const info = selectedElement.value
   if (!info) return ''
-  const t = String(info.text ?? '').replace(/\s+/g, ' ').trim()
+  const t = String(info.text ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
   if (!t) return ''
   return t.length > 120 ? `${t.slice(0, 120)}…` : t
 })
@@ -1067,7 +1170,8 @@ const applyFeaturedModalVisible = ref(false)
 const applyAppProprietyReason = ref('')
 
 const canApplyFeatured = computed(
-  () => isOwner.value && !isReadOnly.value && (!appInfo.value?.priority || appInfo.value.priority < 99),
+  () =>
+    isOwner.value && !isReadOnly.value && (!appInfo.value?.priority || appInfo.value.priority < 99),
 )
 
 const exportingChat = ref(false)
@@ -1088,14 +1192,22 @@ function pollFirstProjectTitle() {
       const res = await appGetVoUsingGet({ params: { id } })
       if (version !== titlePollVersion || appId.value !== id) return
       const name = res.data?.data?.appName
-      if (name && name !== original && appInfo.value) { appInfo.value.appName = name; return }
-    } catch { /* 命名失败不影响生成。 */ }
+      if (name && name !== original && appInfo.value) {
+        appInfo.value.appName = name
+        return
+      }
+    } catch {
+      /* 命名失败不影响生成。 */
+    }
     if (version === titlePollVersion && ++tries < 24) titlePollTimer = setTimeout(poll, 3000)
   }
   clearTimeout(titlePollTimer)
   titlePollTimer = setTimeout(poll, 3000)
 }
-onBeforeUnmount(() => { titlePollVersion++; clearTimeout(titlePollTimer) })
+onBeforeUnmount(() => {
+  titlePollVersion++
+  clearTimeout(titlePollTimer)
+})
 
 const roundCount = ref<number | null>(null)
 const loadingRoundCount = ref(false)
@@ -1123,7 +1235,9 @@ async function fetchRoundCount() {
 }
 
 /** 将服务端返回的对话列表转为 Markdown 文本并触发下载 */
-function buildMarkdownFromHistory(records: { messageType?: string; message?: string; createTime?: string }[]): string {
+function buildMarkdownFromHistory(
+  records: { messageType?: string; message?: string; createTime?: string }[],
+): string {
   const lines: string[] = [
     `# 对话导出 - ${appInfo.value?.appName ?? '应用'}`,
     '',
@@ -1337,7 +1451,11 @@ async function refreshWorkspace() {
 const DASHBOARD_FEATURE_OPTIONS = [
   { value: 'metrics', label: '运行监控', description: '查看 CPU、内存与平台入口流量的真实采样。' },
   { value: 'logs', label: '运行日志', description: '实时查看进程输出，筛选并下载诊断日志。' },
-  { value: 'knowledge', label: '项目知识', description: '探索源码图谱、阅读项目文档，进行只读问答。' },
+  {
+    value: 'knowledge',
+    label: '项目知识',
+    description: '探索源码图谱、阅读项目文档，进行只读问答。',
+  },
 ] as const
 
 const dashboardModalOpen = ref(false)
@@ -1383,8 +1501,12 @@ async function enterPreviewFullscreen() {
     await fullscreenBody.value?.requestFullscreen()
     fullscreenHint.value = true
     clearTimeout(fullscreenHintTimer)
-    fullscreenHintTimer = setTimeout(() => { fullscreenHint.value = false }, 4500)
-  } catch { message.error('无法进入全屏') }
+    fullscreenHintTimer = setTimeout(() => {
+      fullscreenHint.value = false
+    }, 4500)
+  } catch {
+    message.error('无法进入全屏')
+  }
 }
 function exitPreviewFullscreen() {
   if (document.fullscreenElement) void document.exitFullscreen()
@@ -1486,7 +1608,9 @@ async function handleDismissIncident() {
   // 关掉弹窗只是不再打扰，服务端的记录保留
   await Promise.all(
     list.map((item) =>
-      dismissIncident({ appId: appId.value!, incidentId: item.id, apiBaseUrl: API_BASE_URL }).catch(() => false),
+      dismissIncident({ appId: appId.value!, incidentId: item.id, apiBaseUrl: API_BASE_URL }).catch(
+        () => false,
+      ),
     ),
   )
 }
@@ -1534,7 +1658,8 @@ async function handleOpenSourceFromGraph(sourceRef: string) {
 
 async function handleStartRuntime() {
   // 导入工程只能经冻结计划与后续隔离授权运行，不走旧运行入口。
-  if (!appId.value || startingRuntime.value || importedView.value || importLookupBlocked.value) return
+  if (!appId.value || startingRuntime.value || importedView.value || importLookupBlocked.value)
+    return
   startingRuntime.value = true
   try {
     runtimeStatus.value = await startRuntime({ appId: appId.value, apiBaseUrl: API_BASE_URL })
@@ -1669,7 +1794,11 @@ async function probePreviewReady(): Promise<boolean> {
     url = `${base}/${codeGenType}_${appId.value}${entryPart}?probe=${Date.now()}`
   }
   try {
-    const res = await fetch(url, { method: 'GET', credentials: 'include', cache: 'no-store' as RequestCache })
+    const res = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store' as RequestCache,
+    })
     if (!res.ok) return false
     const ct = (res.headers.get('content-type') ?? '').toLowerCase()
     // 静态入口一般为 html；若是其他类型也视为可访问（某些构建产物可能返回 application/octet-stream）
@@ -1701,7 +1830,9 @@ async function handleManualRefreshApp() {
       hasGenerated.value = true
     } else {
       // 未 ready 也保留按钮，避免用户无从操作
-      showRefreshAppCta('当前预览入口暂未就绪（可能仍在写入/构建）。建议稍等片刻后再次点击“刷新应用”。')
+      showRefreshAppCta(
+        '当前预览入口暂未就绪（可能仍在写入/构建）。建议稍等片刻后再次点击“刷新应用”。',
+      )
     }
   } finally {
     refreshingApp.value = false
@@ -1806,7 +1937,9 @@ function ensureToolExecutedSegment(
   return seg
 }
 
-function getActiveToolExecutedSegment(state: AssistantUiState): UiToolExecutedWriteFileSegment | null {
+function getActiveToolExecutedSegment(
+  state: AssistantUiState,
+): UiToolExecutedWriteFileSegment | null {
   const idx = state.activeToolIndex
   if (idx == null) return null
   const seg = state.segments[idx]
@@ -2439,7 +2572,8 @@ function appendAssistantMessageChunk(chunk: string) {
 function showGeneratedFilesModal() {
   filesModalOpen.value = true
   const list = generatedFiles.value
-  const last = list.length > 0 ? (list[list.length - 1] as GeneratedFileItem | undefined) : undefined
+  const last =
+    list.length > 0 ? (list[list.length - 1] as GeneratedFileItem | undefined) : undefined
   if (last) activeFilePath.value = last.path
 }
 
@@ -2450,7 +2584,9 @@ function parseToolWriteFileBlock(chunk: string) {
   return { filePath: first.filePath, lang: first.lang ?? '', content: first.content }
 }
 
-function extractToolWriteFileBlocks(text: string): Array<{ filePath: string; lang?: string; content: string }> {
+function extractToolWriteFileBlocks(
+  text: string,
+): Array<{ filePath: string; lang?: string; content: string }> {
   return extractToolWriteFileBlocksFromText(text ?? '')
 }
 
@@ -2506,9 +2642,15 @@ function removeGeneratedFile(filePath: string) {
 function getFileNameColorClass(path: string): string {
   const lower = path.toLowerCase()
   if (lower.endsWith('.vue')) return 'file-path--vue'
-  if (lower.endsWith('.ts') || lower.endsWith('.tsx') || lower.endsWith('.js') || lower.endsWith('.jsx'))
+  if (
+    lower.endsWith('.ts') ||
+    lower.endsWith('.tsx') ||
+    lower.endsWith('.js') ||
+    lower.endsWith('.jsx')
+  )
     return 'file-path--script'
-  if (lower.endsWith('.css') || lower.endsWith('.scss') || lower.endsWith('.less')) return 'file-path--style'
+  if (lower.endsWith('.css') || lower.endsWith('.scss') || lower.endsWith('.less'))
+    return 'file-path--style'
   if (lower.endsWith('.html')) return 'file-path--html'
   if (
     lower.endsWith('package.json') ||
@@ -2527,10 +2669,13 @@ function isCoreFile(path: string): boolean {
   const lower = path.toLowerCase()
   if (lower.includes('/src/main.') || lower.includes('\\src\\main.')) return true
   if (lower.endsWith('/src/app.vue') || lower.endsWith('\\src\\app.vue')) return true
-  if (lower.endsWith('/src/router/index.js') || lower.endsWith('\\src\\router\\index.js')) return true
-  if (lower.endsWith('/src/router/index.ts') || lower.endsWith('\\src\\router\\index.ts')) return true
+  if (lower.endsWith('/src/router/index.js') || lower.endsWith('\\src\\router\\index.js'))
+    return true
+  if (lower.endsWith('/src/router/index.ts') || lower.endsWith('\\src\\router\\index.ts'))
+    return true
   if (lower.includes('/src/pages/') || lower.includes('\\src\\pages\\')) return true
-  if (lower.endsWith('/src/styles/global.css') || lower.endsWith('\\src\\styles\\global.css')) return true
+  if (lower.endsWith('/src/styles/global.css') || lower.endsWith('\\src\\styles\\global.css'))
+    return true
   if (lower.endsWith('/index.html') && !lower.includes('node_modules')) return true
   if (lower.endsWith('/vite.config.js') || lower.endsWith('\\vite.config.js')) return true
   if (lower.endsWith('/package.json') || lower.endsWith('\\package.json')) return true
@@ -2569,7 +2714,9 @@ function buildUiSegmentsFromFullText(fullText: string): UiSegment[] {
 
 function isFirstSessionAssistantMessage(m: ChatMessage): boolean {
   if (m.role !== 'assistant' || !!m.createTime) return false
-  const firstAssistant = sessionMessages.value.find((item) => item.role === 'assistant' && !item.createTime)
+  const firstAssistant = sessionMessages.value.find(
+    (item) => item.role === 'assistant' && !item.createTime,
+  )
   return firstAssistant?.id === m.id
 }
 
@@ -2801,8 +2948,13 @@ function getMessageUiSegments(m: ChatMessage): UiSegment[] {
   // 先查缓存（含流式消息），避免模板每次 render 都重新 slice/合并/归一化
   const version = buildUiRenderVersion(m)
   const cache = messageRenderCache.get(m)
-  if (cache?.uiVersion === version && cache.uiSegments && cache.uiContent === m.content &&
-      cache.uiThinking === m.thinkingSegments && cache.uiState === m.uiState) {
+  if (
+    cache?.uiVersion === version &&
+    cache.uiSegments &&
+    cache.uiContent === m.content &&
+    cache.uiThinking === m.thinkingSegments &&
+    cache.uiState === m.uiState
+  ) {
     return normalizeFirstRoundUiSegments(m, cache.uiSegments)
   }
   const segments = computeMessageUiSegments(m)
@@ -2864,9 +3016,17 @@ function computeMessageUiSegments(m: ChatMessage): UiSegment[] {
         }
       }
     }
-    return stampSegmentIds(normalizeFirstRoundUiSegments(m, [...persistedThinking, ...applyGenerationStatusToSegments(segs, m.content ?? '')]))
+    return stampSegmentIds(
+      normalizeFirstRoundUiSegments(m, [
+        ...persistedThinking,
+        ...applyGenerationStatusToSegments(segs, m.content ?? ''),
+      ]),
+    )
   }
-  return stampSegmentIds([...persistedThinking, ...buildUiSegmentsFromFullText(stripAssistantNoiseLines(m.content ?? ''))])
+  return stampSegmentIds([
+    ...persistedThinking,
+    ...buildUiSegmentsFromFullText(stripAssistantNoiseLines(m.content ?? '')),
+  ])
 }
 
 function assistantHasNonWorkflowRenderableOutput(m: ChatMessage): boolean {
@@ -2889,8 +3049,13 @@ function assistantHasRenderableOutput(m: ChatMessage): boolean {
   const uiVersion = buildUiRenderVersion(m)
   const combinedVersion = `${workflowVersion}|${uiVersion}`
   const cache = messageRenderCache.get(m)
-  if (cache?.renderableVersion === combinedVersion && typeof cache.renderable === 'boolean' &&
-      cache.uiContent === m.content && cache.uiThinking === m.thinkingSegments && cache.uiState === m.uiState) {
+  if (
+    cache?.renderableVersion === combinedVersion &&
+    typeof cache.renderable === 'boolean' &&
+    cache.uiContent === m.content &&
+    cache.uiThinking === m.thinkingSegments &&
+    cache.uiState === m.uiState
+  ) {
     return cache.renderable
   }
   if (getWorkflowStepsForMessage(m).length > 0) {
@@ -2922,7 +3087,8 @@ function getThinkingElapsedSec(m: ChatMessage): number | null {
 }
 
 function getTotalElapsedSec(m: ChatMessage): number | null {
-  if (m.role !== 'assistant' || m.createTime || !m.streamStartedAt || !m.streamFinishedAt) return null
+  if (m.role !== 'assistant' || m.createTime || !m.streamStartedAt || !m.streamFinishedAt)
+    return null
   return Math.max(0, Math.floor((m.streamFinishedAt - m.streamStartedAt) / 1000))
 }
 
@@ -2995,6 +3161,11 @@ function getCodeGenTypeLabel(): string {
   if (t === CodeGenTypeEnum.MULTI_FILE) return '多文件项目'
   if (t === CodeGenTypeEnum.VUE_PROJECT) return 'Vue 项目'
   return '项目'
+}
+
+function handleProjectFilesMerged() {
+  void refreshProjectFilesEchoFromDisk()
+  refreshPreviewWithRetry()
 }
 
 async function refreshProjectFilesEchoFromDisk() {
@@ -3102,7 +3273,11 @@ function startAgentStream(streamId: string, prompt: string) {
           commitAgentToolActionToStream(streamId, action)
           return
         }
-        if (action.kind === 'thinking_started' || action.kind === 'thinking_delta' || action.kind === 'thinking_completed') {
+        if (
+          action.kind === 'thinking_started' ||
+          action.kind === 'thinking_delta' ||
+          action.kind === 'thinking_completed'
+        ) {
           commitThinkingActionToStream(streamId, action)
           return
         }
@@ -3339,7 +3514,13 @@ function appendAssistantChunkToStream(streamId: string, chunk: string) {
   streamRenderScheduler.enqueue(streamId, chunk)
 }
 
-function commitThinkingActionToStream(streamId: string, action: Extract<AgentUiAction, { kind: 'thinking_started' | 'thinking_delta' | 'thinking_completed' }>) {
+function commitThinkingActionToStream(
+  streamId: string,
+  action: Extract<
+    AgentUiAction,
+    { kind: 'thinking_started' | 'thinking_delta' | 'thinking_completed' }
+  >,
+) {
   const meta = activeStreamMeta.value[streamId]
   const msg = meta && sessionMessages.value.find((item) => item.id === meta.assistantMessageId)
   if (!msg || msg.role !== 'assistant') return
@@ -3566,7 +3747,7 @@ async function sendMessage(text?: string) {
   sending.value = true
   pollFirstProjectTitle()
 
-   // 首次生成时给出“分析代码 ing~”提示，告诉用户正在分析并决定生成格式
+  // 首次生成时给出“分析代码 ing~”提示，告诉用户正在分析并决定生成格式
   if (!hasGenerated.value && !appInfo.value?.hasGeneratedCode && !analyzingHintCloser.value) {
     try {
       analyzingHintCloser.value = message.loading('分析代码ing~  请不要退出/刷新界面', 0)
@@ -3593,7 +3774,10 @@ function handleManualSend() {
 
 function handleStop() {
   if (isReadOnly.value || !streaming.value) return
-  const lastId = activeStreamOrder.value.length > 0 ? activeStreamOrder.value[activeStreamOrder.value.length - 1] : null
+  const lastId =
+    activeStreamOrder.value.length > 0
+      ? activeStreamOrder.value[activeStreamOrder.value.length - 1]
+      : null
   if (!lastId) return
   stopStream(lastId)
 }
@@ -3649,7 +3833,10 @@ async function loadChatHistory(lastCreateTime?: string) {
       syncAppIsBeta(page?.isBeta)
       const records = page?.records ?? []
       if (isLoadMore) {
-        loadedHistoryRecords.value = dedupHistoryRecords([...records, ...loadedHistoryRecords.value])
+        loadedHistoryRecords.value = dedupHistoryRecords([
+          ...records,
+          ...loadedHistoryRecords.value,
+        ])
       } else {
         loadedHistoryRecords.value = dedupHistoryRecords(records)
       }
@@ -3744,14 +3931,17 @@ async function loadAppInfo() {
           }
 
           // 先获取 Loop 详情以填充 compiledPrompt（用于调试日志），再发送消息
-          const loopDetailPromise = (autoLoopId && String(autoLoopId).trim())
-            ? loopGetVoById(String(autoLoopId).trim()).then(res => {
-                  if ((res.data.code === 0 || res.data.code === 20000) && res.data.data) {
-                    selectedLoopCompiledPrompt.value = res.data.data.compiledPrompt || ''
-                    selectedLoopName.value = res.data.data.loopName || ''
-                  }
-                }).catch(() => {})
-            : Promise.resolve()
+          const loopDetailPromise =
+            autoLoopId && String(autoLoopId).trim()
+              ? loopGetVoById(String(autoLoopId).trim())
+                  .then((res) => {
+                    if ((res.data.code === 0 || res.data.code === 20000) && res.data.data) {
+                      selectedLoopCompiledPrompt.value = res.data.data.compiledPrompt || ''
+                      selectedLoopName.value = res.data.data.loopName || ''
+                    }
+                  })
+                  .catch(() => {})
+              : Promise.resolve()
 
           // 清除 query 参数，避免刷新页面时重复自动发送
           router.replace({
@@ -3857,8 +4047,22 @@ defineExpose({
         </ACheckbox>
       </ACheckboxGroup>
       <template #footer>
-        <button type="button" class="wb-button" :disabled="savingDashboard" @click="dashboardModalOpen = false">取消</button>
-        <button type="button" class="wb-button is-primary" :disabled="savingDashboard" @click="saveDashboardSettings">{{ savingDashboard ? '保存中…' : '保存设置' }}</button>
+        <button
+          type="button"
+          class="wb-button"
+          :disabled="savingDashboard"
+          @click="dashboardModalOpen = false"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          class="wb-button is-primary"
+          :disabled="savingDashboard"
+          @click="saveDashboardSettings"
+        >
+          {{ savingDashboard ? '保存中…' : '保存设置' }}
+        </button>
       </template>
     </a-modal>
 
@@ -3886,10 +4090,21 @@ defineExpose({
       </p>
     </a-modal>
 
-    <a-modal v-model:open="applyFeaturedModalVisible" title="申请成为精选应用" :confirm-loading="false" ok-text="申请"
-      cancel-text="取消" @ok="handleApplyFeaturedConfirm" @cancel="closeApplyFeatured">
+    <a-modal
+      v-model:open="applyFeaturedModalVisible"
+      title="申请成为精选应用"
+      :confirm-loading="false"
+      ok-text="申请"
+      cancel-text="取消"
+      @ok="handleApplyFeaturedConfirm"
+      @cancel="closeApplyFeatured"
+    >
       <p style="margin-bottom: 8px">你可以简单说明想成为精选应用的理由（选填）：</p>
-      <a-textarea v-model:value="applyAppProprietyReason" :rows="3" placeholder="例如：该应用体验较好、功能完善，希望被更多用户看到" />
+      <a-textarea
+        v-model:value="applyAppProprietyReason"
+        :rows="3"
+        placeholder="例如：该应用体验较好、功能完善，希望被更多用户看到"
+      />
     </a-modal>
 
     <div class="top-bar">
@@ -3901,11 +4116,12 @@ defineExpose({
           <div class="app-name">
             {{ appInfo?.appName || '应用生成中' }}
           </div>
-          <div v-if="!importedView" class="app-subtitle">
-            一句话，生成一个 Web 应用
-          </div>
+          <div v-if="!importedView" class="app-subtitle">一句话，生成一个 Web 应用</div>
         </div>
-        <div v-if="(isOwner || isAdmin) && (roundCount !== null || loadingRoundCount)" class="round-count-wrap">
+        <div
+          v-if="(isOwner || isAdmin) && (roundCount !== null || loadingRoundCount)"
+          class="round-count-wrap"
+        >
           <span class="round-count-line" aria-hidden="true" />
           <span class="round-count-text">
             <template v-if="loadingRoundCount">…</template>
@@ -3930,33 +4146,33 @@ defineExpose({
         >
           下载项目
         </a-button>
-        <a-button
-          v-if="!isReadOnly"
-          class="ghost-btn"
-          @click="goEdit"
-        >
-          编辑应用
-        </a-button>
-        <slot name="runtime-actions"><template v-if="importedView"><StartupRunPreview v-if="!isReadOnly && appId" :app-id="appId" /></template><a-button
-          v-else-if="importLookupBlocked && !isReadOnly"
-          class="ghost-btn"
-          loading
-        >正在确认</a-button><ATooltip
-          v-else
-          :title="runtimeRunning
-            ? (runtimeStale ? '当前运行的仍是上次启动时的代码，重新运行才会生效' : '停止常驻进程')
-            : '在受控沙箱中启动常驻进程'"
-        >
-          <a-button
-            v-if="!isReadOnly"
-            class="ghost-btn"
-            :type="runtimeRunning ? 'default' : 'primary'"
-            :loading="startingRuntime || stoppingRuntime"
-            @click="runtimeRunning ? handleStopRuntime() : handleStartRuntime()"
+        <a-button v-if="!isReadOnly" class="ghost-btn" @click="goEdit"> 编辑应用 </a-button>
+        <slot name="runtime-actions"
+          ><template v-if="importedView"
+            ><StartupRunPreview v-if="!isReadOnly && appId" :app-id="appId" /></template
+          ><a-button v-else-if="importLookupBlocked && !isReadOnly" class="ghost-btn" loading
+            >正在确认</a-button
+          ><ATooltip
+            v-else
+            :title="
+              runtimeRunning
+                ? runtimeStale
+                  ? '当前运行的仍是上次启动时的代码，重新运行才会生效'
+                  : '停止常驻进程'
+                : '在受控沙箱中启动常驻进程'
+            "
           >
-            {{ runtimeRunning ? '运行中' : '运行' }}
-          </a-button>
-        </ATooltip></slot>
+            <a-button
+              v-if="!isReadOnly"
+              class="ghost-btn"
+              :type="runtimeRunning ? 'default' : 'primary'"
+              :loading="startingRuntime || stoppingRuntime"
+              @click="runtimeRunning ? handleStopRuntime() : handleStartRuntime()"
+            >
+              {{ runtimeRunning ? '运行中' : '运行' }}
+            </a-button>
+          </ATooltip></slot
+        >
         <a-button
           v-if="!isReadOnly && generatedFiles.length > 0"
           class="ghost-btn"
@@ -3967,7 +4183,12 @@ defineExpose({
         <a-button v-if="!isReadOnly" class="ghost-btn" @click="openDashboardSettings">
           看板设置
         </a-button>
-        <a-button v-if="canApplyFeatured" class="ghost-btn" type="primary" @click="openApplyFeatured">
+        <a-button
+          v-if="canApplyFeatured"
+          class="ghost-btn"
+          type="primary"
+          @click="openApplyFeatured"
+        >
           我要成为精选
         </a-button>
       </div>
@@ -3996,7 +4217,16 @@ defineExpose({
             @click="restoreSplitView"
           >
             <span class="edge-restore-arrow" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <polyline points="9 18 15 12 9 6" />
               </svg>
             </span>
@@ -4005,36 +4235,47 @@ defineExpose({
       </Transition>
 
       <div v-show="!chatHidden" class="chat-panel">
-        <div
-          v-if="generatedFiles.length > 0"
-          class="stream-file-slot"
-        >
+        <div v-if="generatedFiles.length > 0" class="stream-file-slot">
           <div class="generated-files-bar">
             <div class="generated-files-left">
               <span class="generated-files-dot" aria-hidden="true" />
               <span class="generated-files-text">已回显 {{ generatedFiles.length }} 个文件</span>
             </div>
-            <a-button size="small" class="ghost-btn" @click="showGeneratedFilesModal">查看文件</a-button>
+            <a-button size="small" class="ghost-btn" @click="showGeneratedFilesModal"
+              >查看文件</a-button
+            >
           </div>
         </div>
         <div ref="chatMessagesRef" class="chat-messages">
           <ASpin v-if="loadingApp" />
           <template v-else>
             <div v-if="displayMessages.length === 0" class="chat-empty">
-              <AEmpty :description="importedView ? '还没有对话' : '还没有对话，先从左侧输入提示词开始吧'" />
+              <AEmpty
+                :description="importedView ? '还没有对话' : '还没有对话，先从左侧输入提示词开始吧'"
+              />
             </div>
             <template v-else>
               <div v-if="hasMoreHistory && !loadingHistory" class="load-more-wrap">
-                <a-button type="link" size="small" :loading="loadingMoreHistory" @click="loadMoreHistory">
+                <a-button
+                  type="link"
+                  size="small"
+                  :loading="loadingMoreHistory"
+                  @click="loadMoreHistory"
+                >
                   加载更多历史消息
                 </a-button>
               </div>
-              <div v-for="(m, midx) in displayMessages" :key="m.createTime ? `h-${m.id}` : `s-${m.id}-${midx}`"
-                :class="['chat-bubble', m.role === 'user' ? 'bubble-user' : 'bubble-ai']">
+              <div
+                v-for="(m, midx) in displayMessages"
+                :key="m.createTime ? `h-${m.id}` : `s-${m.id}-${midx}`"
+                :class="['chat-bubble', m.role === 'user' ? 'bubble-user' : 'bubble-ai']"
+              >
                 <div class="bubble-inner">
                   <div
                     class="bubble-role"
-                    :class="{ 'bubble-role--shimmer': m.role === 'assistant' && isStreamActiveForMessage(m) }"
+                    :class="{
+                      'bubble-role--shimmer': m.role === 'assistant' && isStreamActiveForMessage(m),
+                    }"
                   >
                     {{ m.role === 'user' ? '我' : '应用助手' }}
                   </div>
@@ -4043,9 +4284,16 @@ defineExpose({
                       v-if="getUserMarkdownSegments(m).some((s) => s.content.trim())"
                       class="bubble-content"
                     >
-                      <template v-for="(segment, idx) in getUserMarkdownSegments(m)" :key="`u-md-${idx}`">
+                      <template
+                        v-for="(segment, idx) in getUserMarkdownSegments(m)"
+                        :key="`u-md-${idx}`"
+                      >
                         <template
-                          v-for="(mdSeg, mdIdx) in getCachedMarkdownSegments(m, segment.content, `user-${idx}`)"
+                          v-for="(mdSeg, mdIdx) in getCachedMarkdownSegments(
+                            m,
+                            segment.content,
+                            `user-${idx}`,
+                          )"
                           :key="`u-md-${idx}-${mdIdx}`"
                         >
                           <CodeBlock
@@ -4084,7 +4332,13 @@ defineExpose({
                                   stroke-width="1.4"
                                   stroke-linecap="round"
                                 />
-                                <circle cx="8" cy="8" r="5.25" stroke="currentColor" stroke-width="1.2" />
+                                <circle
+                                  cx="8"
+                                  cy="8"
+                                  r="5.25"
+                                  stroke="currentColor"
+                                  stroke-width="1.2"
+                                />
                               </svg>
                               编辑模式
                             </span>
@@ -4123,8 +4377,14 @@ defineExpose({
                               class="visual-edit-field-value"
                               :class="{ 'visual-edit-field-value--text': row.label === 'text' }"
                             >
-                              <template v-if="row.label === 'text' && shouldTruncateVisualEditText(row.value)">
-                                {{ getVisualEditTextPreview(row.value, isVisualEditTextExpanded(m)) }}
+                              <template
+                                v-if="
+                                  row.label === 'text' && shouldTruncateVisualEditText(row.value)
+                                "
+                              >
+                                {{
+                                  getVisualEditTextPreview(row.value, isVisualEditTextExpanded(m))
+                                }}
                                 <button
                                   type="button"
                                   class="visual-edit-expand-btn"
@@ -4142,8 +4402,18 @@ defineExpose({
                   </template>
                   <div v-else class="bubble-content">
                     <template
-                      v-if="m.role === 'assistant' && isStreamActiveForMessage(m) && !assistantHasRenderableOutput(m)">
-                      <div class="typing-indicator" role="status" aria-live="polite" aria-label="应用助手正在思考">
+                      v-if="
+                        m.role === 'assistant' &&
+                        isStreamActiveForMessage(m) &&
+                        !assistantHasRenderableOutput(m)
+                      "
+                    >
+                      <div
+                        class="typing-indicator"
+                        role="status"
+                        aria-live="polite"
+                        aria-label="应用助手正在思考"
+                      >
                         <span class="typing-dot" aria-hidden="true" />
                         <span class="typing-dot" aria-hidden="true" />
                         <span class="typing-dot" aria-hidden="true" />
@@ -4152,7 +4422,11 @@ defineExpose({
                     </template>
                     <template v-else>
                       <div
-                        v-if="m.role === 'assistant' && getThinkingStatusText(m) && !getMessageUiSegments(m).some(s => s.kind === 'thinking')"
+                        v-if="
+                          m.role === 'assistant' &&
+                          getThinkingStatusText(m) &&
+                          !getMessageUiSegments(m).some((s) => s.kind === 'thinking')
+                        "
                         class="thinking-summary"
                       >
                         {{ getThinkingStatusText(m) }}
@@ -4177,133 +4451,203 @@ defineExpose({
                         <div class="workflow-steps-card">
                           <div class="workflow-steps-title-row">
                             <div class="workflow-steps-title">工作流进度</div>
-                            <div v-if="hasMermaidNoticeForMessage(m)" class="workflow-mermaid-notice">
+                            <div
+                              v-if="hasMermaidNoticeForMessage(m)"
+                              class="workflow-mermaid-notice"
+                            >
                               存在 Mermaid 构造失败（不影响生成）
                             </div>
                           </div>
                           <div class="workflow-steps-list" :data-workflow-message-id="m.id">
-                          <div
-                            v-for="row in getWorkflowStepsForMessage(m)"
-                            :key="row.step"
-                            class="workflow-step-card"
-                            :class="{
-                              'workflow-step-card--latest':
-                                row.step === getWorkflowStepsForMessage(m)[getWorkflowStepsForMessage(m).length - 1]?.step &&
-                                isStreamActiveForMessage(m),
-                            }"
-                          >
-                            <span class="workflow-step-badge">{{ row.step }}</span>
-                            <span class="workflow-step-label" :class="getWorkflowStepLabelClass(m, row)">{{ row.label }}</span>
-                            <span
-                              class="workflow-step-slow-hint"
+                            <div
+                              v-for="row in getWorkflowStepsForMessage(m)"
+                              :key="row.step"
+                              class="workflow-step-card"
                               :class="{
-                                'workflow-step-slow-hint--visible':
-                                  row.step === getWorkflowLatestStepForMessage(m)?.step && shouldShowWorkflowSlowHint(m),
+                                'workflow-step-card--latest':
+                                  row.step ===
+                                    getWorkflowStepsForMessage(m)[
+                                      getWorkflowStepsForMessage(m).length - 1
+                                    ]?.step && isStreamActiveForMessage(m),
                               }"
                             >
-                              Taking longer than expected
-                            </span>
-                          </div>
+                              <span class="workflow-step-badge">{{ row.step }}</span>
+                              <span
+                                class="workflow-step-label"
+                                :class="getWorkflowStepLabelClass(m, row)"
+                                >{{ row.label }}</span
+                              >
+                              <span
+                                class="workflow-step-slow-hint"
+                                :class="{
+                                  'workflow-step-slow-hint--visible':
+                                    row.step === getWorkflowLatestStepForMessage(m)?.step &&
+                                    shouldShowWorkflowSlowHint(m),
+                                }"
+                              >
+                                Taking longer than expected
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </div>
-                      <ExecutionProcess v-if="executionSegments(m).length" :active="isStreamActiveForMessage(m)">
-                      <template v-for="{ segment, idx } in executionSegments(m)" :key="segment.segmentId ?? 'seg-' + idx">
-                      <ThinkingStage v-if="segment.kind === 'thinking'" :stage="segment" />
-                      <ExecutionTerminal
-                        v-else-if="(segment.kind === 'tool_request' || segment.kind === 'tool_executed_simple_tool') && segment.agentToolName === 'execute'"
-                        :command="cleanExecutionText(segment.kind === 'tool_request' ? segment.targetPath ?? '' : segment.filePath, false, true)"
-                        :output="cleanExecutionText(segment.kind === 'tool_executed_simple_tool' ? segment.message : '', false, true)"
-                        :status="terminalStatus(segment, m)"
-                      />
-                      <!-- TOOL_REQUEST：结束工具 → ToolExitHint；其它 → list-row + 延迟光影 -->
-                      <ToolExitHint
-                        v-else-if="segment.kind === 'tool_request' && segment.toolName === '结束工具调用'"
-                        :pending="isToolRequestPending(m, idx)"
-                      />
-                      <ToolRequestHint
-                        v-else-if="segment.kind === 'tool_request'"
-                        :tool-name="segment.toolName"
-                        :pending="isToolRequestPending(m, idx)"
-                        :show-status="shouldShowToolRequestStatus(m, idx)"
-                        :status-text="getToolRequestStatusView(m, idx)?.text ?? getToolRequestShimmerText(m, idx)"
-                        :status-icon-src="getToolRequestStatusView(m, idx)?.iconSrc"
-                        :status-icon-motion="getToolRequestStatusView(m, idx)?.motion ?? 'none'"
-                      />
-
-                      <!-- TOOL_EXECUTED：写入文件卡片（可折叠+可复制） -->
-                      <div v-else-if="segment.kind === 'tool_executed_write_file'" class="tool-exec-card">
-                        <CollapsibleCodeBlock
-                          :code="segment.content"
-                          :language="segment.language"
-                          :default-collapsed="appearanceStore.toolCardCollapsed"
-                          :file-path="segment.filePath"
-                          :is-streaming="isStreamActiveForMessage(m) && !segment.done"
-                        />
-                      </div>
-
-                      <!-- TOOL_EXECUTED：修改文件卡片（可折叠+可复制） -->
-                      <div v-else-if="segment.kind === 'tool_executed_modify_file'" class="tool-exec-card">
-                        <CollapsibleCodeBlock
-                          :before-code="segment.beforeContent"
-                          :after-code="segment.afterContent"
-                          :default-collapsed="appearanceStore.toolCardCollapsed"
-                          :language="segment.language"
-                          :file-path="segment.filePath"
-                          :is-streaming="isStreamActiveForMessage(m)"
-                          :before-done="segment.beforeDone"
-                          :after-done="segment.afterDone"
-                        />
-                      </div>
-
-                      <!-- TOOL_EXECUTED：其它工具简单输出卡片 -->
-                      <div v-else-if="segment.kind === 'tool_executed_simple_tool'" class="tool-exec-card tool-exec-card--compact">
-                        <ToolExecCardHeader
-                          :action-label="stripToolCallPrefix(segment.toolTitle)"
-                          :target-path="getToolExecHeaderTargetPath(segment.toolTitle, segment.filePath)"
-                        />
-                      </div>
-
-                      </template>
-                      </ExecutionProcess>
-                      <template v-for="{ segment, idx } in answerSegments(m)" :key="segment.segmentId ?? 'answer-' + idx">
-                      <!-- 生成失败 / 用户中断 -->
-                      <div
-                        v-if="segment.kind === 'generation_status'"
-                        class="gen-status-card"
-                        role="alert"
-                        aria-live="polite"
+                      <ExecutionProcess
+                        v-if="executionSegments(m).length"
+                        :active="isStreamActiveForMessage(m)"
                       >
-                        <div class="gen-status-card__icon" aria-hidden="true">
-                          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10" />
-                            <path d="M12 8v5" stroke-linecap="round" />
-                            <circle cx="12" cy="16" r="0.5" fill="currentColor" stroke="none" />
-                          </svg>
-                        </div>
-                        <div class="gen-status-card__body-wrap">
-                          <div class="gen-status-card__title">
-                            {{ segment.variant === 'failed' ? '生成失败' : '生成已中断' }}
-                          </div>
-                          <div class="gen-status-card__message">{{ segment.message }}</div>
-                        </div>
-                      </div>
-
-                      <!-- 普通 markdown：仍保持流式解析与代码块渲染（仅助手消息） -->
-                      <template v-else-if="segment.kind === 'markdown'">
-                        <template v-for="(mdSeg, mdIdx) in getCachedMarkdownSegments(m, segment.content, `assistant-${idx}`)" :key="`md-${idx}-${mdIdx}`">
-                          <CodeBlock
-                            v-if="mdSeg.type === 'code'"
-                            :code="mdSeg.content"
-                            :language="mdSeg.language"
-                            :file-label="mdSeg.fileLabel"
-                            :is-streaming="isStreamActiveForMessage(m)"
+                        <template
+                          v-for="{ segment, idx } in executionSegments(m)"
+                          :key="segment.segmentId ?? 'seg-' + idx"
+                        >
+                          <ThinkingStage v-if="segment.kind === 'thinking'" :stage="segment" />
+                          <ExecutionTerminal
+                            v-else-if="
+                              (segment.kind === 'tool_request' ||
+                                segment.kind === 'tool_executed_simple_tool') &&
+                              segment.agentToolName === 'execute'
+                            "
+                            :command="
+                              cleanExecutionText(
+                                segment.kind === 'tool_request'
+                                  ? (segment.targetPath ?? '')
+                                  : segment.filePath,
+                                false,
+                                true,
+                              )
+                            "
+                            :output="
+                              cleanExecutionText(
+                                segment.kind === 'tool_executed_simple_tool' ? segment.message : '',
+                                false,
+                                true,
+                              )
+                            "
+                            :status="terminalStatus(segment, m)"
                           />
-                          <!-- 证据：隐藏流式 markdown 会导致“生成计划/生成完毕”等说明文本在生成时不可见。
-                               修复：流式阶段也展示文本片段，保证与历史回显一致。 -->
-                          <div v-else class="text-segment" v-html="renderMarkdown(mdSeg.content, m, `${idx}:${mdIdx}`)" />
+                          <!-- TOOL_REQUEST：结束工具 → ToolExitHint；其它 → list-row + 延迟光影 -->
+                          <ToolExitHint
+                            v-else-if="
+                              segment.kind === 'tool_request' && segment.toolName === '结束工具调用'
+                            "
+                            :pending="isToolRequestPending(m, idx)"
+                          />
+                          <ToolRequestHint
+                            v-else-if="segment.kind === 'tool_request'"
+                            :tool-name="segment.toolName"
+                            :pending="isToolRequestPending(m, idx)"
+                            :show-status="shouldShowToolRequestStatus(m, idx)"
+                            :status-text="
+                              getToolRequestStatusView(m, idx)?.text ??
+                              getToolRequestShimmerText(m, idx)
+                            "
+                            :status-icon-src="getToolRequestStatusView(m, idx)?.iconSrc"
+                            :status-icon-motion="getToolRequestStatusView(m, idx)?.motion ?? 'none'"
+                          />
+
+                          <!-- TOOL_EXECUTED：写入文件卡片（可折叠+可复制） -->
+                          <div
+                            v-else-if="segment.kind === 'tool_executed_write_file'"
+                            class="tool-exec-card"
+                          >
+                            <CollapsibleCodeBlock
+                              :code="segment.content"
+                              :language="segment.language"
+                              :default-collapsed="appearanceStore.toolCardCollapsed"
+                              :file-path="segment.filePath"
+                              :is-streaming="isStreamActiveForMessage(m) && !segment.done"
+                            />
+                          </div>
+
+                          <!-- TOOL_EXECUTED：修改文件卡片（可折叠+可复制） -->
+                          <div
+                            v-else-if="segment.kind === 'tool_executed_modify_file'"
+                            class="tool-exec-card"
+                          >
+                            <CollapsibleCodeBlock
+                              :before-code="segment.beforeContent"
+                              :after-code="segment.afterContent"
+                              :default-collapsed="appearanceStore.toolCardCollapsed"
+                              :language="segment.language"
+                              :file-path="segment.filePath"
+                              :is-streaming="isStreamActiveForMessage(m)"
+                              :before-done="segment.beforeDone"
+                              :after-done="segment.afterDone"
+                            />
+                          </div>
+
+                          <!-- TOOL_EXECUTED：其它工具简单输出卡片 -->
+                          <div
+                            v-else-if="segment.kind === 'tool_executed_simple_tool'"
+                            class="tool-exec-card tool-exec-card--compact"
+                          >
+                            <ToolExecCardHeader
+                              :action-label="stripToolCallPrefix(segment.toolTitle)"
+                              :target-path="
+                                getToolExecHeaderTargetPath(segment.toolTitle, segment.filePath)
+                              "
+                            />
+                          </div>
                         </template>
-                      </template>
+                      </ExecutionProcess>
+                      <template
+                        v-for="{ segment, idx } in answerSegments(m)"
+                        :key="segment.segmentId ?? 'answer-' + idx"
+                      >
+                        <!-- 生成失败 / 用户中断 -->
+                        <div
+                          v-if="segment.kind === 'generation_status'"
+                          class="gen-status-card"
+                          role="alert"
+                          aria-live="polite"
+                        >
+                          <div class="gen-status-card__icon" aria-hidden="true">
+                            <svg
+                              viewBox="0 0 24 24"
+                              width="18"
+                              height="18"
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width="2"
+                            >
+                              <circle cx="12" cy="12" r="10" />
+                              <path d="M12 8v5" stroke-linecap="round" />
+                              <circle cx="12" cy="16" r="0.5" fill="currentColor" stroke="none" />
+                            </svg>
+                          </div>
+                          <div class="gen-status-card__body-wrap">
+                            <div class="gen-status-card__title">
+                              {{ segment.variant === 'failed' ? '生成失败' : '生成已中断' }}
+                            </div>
+                            <div class="gen-status-card__message">{{ segment.message }}</div>
+                          </div>
+                        </div>
+
+                        <!-- 普通 markdown：仍保持流式解析与代码块渲染（仅助手消息） -->
+                        <template v-else-if="segment.kind === 'markdown'">
+                          <template
+                            v-for="(mdSeg, mdIdx) in getCachedMarkdownSegments(
+                              m,
+                              segment.content,
+                              `assistant-${idx}`,
+                            )"
+                            :key="`md-${idx}-${mdIdx}`"
+                          >
+                            <CodeBlock
+                              v-if="mdSeg.type === 'code'"
+                              :code="mdSeg.content"
+                              :language="mdSeg.language"
+                              :file-label="mdSeg.fileLabel"
+                              :is-streaming="isStreamActiveForMessage(m)"
+                            />
+                            <!-- 证据：隐藏流式 markdown 会导致“生成计划/生成完毕”等说明文本在生成时不可见。
+                               修复：流式阶段也展示文本片段，保证与历史回显一致。 -->
+                            <div
+                              v-else
+                              class="text-segment"
+                              v-html="renderMarkdown(mdSeg.content, m, `${idx}:${mdIdx}`)"
+                            />
+                          </template>
+                        </template>
                       </template>
                     </template>
                   </div>
@@ -4326,7 +4670,7 @@ defineExpose({
               @close="clearSelectedElement"
             >
               <template #description>
-                <div style="white-space: pre-wrap;">
+                <div style="white-space: pre-wrap">
                   {{
                     selectedElementTextPreview
                       ? `内容预览：${selectedElementTextPreview}\n\n发送消息时会把该元素信息附加到提示词中；你也可以手动移除选中。`
@@ -4339,30 +4683,64 @@ defineExpose({
           <AInput.TextArea
             v-if="!agentWaiting"
             v-model:value="inputMessage"
-            :placeholder="importedView ? '描述你想调整的内容…' : '描述你想生成的网页，例如：一个用于展示我技术博客的个人站点……'"
+            :placeholder="
+              importedView
+                ? '描述你想调整的内容…'
+                : '描述你想生成的网页，例如：一个用于展示我技术博客的个人站点……'
+            "
             :rows="3"
             :disabled="isReadOnly || streaming"
             :class="['chat-input', { 'chat-input-readonly': isReadOnly || streaming }]"
             @press-enter.prevent="handleManualSend"
           />
           <div class="chat-input-actions">
-            <ImportedAgentControls v-if="appId && !isReadOnly" :key="`${importedView}-${appId}`" :app-id="appId"
+            <ImportedAgentControls
+              v-if="appId && !isReadOnly"
+              :key="`${importedView}-${appId}`"
+              :app-id="appId"
               :streaming="streaming"
-              @blocked="importedView ? (importedAgentBlocked = $event) : (projectAgentBlocked = $event)"
+              @blocked="
+                importedView ? (importedAgentBlocked = $event) : (projectAgentBlocked = $event)
+              "
               @waiting="agentWaiting = $event"
-              @merged="refreshProjectFilesEchoFromDisk(); refreshPreviewWithRetry()" />
+              @merged="handleProjectFilesMerged"
+            />
             <div class="chat-input-buttons">
-              <button v-if="showScrollToBottom" type="button" class="scroll-bottom-btn"
-                @click="handleScrollToBottomClick">
+              <button
+                v-if="showScrollToBottom"
+                type="button"
+                class="scroll-bottom-btn"
+                @click="handleScrollToBottomClick"
+              >
                 <span class="scroll-bottom-icon">↓</span>
               </button>
-              <div v-show="streaming" class="vibing-status-pill" :class="{ 'vibing-status-pill--active': streaming }">
+              <div
+                v-show="streaming"
+                class="vibing-status-pill"
+                :class="{ 'vibing-status-pill--active': streaming }"
+              >
                 <span class="vibing-tag">vibing<span class="vibing-tilde">&nbsp;</span></span>
                 <div class="vibing-dots">
-                  <span class="vibing-dot dot-emerald" :class="{ 'anim-vibe-1': streaming }" title="工作区上下文" />
-                  <span class="vibing-dot dot-sky" :class="{ 'anim-vibe-2': streaming }" title="代码索引与读取" />
-                  <span class="vibing-dot dot-purple" :class="{ 'anim-vibe-3': streaming }" title="单文件补丁修改" />
-                  <span class="vibing-dot dot-rose" :class="{ 'anim-vibe-4': streaming }" title="落盘差异校验" />
+                  <span
+                    class="vibing-dot dot-emerald"
+                    :class="{ 'anim-vibe-1': streaming }"
+                    title="工作区上下文"
+                  />
+                  <span
+                    class="vibing-dot dot-sky"
+                    :class="{ 'anim-vibe-2': streaming }"
+                    title="代码索引与读取"
+                  />
+                  <span
+                    class="vibing-dot dot-purple"
+                    :class="{ 'anim-vibe-3': streaming }"
+                    title="单文件补丁修改"
+                  />
+                  <span
+                    class="vibing-dot dot-rose"
+                    :class="{ 'anim-vibe-4': streaming }"
+                    title="落盘差异校验"
+                  />
                 </div>
               </div>
               <AButton
@@ -4376,8 +4754,14 @@ defineExpose({
               <AButton v-if="streaming" danger ghost :disabled="isReadOnly" @click="handleStop">
                 停止生成
               </AButton>
-              <AButton v-else type="primary" :loading="sending" :disabled="isReadOnly || (importedView && importedAgentBlocked)"
-                :class="{ 'send-btn-readonly': isReadOnly }" @click="handleManualSend">
+              <AButton
+                v-else
+                type="primary"
+                :loading="sending"
+                :disabled="isReadOnly || (importedView && importedAgentBlocked)"
+                :class="{ 'send-btn-readonly': isReadOnly }"
+                @click="handleManualSend"
+              >
                 发送
               </AButton>
             </div>
@@ -4402,7 +4786,9 @@ defineExpose({
           aria-label="放大预览区"
           @mousedown.stop
           @click="toggleFocusSide('preview')"
-        >▶</button>
+        >
+          ▶
+        </button>
         <button
           type="button"
           class="splitter-btn"
@@ -4410,7 +4796,9 @@ defineExpose({
           aria-label="恢复等分"
           @mousedown.stop
           @click="focusedSide = 'none'"
-        >⛶</button>
+        >
+          ⛶
+        </button>
         <button
           type="button"
           class="splitter-btn"
@@ -4418,7 +4806,9 @@ defineExpose({
           aria-label="放大聊天区"
           @mousedown.stop
           @click="toggleFocusSide('chat')"
-        >◀</button>
+        >
+          ◀
+        </button>
       </div>
 
       <div
@@ -4427,33 +4817,35 @@ defineExpose({
         class="preview-panel cosmic-workbench"
       >
         <div class="preview-header">
-        <!-- 页签按「实际能力 + 用户勾选的看板功能」决定，纯后端且全不选时右侧留空 -->
-        <div v-if="runtimeTabs.length > 1" class="preview-tabs">
-          <button
-            v-for="tab in runtimeTabs"
-            :key="tab.key"
-            type="button"
-            class="preview-tab"
-            :class="{ 'is-active': runtimePanelTab === tab.key }"
-            :aria-pressed="runtimePanelTab === tab.key"
-            @click="runtimePanelTab = tab.key"
-          >
-            {{ tab.label }}
-          </button>
-        </div>
+          <!-- 页签按「实际能力 + 用户勾选的看板功能」决定，纯后端且全不选时右侧留空 -->
+          <div v-if="runtimeTabs.length > 1" class="preview-tabs">
+            <button
+              v-for="tab in runtimeTabs"
+              :key="tab.key"
+              type="button"
+              class="preview-tab"
+              :class="{ 'is-active': runtimePanelTab === tab.key }"
+              :aria-pressed="runtimePanelTab === tab.key"
+              @click="runtimePanelTab = tab.key"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
 
           <div class="preview-header-right">
             <button type="button" class="wb-button" @click="enterPreviewFullscreen">全屏</button>
-            <button type="button" class="wb-button" :aria-label="focusedSide === 'preview' ? '恢复双栏' : '放大工作台'" @click="toggleFocusSide('preview')">{{ focusedSide === 'preview' ? '恢复双栏' : '⛶ 放大' }}</button>
+            <button
+              type="button"
+              class="wb-button"
+              :aria-label="focusedSide === 'preview' ? '恢复双栏' : '放大工作台'"
+              @click="toggleFocusSide('preview')"
+            >
+              {{ focusedSide === 'preview' ? '恢复双栏' : '⛶ 放大' }}
+            </button>
             <div v-if="isAppDeployed" class="deploy-url-pill">
               <span class="deploy-url-label">部署的访问网址</span>
               <ATooltip :title="deployedAccessUrl">
-                <AInput
-                  readonly
-                  size="small"
-                  class="deploy-url-input"
-                  :value="deployedAccessUrl"
-                />
+                <AInput readonly size="small" class="deploy-url-input" :value="deployedAccessUrl" />
               </ATooltip>
               <a-button size="small" class="ghost-btn" @click="handleCopyDeployUrl">
                 复制
@@ -4465,7 +4857,11 @@ defineExpose({
 
             <ATooltip
               v-if="shouldShowWebsite"
-              :title="refreshAppCtaVisible ? refreshAppCtaHint : '强制重新加载预览 iframe，避免浏览器缓存导致仍显示旧页面'"
+              :title="
+                refreshAppCtaVisible
+                  ? refreshAppCtaHint
+                  : '强制重新加载预览 iframe，避免浏览器缓存导致仍显示旧页面'
+              "
             >
               <a-button
                 size="small"
@@ -4479,11 +4875,24 @@ defineExpose({
           </div>
         </div>
 
-        <div ref="fullscreenBody" class="preview-body" :class="{ 'is-fullscreen': previewFullscreen }">
+        <div
+          ref="fullscreenBody"
+          class="preview-body"
+          :class="{ 'is-fullscreen': previewFullscreen }"
+        >
           <div v-if="previewFullscreen" class="fullscreen-exit-zone">
-            <button type="button" class="wb-button" aria-label="退出全屏" @click="exitPreviewFullscreen">返回</button>
+            <button
+              type="button"
+              class="wb-button"
+              aria-label="退出全屏"
+              @click="exitPreviewFullscreen"
+            >
+              返回
+            </button>
           </div>
-          <div v-if="previewFullscreen && fullscreenHint" class="fullscreen-hint" role="status">按 Esc 或移到左上角返回</div>
+          <div v-if="previewFullscreen && fullscreenHint" class="fullscreen-hint" role="status">
+            按 Esc 或移到左上角返回
+          </div>
           <!-- 监控 -->
           <RuntimeMetricsPanel
             v-if="runtimePanelTab === 'metrics' && showMetricsPanel"
@@ -4511,7 +4920,15 @@ defineExpose({
           <!-- 预览 -->
           <template v-else>
             <div v-if="!shouldShowWebsite" class="preview-empty">
-              <AEmpty :description="runtimeRunning ? '应用已启动，等待端口就绪' : importedView ? '项目尚未运行' : 'AI 未生成内容，请先完成至少一轮对话'" />
+              <AEmpty
+                :description="
+                  runtimeRunning
+                    ? '应用已启动，等待端口就绪'
+                    : importedView
+                      ? '项目尚未运行'
+                      : 'AI 未生成内容，请先完成至少一轮对话'
+                "
+              />
             </div>
             <iframe
               v-else
@@ -4539,7 +4956,16 @@ defineExpose({
             @click="restoreSplitView"
           >
             <span class="edge-restore-arrow" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <polyline points="15 18 9 12 15 6" />
               </svg>
             </span>
@@ -4699,7 +5125,11 @@ body.is-splitter-resizing * {
   margin-left: -1px;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.12);
-  transition: background 160ms ease, width 160ms ease, margin-left 160ms ease, opacity 160ms ease;
+  transition:
+    background 160ms ease,
+    width 160ms ease,
+    margin-left 160ms ease,
+    opacity 160ms ease;
 }
 
 .main-splitter:hover::before,
@@ -4726,7 +5156,9 @@ body.is-splitter-resizing * {
   border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 6px;
   cursor: pointer;
-  transition: color 160ms ease, border-color 160ms ease;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease;
 }
 
 .splitter-btn:hover {
@@ -4751,7 +5183,13 @@ body.is-splitter-resizing * {
   color: #64748b;
   cursor: pointer;
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
-  transition: width 180ms ease, background 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  transition:
+    width 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
   user-select: none;
 }
 
@@ -4800,7 +5238,9 @@ body.is-splitter-resizing * {
 .edge-restore-left-leave-active,
 .edge-restore-right-enter-active,
 .edge-restore-right-leave-active {
-  transition: opacity 200ms ease, transform 200ms ease;
+  transition:
+    opacity 200ms ease,
+    transform 200ms ease;
 }
 
 .edge-restore-left-enter-from,
@@ -4815,14 +5255,14 @@ body.is-splitter-resizing * {
   transform: translateY(-50%) translateX(12px);
 }
 
-[data-theme="dark"] .edge-restore-trigger {
+[data-theme='dark'] .edge-restore-trigger {
   background: var(--bg-card, #1e293b);
   border-color: rgba(148, 163, 184, 0.2);
   color: #94a3b8;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
-[data-theme="dark"] .edge-restore-trigger:hover {
+[data-theme='dark'] .edge-restore-trigger:hover {
   color: var(--color-primary, #38bdf8);
   border-color: var(--color-primary, #38bdf8);
   box-shadow: 0 4px 14px rgba(56, 189, 248, 0.25);
@@ -4909,7 +5349,9 @@ body.is-splitter-resizing * {
   color: #64748b;
   font-size: 13px;
   cursor: pointer;
-  transition: color 160ms ease, background 160ms ease;
+  transition:
+    color 160ms ease,
+    background 160ms ease;
 }
 
 .preview-tab:hover {
@@ -4947,7 +5389,12 @@ body.is-splitter-resizing * {
   padding: 10px 12px;
   margin-bottom: 10px;
   border-radius: 14px;
-  background: radial-gradient(circle at 20% 0%, rgba(34, 197, 94, 0.18), rgba(14, 165, 233, 0.12) 55%, rgba(15, 23, 42, 0.02));
+  background: radial-gradient(
+    circle at 20% 0%,
+    rgba(34, 197, 94, 0.18),
+    rgba(14, 165, 233, 0.12) 55%,
+    rgba(15, 23, 42, 0.02)
+  );
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
 }
 
@@ -5026,7 +5473,10 @@ body.is-splitter-resizing * {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
 }
 
 .file-item:hover {
@@ -5219,8 +5669,6 @@ body.is-splitter-resizing * {
   margin-bottom: 10px;
 }
 
-
-
 .bubble-ai .bubble-inner {
   max-width: 100%;
   width: 100%;
@@ -5252,7 +5700,9 @@ body.is-splitter-resizing * {
     0 1px 0 rgba(255, 255, 255, 0.65) inset,
     0 10px 28px rgba(15, 23, 42, 0.14),
     0 0 0 1px rgba(255, 255, 255, 0.22);
-  transition: box-shadow 220ms ease, transform 220ms ease;
+  transition:
+    box-shadow 220ms ease,
+    transform 220ms ease;
 }
 
 .visual-edit-selection-card:hover {
@@ -5274,7 +5724,12 @@ body.is-splitter-resizing * {
   background:
     radial-gradient(ellipse 120% 80% at 0% -20%, rgba(191, 219, 254, 0.55), transparent 52%),
     radial-gradient(ellipse 90% 70% at 100% 110%, rgba(199, 210, 254, 0.35), transparent 48%),
-    linear-gradient(145deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.94) 48%, rgba(241, 245, 249, 0.92) 100%);
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.98) 0%,
+      rgba(248, 250, 252, 0.94) 48%,
+      rgba(241, 245, 249, 0.92) 100%
+    );
   pointer-events: none;
 }
 
@@ -5329,7 +5784,10 @@ body.is-splitter-resizing * {
   background: var(--bg-card, rgba(255, 255, 255, 0.78)) !important;
   backdrop-filter: blur(6px);
   cursor: pointer;
-  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
 }
 
 .visual-edit-copy-btn:hover {
@@ -5480,14 +5938,36 @@ body.is-splitter-resizing * {
   line-height: 1.55;
 }
 
-.text-segment :deep(p) { margin: 0 0 8px; }
-.text-segment :deep(li) { margin: 4px 0; }
-.text-segment :deep(ul), .text-segment :deep(ol) { margin: 8px 0; padding-left: 24px; }
-.text-segment :deep(h1), .text-segment :deep(h2), .text-segment :deep(h3) { margin: 12px 0 8px; }
-.text-segment :deep(pre) { white-space: pre; overflow-x: auto; }
-.tool-exec-card :deep(.tool-call-badge) { padding: 2px 4px; background: transparent; color: var(--text-secondary, #64748b); font-size: 10px; }
-.tool-exec-card :deep(.tool-exec-action-label) { font-size: 12px; font-weight: 400; }
-
+.text-segment :deep(p) {
+  margin: 0 0 8px;
+}
+.text-segment :deep(li) {
+  margin: 4px 0;
+}
+.text-segment :deep(ul),
+.text-segment :deep(ol) {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+.text-segment :deep(h1),
+.text-segment :deep(h2),
+.text-segment :deep(h3) {
+  margin: 12px 0 8px;
+}
+.text-segment :deep(pre) {
+  white-space: pre;
+  overflow-x: auto;
+}
+.tool-exec-card :deep(.tool-call-badge) {
+  padding: 2px 4px;
+  background: transparent;
+  color: var(--text-secondary, #64748b);
+  font-size: 10px;
+}
+.tool-exec-card :deep(.tool-exec-action-label) {
+  font-size: 12px;
+  font-weight: 400;
+}
 
 .workflow-steps-shell {
   align-self: stretch;
@@ -5698,7 +6178,6 @@ body.is-splitter-resizing * {
 }
 
 @keyframes typingDot {
-
   0%,
   60%,
   100% {
@@ -5890,8 +6369,13 @@ body.is-splitter-resizing * {
 }
 
 @keyframes vibe-tilde-wave {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-1px) rotate(8deg); }
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-1px) rotate(8deg);
+  }
 }
 
 .vibing-dots {
@@ -5909,32 +6393,80 @@ body.is-splitter-resizing * {
   opacity: 0.85;
 }
 
-.dot-emerald { background: linear-gradient(135deg, #10b981, #059669); }
-.dot-sky     { background: linear-gradient(135deg, #0ea5e9, #0284c7); }
-.dot-purple  { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
-.dot-rose    { background: linear-gradient(135deg, #f43f5e, #e11d48); }
+.dot-emerald {
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+.dot-sky {
+  background: linear-gradient(135deg, #0ea5e9, #0284c7);
+}
+.dot-purple {
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+}
+.dot-rose {
+  background: linear-gradient(135deg, #f43f5e, #e11d48);
+}
 
 @keyframes vibe-dot-pulse-1 {
-  0%, 100% { transform: scale(0.9); opacity: 0.45; }
-  50% { transform: scale(1.2); opacity: 1; filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.5)); }
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+    filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.5));
+  }
 }
 @keyframes vibe-dot-pulse-2 {
-  0%, 100% { transform: scale(0.9); opacity: 0.45; }
-  50% { transform: scale(1.2); opacity: 1; filter: drop-shadow(0 0 4px rgba(14, 165, 233, 0.5)); }
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+    filter: drop-shadow(0 0 4px rgba(14, 165, 233, 0.5));
+  }
 }
 @keyframes vibe-dot-pulse-3 {
-  0%, 100% { transform: scale(0.9); opacity: 0.45; }
-  50% { transform: scale(1.2); opacity: 1; filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.5)); }
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+    filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.5));
+  }
 }
 @keyframes vibe-dot-pulse-4 {
-  0%, 100% { transform: scale(0.9); opacity: 0.45; }
-  50% { transform: scale(1.2); opacity: 1; filter: drop-shadow(0 0 4px rgba(244, 63, 94, 0.5)); }
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+    filter: drop-shadow(0 0 4px rgba(244, 63, 94, 0.5));
+  }
 }
 
-.anim-vibe-1 { animation: vibe-dot-pulse-1 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
-.anim-vibe-2 { animation: vibe-dot-pulse-2 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.25s; }
-.anim-vibe-3 { animation: vibe-dot-pulse-3 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.5s; }
-.anim-vibe-4 { animation: vibe-dot-pulse-4 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.75s; }
+.anim-vibe-1 {
+  animation: vibe-dot-pulse-1 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.anim-vibe-2 {
+  animation: vibe-dot-pulse-2 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.25s;
+}
+.anim-vibe-3 {
+  animation: vibe-dot-pulse-3 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.5s;
+}
+.anim-vibe-4 {
+  animation: vibe-dot-pulse-4 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.75s;
+}
 
 .send-btn-readonly {
   cursor: not-allowed;
@@ -6037,7 +6569,12 @@ body.is-splitter-resizing * {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  background: radial-gradient(circle at 30% 0%, #bbf7d0 0, rgba(34, 197, 94, 0.85) 40%, #0ea5e9 100%);
+  background: radial-gradient(
+    circle at 30% 0%,
+    #bbf7d0 0,
+    rgba(34, 197, 94, 0.85) 40%,
+    #0ea5e9 100%
+  );
   box-shadow:
     0 10px 25px rgba(15, 23, 42, 0.25),
     0 0 0 1px rgba(15, 23, 42, 0.04);
@@ -6176,52 +6713,57 @@ body.is-splitter-resizing * {
   }
 }
 /* ========== 深色模式覆盖 ========== */
-[data-theme="dark"] .workflow-steps-card {
+[data-theme='dark'] .workflow-steps-card {
   background:
     radial-gradient(circle at 0 0, rgba(99, 102, 241, 0.12), transparent 55%),
     var(--bg-soft, #16213e);
   border-color: rgba(148, 163, 184, 0.1);
 }
 
-[data-theme="dark"] .workflow-mermaid-notice {
+[data-theme='dark'] .workflow-mermaid-notice {
   background: rgba(180, 83, 9, 0.2);
   border-color: rgba(180, 83, 9, 0.25);
   color: var(--text-secondary, #a0a0a0);
 }
 
-[data-theme="dark"] .workflow-step-slow-hint {
+[data-theme='dark'] .workflow-step-slow-hint {
   background: linear-gradient(135deg, rgba(180, 83, 9, 0.15), rgba(120, 53, 15, 0.2));
   color: var(--text-secondary, #a0a0a0);
 }
 
-[data-theme="dark"] .thinking-summary {
+[data-theme='dark'] .thinking-summary {
   background:
     linear-gradient(120deg, rgba(99, 102, 241, 0.12), rgba(129, 140, 248, 0.08)),
     var(--bg-card, #1e1e36);
 }
 
-[data-theme="dark"] .gen-status-card {
+[data-theme='dark'] .gen-status-card {
   background: rgba(239, 68, 68, 0.1);
   border-color: rgba(239, 68, 68, 0.2);
   color: var(--text-secondary, #a0a0a0);
 }
 
-[data-theme="dark"] .tool-call-card,
-[data-theme="dark"] .tool-exec-card {
+[data-theme='dark'] .tool-call-card,
+[data-theme='dark'] .tool-exec-card {
   background:
     radial-gradient(circle at 0 0, rgba(99, 102, 241, 0.08), transparent 55%),
     var(--bg-soft, #16213e);
   border-color: rgba(148, 163, 184, 0.08);
 }
 
-[data-theme="dark"] .visual-edit-selection-card__glow {
+[data-theme='dark'] .visual-edit-selection-card__glow {
   background:
     radial-gradient(circle at 40% 20%, rgba(99, 102, 241, 0.15), transparent 45%),
     radial-gradient(circle at 80% 60%, rgba(56, 189, 248, 0.08), transparent 35%),
-    linear-gradient(145deg, rgba(30, 30, 54, 0.98) 0%, rgba(37, 37, 66, 0.94) 48%, rgba(30, 30, 54, 0.92) 100%);
+    linear-gradient(
+      145deg,
+      rgba(30, 30, 54, 0.98) 0%,
+      rgba(37, 37, 66, 0.94) 48%,
+      rgba(30, 30, 54, 0.92) 100%
+    );
 }
 
-[data-theme="dark"] .deploy-url-pill {
+[data-theme='dark'] .deploy-url-pill {
   background:
     radial-gradient(circle at 0 0, rgba(34, 197, 94, 0.15), transparent 55%),
     var(--bg-card, #1e1e36) !important;
@@ -6229,7 +6771,7 @@ body.is-splitter-resizing * {
   color: var(--text-base, #e0e0e0) !important;
 }
 
-[data-theme="dark"] .selected-element-alert :deep(.ant-alert) {
+[data-theme='dark'] .selected-element-alert :deep(.ant-alert) {
   background:
     radial-gradient(circle at 0 0, rgba(14, 165, 233, 0.15), transparent 55%),
     var(--bg-card, #1e1e36) !important;
@@ -6237,53 +6779,180 @@ body.is-splitter-resizing * {
   color: var(--text-base, #e0e0e0) !important;
 }
 
-[data-theme="dark"] .workflow-step-card {
+[data-theme='dark'] .workflow-step-card {
   border-color: rgba(148, 163, 184, 0.08);
 }
 
-[data-theme="dark"] .file-core-badge {
+[data-theme='dark'] .file-core-badge {
   background: linear-gradient(135deg, rgba(52, 211, 153, 0.3), rgba(16, 185, 129, 0.25));
   color: #6ee7b7;
 }
 
-[data-theme="dark"] .visual-edit-copy-btn {
+[data-theme='dark'] .visual-edit-copy-btn {
   border-color: rgba(148, 163, 184, 0.15) !important;
 }
 
-[data-theme="dark"] .scroll-bottom-btn {
-  background:
-    radial-gradient(circle at 30% 0%, rgba(52, 211, 153, 0.3), rgba(34, 197, 94, 0.2) 40%, rgba(14, 165, 233, 0.2) 100%);
+[data-theme='dark'] .scroll-bottom-btn {
+  background: radial-gradient(
+    circle at 30% 0%,
+    rgba(52, 211, 153, 0.3),
+    rgba(34, 197, 94, 0.2) 40%,
+    rgba(14, 165, 233, 0.2) 100%
+  );
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
-.tool-exec-card.tool-exec-card--compact { padding: 4px 6px; border: 0; border-radius: 4px; background: transparent; box-shadow: none; }
+.tool-exec-card.tool-exec-card--compact {
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+}
 
 /* 工具栏放在内容框上方，颜色复用用户主题。 */
-.preview-panel.cosmic-workbench { padding:0; background:transparent; border:0; border-radius:0; box-shadow:none; overflow:hidden; }
-.cosmic-workbench .preview-header { padding:0 0 8px; margin:0; min-height:40px; gap:8px; flex-wrap:wrap; }
-.cosmic-workbench .preview-header-right { margin-left:auto; flex-wrap:wrap; }
-.cosmic-workbench .preview-tabs { padding:0; margin:0; gap:5px; border:0; flex-shrink:0; }
-.cosmic-workbench .preview-tab { color:var(--wb-muted); border:1px solid transparent; border-radius:8px; padding:6px 13px; background:none; font-size:12px; }
-.cosmic-workbench .preview-tab.is-active { color:var(--wb-text); background:var(--wb-surface); border-color:var(--wb-line); }
-.cosmic-workbench .preview-body { border:1px solid var(--wb-line); border-radius:14px; background:var(--wb-bg); min-height:0; padding:0; overflow:hidden; flex-direction:column; align-items:stretch; justify-content:flex-start; }
-.cosmic-workbench .preview-body > :deep(section) { width:100%; flex:1; min-width:0; }
-.cosmic-workbench .preview-refresh-btn, .cosmic-workbench .deploy-url-pill { box-shadow:none; border:1px solid var(--wb-line); border-radius:8px; background:var(--wb-surface); color:var(--wb-text); }
-.cosmic-workbench .preview-empty { background:var(--wb-bg); }
-.cosmic-workbench .preview-empty :deep(.ant-empty-description), .cosmic-workbench .deploy-url-label { color:var(--wb-muted); }
+.preview-panel.cosmic-workbench {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
+}
+.cosmic-workbench .preview-header {
+  padding: 0 0 8px;
+  margin: 0;
+  min-height: 40px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cosmic-workbench .preview-header-right {
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.cosmic-workbench .preview-tabs {
+  padding: 0;
+  margin: 0;
+  gap: 5px;
+  border: 0;
+  flex-shrink: 0;
+}
+.cosmic-workbench .preview-tab {
+  color: var(--wb-muted);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 6px 13px;
+  background: none;
+  font-size: 12px;
+}
+.cosmic-workbench .preview-tab.is-active {
+  color: var(--wb-text);
+  background: var(--wb-surface);
+  border-color: var(--wb-line);
+}
+.cosmic-workbench .preview-body {
+  border: 1px solid var(--wb-line);
+  border-radius: 14px;
+  background: var(--wb-bg);
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+.cosmic-workbench .preview-body > :deep(section) {
+  width: 100%;
+  flex: 1;
+  min-width: 0;
+}
+.cosmic-workbench .preview-refresh-btn,
+.cosmic-workbench .deploy-url-pill {
+  box-shadow: none;
+  border: 1px solid var(--wb-line);
+  border-radius: 8px;
+  background: var(--wb-surface);
+  color: var(--wb-text);
+}
+.cosmic-workbench .preview-empty {
+  background: var(--wb-bg);
+}
+.cosmic-workbench .preview-empty :deep(.ant-empty-description),
+.cosmic-workbench .deploy-url-label {
+  color: var(--wb-muted);
+}
 @media (max-width: 1100px) {
-  .top-bar { flex-wrap:wrap; gap:12px; }
-  .top-actions { flex-wrap:wrap; }
-  .app-title-wrap { min-width:0; }
-  .round-count-text { white-space:nowrap; }
+  .top-bar {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .top-actions {
+    flex-wrap: wrap;
+  }
+  .app-title-wrap {
+    min-width: 0;
+  }
+  .round-count-text {
+    white-space: nowrap;
+  }
 }
 @media (max-width: 992px) {
-  .main-content { display:flex; flex-direction:column; }
-  .chat-panel, .preview-panel.cosmic-workbench { flex:1; height:auto; min-height:0; }
-  .top-bar { padding:8px; }
-  .top-actions { gap:4px; }
+  .main-content {
+    display: flex;
+    flex-direction: column;
+  }
+  .chat-panel,
+  .preview-panel.cosmic-workbench {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+  }
+  .top-bar {
+    padding: 8px;
+  }
+  .top-actions {
+    gap: 4px;
+  }
 }
-.preview-body:fullscreen { width:100vw; height:100dvh; border:0; border-radius:0; position:relative; background:var(--wb-bg); }
-.fullscreen-exit-zone { position:absolute; top:0; left:0; width:110px; height:66px; z-index:50; display:flex; align-items:center; padding:12px; }
-.fullscreen-exit-zone button { opacity:0; pointer-events:none; background:var(--wb-surface); }
-.fullscreen-exit-zone:hover button, .fullscreen-exit-zone:focus-within button { opacity:1; pointer-events:auto; }
-.fullscreen-hint { position:absolute; top:16px; left:50%; transform:translateX(-50%); z-index:51; padding:9px 16px; border:1px solid var(--wb-line); border-radius:10px; background:var(--wb-surface); color:var(--wb-text); white-space:nowrap; }
+.preview-body:fullscreen {
+  width: 100vw;
+  height: 100dvh;
+  border: 0;
+  border-radius: 0;
+  position: relative;
+  background: var(--wb-bg);
+}
+.fullscreen-exit-zone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 110px;
+  height: 66px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  padding: 12px;
+}
+.fullscreen-exit-zone button {
+  opacity: 0;
+  pointer-events: none;
+  background: var(--wb-surface);
+}
+.fullscreen-exit-zone:hover button,
+.fullscreen-exit-zone:focus-within button {
+  opacity: 1;
+  pointer-events: auto;
+}
+.fullscreen-hint {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 51;
+  padding: 9px 16px;
+  border: 1px solid var(--wb-line);
+  border-radius: 10px;
+  background: var(--wb-surface);
+  color: var(--wb-text);
+  white-space: nowrap;
+}
 </style>

@@ -207,7 +207,8 @@ function isCodeTail(raw: string): boolean {
     if (!trimmed) continue
     nonEmptyLines += 1
 
-    const startsWithComment = trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')
+    const startsWithComment =
+      trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')
     const startsWithClosingTag = trimmed.startsWith('</')
     const endsWithCodePunct = /[;{}>\]]$/.test(trimmed)
 
@@ -231,7 +232,12 @@ function mergeLeakedCodeLikeText(segments: TextSegment[]): TextSegment[] {
 
   for (const seg of segments) {
     const prev = out[out.length - 1]
-    if (prev && prev.type === 'code' && seg.type === 'text' && isLikelyLeakedCodeText(seg.content)) {
+    if (
+      prev &&
+      prev.type === 'code' &&
+      seg.type === 'text' &&
+      isLikelyLeakedCodeText(seg.content)
+    ) {
       const leak = seg.content.trimEnd()
       prev.content = `${prev.content}\n${leak}`
       continue
@@ -258,7 +264,9 @@ function isLikelyLeakedCodeText(raw: string): boolean {
   if (chineseMatch && chineseMatch.length > 40) return false
 
   const strongSignal =
-    /(^|\n)\s*(const|let|var|function|class|if|for|while|switch|return|import|export)\b/.test(text) ||
+    /(^|\n)\s*(const|let|var|function|class|if|for|while|switch|return|import|export)\b/.test(
+      text,
+    ) ||
     /document\.(querySelector|getElementById|createElement|addEventListener)\b/.test(text) ||
     /(^|\n)\s*<\/?[a-zA-Z][^>]*>\s*$/.test(text) ||
     /=>/.test(text)
@@ -270,7 +278,10 @@ function isLikelyLeakedCodeText(raw: string): boolean {
     const s = line.trim()
     if (!s) continue
     nonEmpty++
-    const startsCode = /^(\/\/|\/\*|\*|<\/|\.?[#\w-]+\s*\{|const\b|let\b|var\b|if\s*\(|for\s*\(|while\s*\(|return\b)/.test(s)
+    const startsCode =
+      /^(\/\/|\/\*|\*|<\/|\.?[#\w-]+\s*\{|const\b|let\b|var\b|if\s*\(|for\s*\(|while\s*\(|return\b)/.test(
+        s,
+      )
     const endsCode = /[;{}>\],)]$/.test(s)
     const hasOps = /[=<>:+\-*/]/.test(s)
     if (startsCode || endsCode || hasOps) codeLike++

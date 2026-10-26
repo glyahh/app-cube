@@ -138,7 +138,7 @@ class ImportExecutionSandboxTest {
         assertEquals(2,new HashSet<>(names).size());
         assertFalse(ready.calls.contains(List.of("rm","-f",ImportExecutionSandbox.PREFIX+"pinprobe")));
     }
-    @Test void liveHardMemoryRunsSmallCommandAndKillsOversize()throws Exception{
+    @Test @com.dbts.glyahhaigeneratecode.ExternalTest void liveHardMemoryRunsSmallCommandAndKillsOversize()throws Exception{
         Assumptions.assumeTrue(Boolean.getBoolean("import.exec.pin")||"1".equals(System.getenv("IMPORT_EXEC_PIN")),"未要求真实钉交换区核对");
         var docker=new DockerCli(new RuntimeProperties());
         Assumptions.assumeTrue(docker.commandPrefix()!=null,"docker 不可用");
@@ -154,7 +154,7 @@ class ImportExecutionSandboxTest {
             dir.resolve("g2.sh"),dir.resolve("e2.env"),dir.resolve("over.log"),journal(new ArrayList<>()),()->false);
         assertEquals("FAILED",over.state());assertEquals("MEMORY_LIMIT",over.reason());
     }
-    @Test void livePersistKeepsInstallFilesAndServeStaysUntilRemoved()throws Exception{
+    @Test @com.dbts.glyahhaigeneratecode.ExternalTest void livePersistKeepsInstallFilesAndServeStaysUntilRemoved()throws Exception{
         Assumptions.assumeTrue(Boolean.getBoolean("import.exec.pin")||"1".equals(System.getenv("IMPORT_EXEC_PIN")),"未要求真实钉交换区核对");
         var docker=new DockerCli(new RuntimeProperties());
         Assumptions.assumeTrue(docker.commandPrefix()!=null,"docker 不可用");
@@ -190,7 +190,7 @@ class ImportExecutionSandboxTest {
             assertTrue(live.ok());assertTrue(live.stdout().startsWith("true|"));assertTrue(live.stdout().contains("{}")||live.stdout().contains("null"));
         }finally{if(servedId!=null)assertTrue(sandbox.removed(servedId));}
     }
-    @Test void liveGuardRejectsUnboundedSwapEvenWhenHostHasNone()throws Exception{
+    @Test @com.dbts.glyahhaigeneratecode.ExternalTest void liveGuardRejectsUnboundedSwapEvenWhenHostHasNone()throws Exception{
         Assumptions.assumeTrue(Boolean.getBoolean("import.exec.pin"),"未要求真实容器守卫反例");
         var docker=new DockerCli(new RuntimeProperties());
         Assumptions.assumeTrue(docker.commandPrefix()!=null,"docker 不可用");
@@ -235,7 +235,7 @@ class ImportExecutionSandboxTest {
         assertFalse(text.contains("--network none"));
         assertThrows(IllegalArgumentException.class,()->new ImportExecutionSandbox.Request(UUID.randomUUID(),7,dir.resolve("copy"),".","python3 app.py",LIMITS,ImportExecutionSandbox.Network.NONE,ImportExecutionSandbox.Lifetime.SERVE,true,8080));
     }
-    @Test void liveLoopbackHttpIsReadyOnlyAfterARealRequest()throws Exception{
+    @Test @com.dbts.glyahhaigeneratecode.ExternalTest void liveLoopbackHttpIsReadyOnlyAfterARealRequest()throws Exception{
         Assumptions.assumeTrue(Boolean.getBoolean("import.exec.pin")||"1".equals(System.getenv("IMPORT_EXEC_PIN")),"未要求真实回环核对");
         var docker=new DockerCli(new RuntimeProperties());
         Assumptions.assumeTrue(docker.commandPrefix()!=null,"docker 不可用");

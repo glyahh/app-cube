@@ -4,8 +4,18 @@ import { mapAgentEvent } from '../agentEventMapping'
 
 describe('mapAgentEvent · 正文', () => {
   it('映射 thinking 事件并保留稳定 ID', () => {
-    expect(mapAgentEvent('thinking.delta', { thinkingId: 't-1', summary: '正在构思画报', details: '确定配色' })).toEqual({
-      kind: 'thinking_delta', thinkingId: 't-1', summary: '正在构思画报', details: '确定配色', status: 'running',
+    expect(
+      mapAgentEvent('thinking.delta', {
+        thinkingId: 't-1',
+        summary: '正在构思画报',
+        details: '确定配色',
+      }),
+    ).toEqual({
+      kind: 'thinking_delta',
+      thinkingId: 't-1',
+      summary: '正在构思画报',
+      details: '确定配色',
+      status: 'running',
     })
   })
   it('文本增量直接透传', () => {
@@ -40,12 +50,14 @@ describe('mapAgentEvent · 工具卡片', () => {
   })
 
   it('工具结束保持结构化，不再伪造旧文本协议', () => {
-    expect(mapAgentEvent('tool.finished', {
-      callId: 'call-1',
-      toolName: 'write_file',
-      status: 'succeeded',
-      outputPreview: 'ok',
-    })).toEqual({
+    expect(
+      mapAgentEvent('tool.finished', {
+        callId: 'call-1',
+        toolName: 'write_file',
+        status: 'succeeded',
+        outputPreview: 'ok',
+      }),
+    ).toEqual({
       kind: 'tool_finished',
       callId: 'call-1',
       toolName: 'write_file',
@@ -61,10 +73,22 @@ describe('mapAgentEvent · 工具卡片', () => {
   })
 
   it('保留命令失败的退出码并兼容没有退出码的旧事件', () => {
-    expect(mapAgentEvent('tool.finished', {
-      toolName: 'execute', status: 'failed', exitCode: 127, outputPreview: 'python: command not found',
-    })).toMatchObject({ kind: 'tool_finished', status: 'failed', exitCode: 127, outputPreview: 'python: command not found' })
-    expect(mapAgentEvent('tool.finished', { toolName: 'execute', status: 'succeeded' })).not.toHaveProperty('exitCode')
+    expect(
+      mapAgentEvent('tool.finished', {
+        toolName: 'execute',
+        status: 'failed',
+        exitCode: 127,
+        outputPreview: 'python: command not found',
+      }),
+    ).toMatchObject({
+      kind: 'tool_finished',
+      status: 'failed',
+      exitCode: 127,
+      outputPreview: 'python: command not found',
+    })
+    expect(
+      mapAgentEvent('tool.finished', { toolName: 'execute', status: 'succeeded' }),
+    ).not.toHaveProperty('exitCode')
   })
 
   it('未知工具名仍生成结构化动作', () => {
@@ -123,7 +147,9 @@ describe('mapAgentEvent · 收尾与错误', () => {
       retryable: true,
     })
     // 环境类失败（数据库、Docker）后端会标 false，前端要能区分。
-    expect(mapAgentEvent('error', { message: '数据库不可用', retryable: false }).retryable).toBe(false)
+    expect(mapAgentEvent('error', { message: '数据库不可用', retryable: false }).retryable).toBe(
+      false,
+    )
   })
 
   it('error 事件同样走错误路径', () => {
@@ -144,17 +170,24 @@ describe('mapAgentEvent · 收尾与错误', () => {
   })
 
   it('等待审批超时的 cancelled 映射成暂停提示，不当作错误', () => {
-    expect(mapAgentEvent('run.completed', {
-      status: 'cancelled', summary: '等待审批超时，本轮已暂停',
-    })).toEqual({ kind: 'paused', text: '等待审批超时，本轮已暂停' })
+    expect(
+      mapAgentEvent('run.completed', {
+        status: 'cancelled',
+        summary: '等待审批超时，本轮已暂停',
+      }),
+    ).toEqual({ kind: 'paused', text: '等待审批超时，本轮已暂停' })
   })
 })
 
 describe('mapAgentEvent · 未知事件', () => {
   it('模型路由降级映射为一次性 warning 动作', () => {
-    expect(mapAgentEvent('model.route.fallback', {
-      fromRoute: 'proxy', toRoute: 'direct', reason: 'connect_error',
-    })).toEqual({ kind: 'model_route_fallback' })
+    expect(
+      mapAgentEvent('model.route.fallback', {
+        fromRoute: 'proxy',
+        toRoute: 'direct',
+        reason: 'connect_error',
+      }),
+    ).toEqual({ kind: 'model_route_fallback' })
   })
 
   it('心跳与状态等事件被忽略而不是报错', () => {
@@ -168,19 +201,24 @@ describe('mapAgentEvent · 未知事件', () => {
   })
 })
 
-
 it('preserves the actual tool label instead of the generic server status', () => {
-  expect(mapAgentEvent('tool.started', { toolName: 'read_file', label: '正在检查文件' }))
-    .toMatchObject({ kind: 'tool_started', label: '读取文件' })
-  expect(mapAgentEvent('tool.finished', { toolName: 'execute', label: '正在检查结果' }))
-    .toMatchObject({ kind: 'tool_finished', label: '执行命令' })
+  expect(
+    mapAgentEvent('tool.started', { toolName: 'read_file', label: '正在检查文件' }),
+  ).toMatchObject({ kind: 'tool_started', label: '读取文件' })
+  expect(
+    mapAgentEvent('tool.finished', { toolName: 'execute', label: '正在检查结果' }),
+  ).toMatchObject({ kind: 'tool_finished', label: '执行命令' })
 })
 
 it('does not repeat a cancellation summary already delivered as complete text', () => {
   const actions = [
     mapAgentEvent('text.delta', { content: '本轮已停止。' }),
     mapAgentEvent('text.message', { content: '本轮已停止。' }),
-    mapAgentEvent('run.completed', { status: 'cancelled', summary: '本轮已停止。', summaryDelivered: true }),
+    mapAgentEvent('run.completed', {
+      status: 'cancelled',
+      summary: '本轮已停止。',
+      summaryDelivered: true,
+    }),
     mapAgentEvent('done', {}),
   ]
   expect(actions).toEqual([
@@ -192,8 +230,11 @@ it('does not repeat a cancellation summary already delivered as complete text', 
 })
 
 it('a cancellation without a delivered answer still shows its actual reason', () => {
-  expect(mapAgentEvent('run.completed', { status: 'cancelled', summary: '用户拒绝操作。' }))
-    .toEqual({ kind: 'paused', text: '用户拒绝操作。' })
-  expect(mapAgentEvent('run.completed', { status: 'cancelled' }))
-    .toEqual({ kind: 'paused', text: '本轮已停止' })
+  expect(
+    mapAgentEvent('run.completed', { status: 'cancelled', summary: '用户拒绝操作。' }),
+  ).toEqual({ kind: 'paused', text: '用户拒绝操作。' })
+  expect(mapAgentEvent('run.completed', { status: 'cancelled' })).toEqual({
+    kind: 'paused',
+    text: '本轮已停止',
+  })
 })

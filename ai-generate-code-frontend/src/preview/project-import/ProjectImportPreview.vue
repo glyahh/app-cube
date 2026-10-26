@@ -2,16 +2,22 @@
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  Alert as AAlert, Button as AButton,
-  ConfigProvider as AConfigProvider, Modal as AModal,
+  Alert as AAlert,
+  Button as AButton,
+  ConfigProvider as AConfigProvider,
+  Modal as AModal,
 } from 'ant-design-vue'
 import ProjectImportForm from '@/features/project-import/ProjectImportForm.vue'
 import GitSourcePreview from './GitSourcePreview.vue'
 import StartupRunPreview from './StartupRunPreview.vue'
 import { resolveThemeConfig } from '@/stores/appearance'
 import {
-  createManifest, defaultOptions, previewFileLimit, validateFiles,
-  type FileMetadata, type ImportOptions,
+  createManifest,
+  defaultOptions,
+  previewFileLimit,
+  validateFiles,
+  type FileMetadata,
+  type ImportOptions,
 } from './manifest'
 import { setWorkbenchProject } from './workbenchTransport'
 
@@ -22,7 +28,10 @@ const gitSource = ref(route.query.source === 'git')
 const startupPreview = route.query.startup === '1'
 function invalidateGitSource() {
   if (busy.value) cancelImport()
-  files.value = []; folderName.value = ''; appName.value = ''; error.value = ''
+  files.value = []
+  folderName.value = ''
+  appName.value = ''
+  error.value = ''
 }
 
 type ImportState = 'select' | 'review' | 'importing' | 'succeeded' | 'failed' | 'cancelled'
@@ -33,9 +42,14 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ taskState: [event: { taskId: string; name: string; status: string }] }>()
 const dark = ref(false)
-const themeConfig = computed(() => resolveThemeConfig({
-  isDark: dark.value, primaryColor: '#1677ff', fontSize: 15, compactMode: false,
-}))
+const themeConfig = computed(() =>
+  resolveThemeConfig({
+    isDark: dark.value,
+    primaryColor: '#1677ff',
+    fontSize: 15,
+    compactMode: false,
+  }),
+)
 const files = ref<FileMetadata[]>([])
 const folderName = ref('')
 const appName = ref('')
@@ -46,13 +60,23 @@ const error = ref('')
 const state = ref<ImportState>('select')
 const manifest = computed(() => createManifest(files.value, options.value))
 const busy = computed(() => state.value === 'importing')
-const canSubmit = computed(() => files.value.length > 0 && manifest.value.included.length > 0 &&
-  !!appName.value.trim() && appName.value.trim().length <= 80 && !error.value && !busy.value)
+const canSubmit = computed(
+  () =>
+    files.value.length > 0 &&
+    manifest.value.included.length > 0 &&
+    !!appName.value.trim() &&
+    appName.value.trim().length <= 80 &&
+    !error.value &&
+    !busy.value,
+)
 const steps = ['检查文件', '接入工程', '创建应用']
 const phase = ref(0)
 const taskId = ref('')
 const result = ref<{ name: string; count: number; bytes: number; taskId: string; appId: string }>()
-const inWorkbench = computed(() => route.name === 'app-chat' && !!result.value && String(route.params.id) === result.value.appId)
+const inWorkbench = computed(
+  () =>
+    route.name === 'app-chat' && !!result.value && String(route.params.id) === result.value.appId,
+)
 const attempts = ref<Array<{ taskId: string; name: string; status: string; detail: string }>>([])
 const installPrompt = ref(false)
 const installStatus = ref<'idle' | 'installing' | 'succeeded' | 'failed'>('idle')
@@ -100,9 +124,13 @@ function selectFolder(event: Event) {
     selectSource([], '')
     error.value = '未取得一致的文件夹路径，请使用文件夹选择器重试。'
   } else {
-    selectSource(selected.map((file) => ({
-      path: file.webkitRelativePath.slice(root.length + 1), size: file.size,
-    })), root)
+    selectSource(
+      selected.map((file) => ({
+        path: file.webkitRelativePath.slice(root.length + 1),
+        size: file.size,
+      })),
+      root,
+    )
   }
   input.value = ''
 }
@@ -122,12 +150,17 @@ function startImport() {
   // 1. 固定本次模拟输入，重复点击与迟到回调不得改写新任务。
   const current = ++generation
   const frozen = {
-    name: appName.value.trim(), count: manifest.value.included.length,
-    bytes: manifest.value.totalBytes, taskId: `preview-${crypto.randomUUID()}`, appId: `preview-app-${crypto.randomUUID()}`,
+    name: appName.value.trim(),
+    count: manifest.value.included.length,
+    bytes: manifest.value.totalBytes,
+    taskId: `preview-${crypto.randomUUID()}`,
+    appId: `preview-app-${crypto.randomUUID()}`,
   }
   const includedFiles = manifest.value.included.map((file) => ({ ...file }))
-  const shouldFail = props.importOutcome === 'failure' ||
-    (props.importOutcome === 'failure-once' && !attempts.value.some((attempt) => attempt.status === 'failed'))
+  const shouldFail =
+    props.importOutcome === 'failure' ||
+    (props.importOutcome === 'failure-once' &&
+      !attempts.value.some((attempt) => attempt.status === 'failed'))
   taskId.value = frozen.taskId
   state.value = 'importing'
   phase.value = 0
@@ -153,7 +186,7 @@ function startImport() {
         await router.push({ name: 'app-chat', params: { id: frozen.appId } })
         if (current === generation && inWorkbench.value) {
           document.title = `${frozen.name} · Agent 工作台`
-          if(!startupPreview) installPrompt.value = true
+          if (!startupPreview) installPrompt.value = true
         }
       } catch {
         error.value = '进入工作台失败，请重新导入。'
@@ -172,6 +205,11 @@ function cancelImport() {
   clearTimeout(timer)
   state.value = 'cancelled'
   finishAttempt('cancelled', '导入已取消。')
+}
+
+function switchSource(git: boolean) {
+  gitSource.value = git
+  resetImport()
 }
 
 function resetImport() {
@@ -195,14 +233,21 @@ function resetImport() {
 }
 
 function confirmInstall() {
-  if (!inWorkbench.value || !result.value || installBusy.value || installStatus.value === 'succeeded') return
+  if (
+    !inWorkbench.value ||
+    !result.value ||
+    installBusy.value ||
+    installStatus.value === 'succeeded'
+  )
+    return
   // 1. 安装授权只绑定当前应用，不延续到新导入或自动启动。
   installPrompt.value = false
   installStatus.value = 'installing'
   notice.value = ''
   const current = generation
   const target = result.value.taskId
-  const shouldFail = props.installOutcome === 'failure' ||
+  const shouldFail =
+    props.installOutcome === 'failure' ||
     (props.installOutcome === 'failure-once' && !installFailedOnce.value)
   // 2. 此入口只演示安装交互，不执行脚本或调用生产接口。
   installTimer = setTimeout(() => {
@@ -212,15 +257,19 @@ function confirmInstall() {
   }, 1300)
 }
 
-watch(() => route.fullPath, () => {
-  if (route.name === 'app-chat' && !inWorkbench.value) {
-    resetImport()
-    error.value = '工程会话已失效，请重新导入。'
-    void router.replace({ name: 'import' })
-  } else if (route.name === 'import' && result.value) {
-    resetImport()
-  }
-}, { immediate: true })
+watch(
+  () => route.fullPath,
+  () => {
+    if (route.name === 'app-chat' && !inWorkbench.value) {
+      resetImport()
+      error.value = '工程会话已失效，请重新导入。'
+      void router.replace({ name: 'import' })
+    } else if (route.name === 'import' && result.value) {
+      resetImport()
+    }
+  },
+  { immediate: true },
+)
 
 onBeforeUnmount(() => {
   generation++
@@ -236,37 +285,95 @@ onBeforeUnmount(() => {
       <header class="preview-header">
         <div class="brand"><span class="brand-mark" aria-hidden="true">◇</span>应用魔方</div>
         <div class="header-actions">
-          <a-button v-if="!inWorkbench" :disabled="busy" :type="!gitSource ? 'primary' : 'default'" @click="gitSource = false; resetImport()">文件夹</a-button>
-          <a-button v-if="!inWorkbench" :disabled="busy" :type="gitSource ? 'primary' : 'default'" @click="gitSource = true; resetImport()">Git 仓库</a-button>
+          <a-button
+            v-if="!inWorkbench"
+            :disabled="busy"
+            :type="!gitSource ? 'primary' : 'default'"
+            @click="switchSource(false)"
+            >文件夹</a-button
+          >
+          <a-button
+            v-if="!inWorkbench"
+            :disabled="busy"
+            :type="gitSource ? 'primary' : 'default'"
+            @click="switchSource(true)"
+            >Git 仓库</a-button
+          >
           <a-button @click="toggleTheme">{{ dark ? '浅色' : '深色' }}</a-button>
         </div>
       </header>
 
-      <ProjectImportForm v-if="!inWorkbench" metadata-preview v-model:app-name="appName" v-model:options="options"
-        :files="files" :folder-name="folderName" :manifest="manifest" :state="state" :busy="busy"
-        :can-submit="canSubmit" :error="error" :notice="notice" :stage-label="steps[phase]"
-        :progress="Math.round((phase + 1) / 4 * 100)" @select-folder="selectFolder"
-        @save-preferences="savePreferences" @start-import="startImport" @cancel-import="cancelImport" @reset-import="resetImport">
-        <template v-if="gitSource" #source><GitSourcePreview :busy="busy" @select="selectSource" @invalidate="invalidateGitSource" /></template>
+      <ProjectImportForm
+        v-if="!inWorkbench"
+        metadata-preview
+        v-model:app-name="appName"
+        v-model:options="options"
+        :files="files"
+        :folder-name="folderName"
+        :manifest="manifest"
+        :state="state"
+        :busy="busy"
+        :can-submit="canSubmit"
+        :error="error"
+        :notice="notice"
+        :stage-label="steps[phase]"
+        :progress="Math.round(((phase + 1) / 4) * 100)"
+        @select-folder="selectFolder"
+        @save-preferences="savePreferences"
+        @start-import="startImport"
+        @cancel-import="cancelImport"
+        @reset-import="resetImport"
+      >
+        <template v-if="gitSource" #source
+          ><GitSourcePreview :busy="busy" @select="selectSource" @invalidate="invalidateGitSource"
+        /></template>
       </ProjectImportForm>
 
       <section v-else class="agent-workspace" aria-label="Agent 工作台">
         <div class="workspace-toolbar">
-          <a-button :disabled="installBusy" @click="router.push({ name: 'import' })">导入另一个工程</a-button>
+          <a-button :disabled="installBusy" @click="router.push({ name: 'import' })"
+            >导入另一个工程</a-button
+          >
           <div v-if="!startupPreview" class="install-controls">
             <div v-if="installBusy" class="install-status" role="status" aria-live="polite">
               正在安装依赖…
             </div>
-            <a-alert v-else-if="installStatus === 'failed'" class="install-status" type="error" show-icon message="依赖安装失败，请重试。" role="alert" />
-            <a-button :loading="installBusy" :disabled="installBusy || installStatus === 'succeeded'" @click="installPrompt = true">{{ installStatus === 'failed' ? '重试安装' : installStatus === 'succeeded' ? '已安装' : '安装依赖' }}</a-button>
+            <a-alert
+              v-else-if="installStatus === 'failed'"
+              class="install-status"
+              type="error"
+              show-icon
+              message="依赖安装失败，请重试。"
+              role="alert"
+            />
+            <a-button
+              :loading="installBusy"
+              :disabled="installBusy || installStatus === 'succeeded'"
+              @click="installPrompt = true"
+              >{{
+                installStatus === 'failed'
+                  ? '重试安装'
+                  : installStatus === 'succeeded'
+                    ? '已安装'
+                    : '安装依赖'
+              }}</a-button
+            >
           </div>
         </div>
         <AgentWorkbench :key="result?.appId" imported-project>
-          <template v-if="startupPreview && result" #runtime-actions><StartupRunPreview :app-id="result.appId" /></template>
+          <template v-if="startupPreview && result" #runtime-actions
+            ><StartupRunPreview :app-id="result.appId"
+          /></template>
         </AgentWorkbench>
       </section>
 
-      <a-modal v-model:open="installPrompt" title="是否安装依赖？" ok-text="安装依赖" cancel-text="暂不安装" @ok="confirmInstall">
+      <a-modal
+        v-model:open="installPrompt"
+        title="是否安装依赖？"
+        ok-text="安装依赖"
+        cancel-text="暂不安装"
+        @ok="confirmInstall"
+      >
         <p>单独安装不会启动项目。</p>
       </a-modal>
     </div>
@@ -274,30 +381,119 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.import-preview { min-height: 100vh; background: var(--bg-soft); color: var(--text-base); font-family: var(--font-family-base); }
+.import-preview {
+  min-height: 100vh;
+  background: var(--bg-soft);
+  color: var(--text-base);
+  font-family: var(--font-family-base);
+}
 /* 主题只过渡颜色，避免窗口变窄时宽度和内边距动画产生临时溢出。 */
-.import-preview, .import-preview :deep(:not([class*="ant-"])) { transition-property: color, background-color, border-color, box-shadow; }
-.preview-header { min-height: 64px; padding: 12px max(24px, calc((100vw - 1024px) / 2 + 24px)); display: flex; justify-content: space-between; align-items: center; gap: 16px; background: var(--bg-card); border-bottom: 1px solid var(--border-color); }
-.brand { display: flex; gap: 10px; align-items: center; font-weight: 650; white-space: nowrap; }
-.brand-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--radius-md); color: white; background: var(--color-primary); font-size: 20px; }
-.header-actions, .footer-actions, .result-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.agent-workspace { padding: 24px; }
-.agent-workspace :deep(.app-chat-page) { max-width: none; padding: 0; margin: 0; height: calc(100dvh - 168px); min-height: 520px; }
-.workspace-toolbar, .install-controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.workspace-toolbar { margin-bottom: 16px; }
-.install-status { max-width: 320px; }
-.agent-workspace :deep(.top-bar), .agent-workspace :deep(.top-actions) { flex-wrap: wrap; gap: 12px; }
-.agent-workspace :deep(.app-title-wrap) { max-width: 100%; flex-wrap: wrap; }
-.agent-workspace :deep(.app-meta) { min-width: 0; flex: 1; }
-.agent-workspace :deep(.app-name) { overflow-wrap: anywhere; }
+.import-preview,
+.import-preview :deep(:not([class*='ant-'])) {
+  transition-property: color, background-color, border-color, box-shadow;
+}
+.preview-header {
+  min-height: 64px;
+  padding: 12px max(24px, calc((100vw - 1024px) / 2 + 24px));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+}
+.brand {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  color: white;
+  background: var(--color-primary);
+  font-size: 20px;
+}
+.header-actions,
+.footer-actions,
+.result-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.agent-workspace {
+  padding: 24px;
+}
+.agent-workspace :deep(.app-chat-page) {
+  max-width: none;
+  padding: 0;
+  margin: 0;
+  height: calc(100dvh - 168px);
+  min-height: 520px;
+}
+.workspace-toolbar,
+.install-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.workspace-toolbar {
+  margin-bottom: 16px;
+}
+.install-status {
+  max-width: 320px;
+}
+.agent-workspace :deep(.top-bar),
+.agent-workspace :deep(.top-actions) {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.agent-workspace :deep(.app-title-wrap) {
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.agent-workspace :deep(.app-meta) {
+  min-width: 0;
+  flex: 1;
+}
+.agent-workspace :deep(.app-name) {
+  overflow-wrap: anywhere;
+}
 @media (max-width: 992px) {
-  .agent-workspace :deep(.app-chat-page) { height: auto; min-height: 0; }
-  .agent-workspace :deep(.main-content) { height: auto; overflow: visible; flex: none; gap: 20px; }
-  .agent-workspace :deep(.chat-panel) { height: 480px; flex: none; }
-  .agent-workspace :deep(.preview-panel) { height: 340px; flex: none; }
+  .agent-workspace :deep(.app-chat-page) {
+    height: auto;
+    min-height: 0;
+  }
+  .agent-workspace :deep(.main-content) {
+    height: auto;
+    overflow: visible;
+    flex: none;
+    gap: 20px;
+  }
+  .agent-workspace :deep(.chat-panel) {
+    height: 480px;
+    flex: none;
+  }
+  .agent-workspace :deep(.preview-panel) {
+    height: 340px;
+    flex: none;
+  }
 }
 @media (max-width: 760px) {
-  .preview-header { padding: 14px 16px; flex-wrap: wrap; }
-  .agent-workspace { padding: 16px; }
+  .preview-header {
+    padding: 14px 16px;
+    flex-wrap: wrap;
+  }
+  .agent-workspace {
+    padding: 16px;
+  }
 }
 </style>

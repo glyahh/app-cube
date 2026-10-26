@@ -110,8 +110,11 @@ async function handleLogin() {
  * 用户提交
  */
 async function handleRegister() {
-
-  if (!registerForm.value.account || !registerForm.value.password || !registerForm.value.confirmPassword) {
+  if (
+    !registerForm.value.account ||
+    !registerForm.value.password ||
+    !registerForm.value.confirmPassword
+  ) {
     message.warning('请完整填写注册信息')
     return
   }
@@ -182,8 +185,14 @@ onMounted(() => {
               Forgot your password?
             </a-typography-text>
             <a-form-item class="btn-wrap">
-              <a-button type="primary" html-type="submit" size="large" shape="round" :loading="loading"
-                class="primary-btn">
+              <a-button
+                type="primary"
+                html-type="submit"
+                size="large"
+                shape="round"
+                :loading="loading"
+                class="primary-btn"
+              >
                 SIGN IN
               </a-button>
             </a-form-item>
@@ -205,8 +214,14 @@ onMounted(() => {
               <a-input-password v-model:value="registerForm.confirmPassword" size="large" />
             </a-form-item>
             <a-form-item class="btn-wrap">
-              <a-button type="primary" html-type="submit" size="large" shape="round" :loading="loading"
-                class="primary-btn">
+              <a-button
+                type="primary"
+                html-type="submit"
+                size="large"
+                shape="round"
+                :loading="loading"
+                class="primary-btn"
+              >
                 SIGN UP
               </a-button>
             </a-form-item>

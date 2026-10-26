@@ -29,7 +29,9 @@ export function splitInterruptedTail(text: string): { body: string; hasInterrupt
   const marker = GENERATION_INTERRUPTED_MARKER
   const suffix = `\n\n${marker}`
   if (raw.endsWith(suffix) || raw.trimEnd() === marker) {
-    const body = raw.endsWith(suffix) ? raw.slice(0, -suffix.length) : raw.replace(/\s*\[中断\]\s*$/, '')
+    const body = raw.endsWith(suffix)
+      ? raw.slice(0, -suffix.length)
+      : raw.replace(/\s*\[中断\]\s*$/, '')
     return { body, hasInterrupt: true }
   }
   return { body: raw, hasInterrupt: false }
@@ -45,7 +47,10 @@ function stripFailedLineFromMarkdown(content: string): string {
     if (t === GENERATION_INTERRUPTED_MARKER) return false
     return true
   })
-  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  return kept
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 /**
@@ -82,7 +87,8 @@ export function injectGenerationStatusSegments<T extends SegmentLike>(
   }
 
   const hasFailedInSegments = out.some(
-    (s) => s.kind === 'generation_status' && (s as GenerationStatusSegmentInput).variant === 'failed',
+    (s) =>
+      s.kind === 'generation_status' && (s as GenerationStatusSegmentInput).variant === 'failed',
   )
   const bodyTrim = body.trim()
   if (!hasFailedInSegments && bodyTrim && isGenerationFailedText(bodyTrim)) {

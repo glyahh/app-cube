@@ -47,8 +47,7 @@ class ImportAgentPermissionSettingsTest {
         assertTrue(frame.path("importThinkingEffort").isNull());
     }
 
-    @Test
-    @EnabledIfEnvironmentVariable(named = "AGENT_TEST_REAL_PERMISSIONS", matches = "1")
+    @com.dbts.glyahhaigeneratecode.ExternalTest
     void realConfiguredCatalogAndIndependentToolFreeReview() {
         var pool = new ImportAgentReviewPool(new AgentProperties(), json);
         var client = new ImportAgentModelClient(new AgentProperties(), json, pool);

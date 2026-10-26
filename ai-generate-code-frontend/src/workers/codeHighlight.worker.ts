@@ -25,7 +25,10 @@ self.onmessage = (event: MessageEvent<HighlightRequest>) => {
       requestId: request.requestId,
       lines,
       lineCount: lines.length,
-      maxColumns: lines.reduce((max, line) => Math.max(max, line.replace(/<[^>]+>/g, '').length), 0),
+      maxColumns: lines.reduce(
+        (max, line) => Math.max(max, line.replace(/<[^>]+>/g, '').length),
+        0,
+      ),
     })
   } catch (error) {
     if (cancelled.delete(request.requestId)) return

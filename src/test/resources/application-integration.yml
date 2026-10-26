@@ -1,0 +1,12 @@
+spring:
+  config:
+    import: optional:file:target/integration-empty.properties[.properties]
+  main:
+    allow-bean-definition-overriding: true
+agent:
+  runtime:
+    python-executable: python
+    script-path: src/test/resources/agent-stub.py
+  pool:
+    core-size: 0
+    max-size: 1

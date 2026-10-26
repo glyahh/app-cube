@@ -17,7 +17,11 @@ import {
   message,
 } from 'ant-design-vue'
 import type { ApplyVO } from '@/api'
-import { appApplyListPendingUsingPost, appApplyAgreeUsingPost, appApplyRejectUsingPost } from '@/api/appController'
+import {
+  appApplyListPendingUsingPost,
+  appApplyAgreeUsingPost,
+  appApplyRejectUsingPost,
+} from '@/api/appController'
 import { UserLoginStore } from '@/stores/UserLogin'
 import {
   loopAdminApplyListUsingPost,
@@ -80,7 +84,11 @@ const loopApplyColumns = [
     customRender: ({ record }: { record: any }) => {
       if (record.status !== 0) return h('span', { style: { color: '#999' } }, '已处理')
       return h(Space, { size: 'small' }, () => [
-        h(Button, { size: 'small', type: 'primary', onClick: () => approveLoop(record) }, () => '通过'),
+        h(
+          Button,
+          { size: 'small', type: 'primary', onClick: () => approveLoop(record) },
+          () => '通过',
+        ),
         h(Button, { size: 'small', onClick: () => rejectLoop(record) }, () => '拒绝'),
       ])
     },
@@ -105,7 +113,10 @@ async function loadLoopApplyList() {
   loopApplyLoading.value = true
   try {
     const res = await loopAdminApplyListUsingPost({
-      body: { pageNum: loopApplyPagination.value.current, pageSize: loopApplyPagination.value.pageSize },
+      body: {
+        pageNum: loopApplyPagination.value.current,
+        pageSize: loopApplyPagination.value.pageSize,
+      },
     })
     if ((res.data.code === 0 || res.data.code === 20000) && res.data.data) {
       loopApplyList.value = res.data.data
@@ -325,16 +336,9 @@ onMounted(() => {
         <div class="apply-manage-page">
           <section class="left-column">
             <h2 class="column-title">待处理请求</h2>
-            <p class="column-subtitle">
-              点击左侧列表中的用户或应用，右侧将展示详细信息。
-            </p>
+            <p class="column-subtitle">点击左侧列表中的用户或应用，右侧将展示详细信息。</p>
             <div class="apply-list" v-loading="loading">
-              <div
-                v-if="!applies.length"
-                class="empty-tip"
-              >
-                暂无待处理的用户请求。
-              </div>
+              <div v-if="!applies.length" class="empty-tip">暂无待处理的用户请求。</div>
               <button
                 v-for="(item, index) in applies"
                 v-else
@@ -385,21 +389,13 @@ onMounted(() => {
               <footer class="detail-footer">
                 <span class="footer-hint">请谨慎处理用户权限与应用展示相关的请求。</span>
                 <div class="footer-actions">
-                  <a-button @click="handleQuickLocate">
-                    一键查找
-                  </a-button>
-                  <a-button danger @click="handleDecision('reject')">
-                    拒绝
-                  </a-button>
-                  <a-button type="primary" @click="handleDecision('approve')">
-                    同意
-                  </a-button>
+                  <a-button @click="handleQuickLocate"> 一键查找 </a-button>
+                  <a-button danger @click="handleDecision('reject')"> 拒绝 </a-button>
+                  <a-button type="primary" @click="handleDecision('approve')"> 同意 </a-button>
                 </div>
               </footer>
             </div>
-            <div v-else class="detail-empty">
-              请选择左侧列表中的一条请求查看详情。
-            </div>
+            <div v-else class="detail-empty">请选择左侧列表中的一条请求查看详情。</div>
           </section>
 
           <a-modal
@@ -413,7 +409,9 @@ onMounted(() => {
           >
             <div class="reject-form">
               <div class="reject-field">
-                <label class="reject-label">审核备注（拒绝理由）<span class="required">*</span></label>
+                <label class="reject-label"
+                  >审核备注（拒绝理由）<span class="required">*</span></label
+                >
                 <a-textarea
                   v-model:value="rejectReviewRemark"
                   placeholder="请填写拒绝原因，将作为审核备注反馈给用户"
@@ -429,7 +427,9 @@ onMounted(() => {
                   :rows="3"
                   allow-clear
                 />
-                <p class="reject-hint">管理员可修改用户原本的申请理由文字，修改后将保存到该条申请记录中。</p>
+                <p class="reject-hint">
+                  管理员可修改用户原本的申请理由文字，修改后将保存到该条申请记录中。
+                </p>
               </div>
             </div>
           </a-modal>
@@ -504,7 +504,9 @@ onMounted(() => {
   padding: 8px 6px;
   border-radius: 12px;
   cursor: pointer;
-  transition: background-color 0.15s ease, transform 0.1s ease;
+  transition:
+    background-color 0.15s ease,
+    transform 0.1s ease;
 }
 
 .apply-item:hover {

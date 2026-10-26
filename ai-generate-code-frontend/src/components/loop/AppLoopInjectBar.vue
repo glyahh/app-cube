@@ -1,21 +1,12 @@
 <template>
   <div v-if="loopList.length > 0" class="loop-inject-bar">
     <div v-if="loopList.length > 20" class="inject-search">
-      <a-input
-        v-model:value="searchText"
-        placeholder="搜索 Loop…"
-        size="small"
-        allow-clear
-      />
+      <a-input v-model:value="searchText" placeholder="搜索 Loop…" size="small" allow-clear />
     </div>
     <div class="inject-radio-scroll">
       <a-radio-group v-model:value="selectedLoopId" class="inject-radio-group">
         <a-radio-button :value="0">无</a-radio-button>
-        <a-radio-button
-          v-for="loop in filteredList"
-          :key="loop.loopId"
-          :value="loop.loopId"
-        >
+        <a-radio-button v-for="loop in filteredList" :key="loop.loopId" :value="loop.loopId">
           {{ loop.loopName }}
         </a-radio-button>
       </a-radio-group>
@@ -34,15 +25,20 @@
                 <a-checkbox :value="loop.id">{{ loop.loopName }}</a-checkbox>
               </div>
             </a-checkbox-group>
-            <a-button type="primary" size="small" block :loading="adding" @click="handleAddToApp" class="picker-add-btn">
+            <a-button
+              type="primary"
+              size="small"
+              block
+              :loading="adding"
+              @click="handleAddToApp"
+              class="picker-add-btn"
+            >
               添加到当前应用
             </a-button>
           </div>
         </div>
       </template>
-      <a-button type="link" size="small" class="inject-add-btn">
-        + 添加
-      </a-button>
+      <a-button type="link" size="small" class="inject-add-btn"> + 添加 </a-button>
     </a-popover>
   </div>
 </template>

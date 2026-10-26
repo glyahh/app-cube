@@ -55,7 +55,9 @@ const INJECTED_API_VERSION = 6
 const WIN_PASS_THROUGH = '__GLYAHH_VISUAL_PASS_THROUGH__'
 
 function safeTextPreview(s: unknown, maxLen = 140): string {
-  const t = String(s ?? '').replace(/\s+/g, ' ').trim()
+  const t = String(s ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
   if (!t) return ''
   return t.length > maxLen ? `${t.slice(0, maxLen)}…` : t
 }
@@ -86,7 +88,9 @@ function buildCssSelector(el: Element): string | undefined {
         break
       }
 
-      const classList = Array.from((cur as HTMLElement).classList || []).filter(Boolean).slice(0, 2)
+      const classList = Array.from((cur as HTMLElement).classList || [])
+        .filter(Boolean)
+        .slice(0, 2)
       if (classList.length) {
         part += classList.map((c) => (c && /^[A-Za-z_][\w-]*$/.test(c) ? `.${c}` : '')).join('')
       }
@@ -152,7 +156,9 @@ function extractElementInfo(el: Element): VisualSelectedElementInfo {
   const tagName = el.tagName.toLowerCase()
   const id = (el as HTMLElement).id || undefined
   const className = (el as HTMLElement).className
-    ? String((el as HTMLElement).className).trim().slice(0, 160)
+    ? String((el as HTMLElement).className)
+        .trim()
+        .slice(0, 160)
     : undefined
   const name = getAttr(el, 'name')
   const role = getAttr(el, 'role')
@@ -162,7 +168,9 @@ function extractElementInfo(el: Element): VisualSelectedElementInfo {
   const href = getAttr(el, 'href')
   const src = getAttr(el, 'src')
 
-  const text = safeTextPreview((el as HTMLElement).innerText || (el as HTMLElement).textContent || '')
+  const text = safeTextPreview(
+    (el as HTMLElement).innerText || (el as HTMLElement).textContent || '',
+  )
   const cssSelector = buildCssSelector(el)
   const xpath = buildXpath(el)
   let rect: VisualSelectedElementInfo['rect'] | undefined
@@ -212,7 +220,13 @@ function ensureInjectedApi(win: Window): InjectedApi {
   }
 
   const api: InjectedApi = (() => {
-    function injectStyles(doc: Document, hoverColor: string, selectedColor: string, hoverWidth: number, selectedWidth: number) {
+    function injectStyles(
+      doc: Document,
+      hoverColor: string,
+      selectedColor: string,
+      hoverWidth: number,
+      selectedWidth: number,
+    ) {
       const existing = doc.getElementById(STYLE_ID)
       if (existing) {
         // 更新颜色/粗细（便于后续配置）
@@ -226,7 +240,12 @@ function ensureInjectedApi(win: Window): InjectedApi {
       doc.head?.appendChild(styleEl)
     }
 
-    function buildCss(hoverColor: string, selectedColor: string, hoverWidth: number, selectedWidth: number) {
+    function buildCss(
+      hoverColor: string,
+      selectedColor: string,
+      hoverWidth: number,
+      selectedWidth: number,
+    ) {
       return `
         html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 100%; }
         body { box-sizing: border-box; }
@@ -338,7 +357,6 @@ function ensureInjectedApi(win: Window): InjectedApi {
       }
     }
 
-
     function updateBoxForEl(box: HTMLDivElement | null, el: Element | null, borderCss: string) {
       if (!box) return
       if (!el) {
@@ -367,7 +385,11 @@ function ensureInjectedApi(win: Window): InjectedApi {
       if (rafId != null) return
       rafId = win.requestAnimationFrame(() => {
         rafId = null
-        updateBoxForEl(hoverBox, lastHover && lastHover !== lastSelected ? lastHover : null, `${hoverWidth}px dashed ${hoverColor}`)
+        updateBoxForEl(
+          hoverBox,
+          lastHover && lastHover !== lastSelected ? lastHover : null,
+          `${hoverWidth}px dashed ${hoverColor}`,
+        )
         updateBoxForEl(selectedBox, lastSelected, `${selectedWidth}px solid ${selectedColor}`)
       })
     }
@@ -408,7 +430,8 @@ function ensureInjectedApi(win: Window): InjectedApi {
       if (tag === 'html' || tag === 'body') return false
       if (tag === 'script' || tag === 'style') return false
       // 过滤掉我们自己注入的标记（避免误选中）
-      if ((el as HTMLElement).dataset && (el as HTMLElement).dataset.glyahhVisualEditor === 'true') return false
+      if ((el as HTMLElement).dataset && (el as HTMLElement).dataset.glyahhVisualEditor === 'true')
+        return false
       return true
     }
 
@@ -522,8 +545,6 @@ function ensureInjectedApi(win: Window): InjectedApi {
       win.addEventListener('scroll', onScrollOrResize, true)
       win.addEventListener('resize', onScrollOrResize, true)
       scheduleOverlayUpdate()
-
-
     }
 
     function clearSelection() {
@@ -678,7 +699,10 @@ export function attachVisualWebsiteEditor(opts: {
     box.style.display = 'none'
   }
 
-  function updateParentBox(box: HTMLDivElement | null, rect: VisualSelectedElementInfo['rect'] | null) {
+  function updateParentBox(
+    box: HTMLDivElement | null,
+    rect: VisualSelectedElementInfo['rect'] | null,
+  ) {
     if (!box) return
     if (!rect) {
       box.style.display = 'none'
@@ -712,7 +736,8 @@ export function attachVisualWebsiteEditor(opts: {
       const tag = el.tagName.toLowerCase()
       if (tag === 'html' || tag === 'body' || tag === 'script' || tag === 'style') return false
       // 避免把我们注入的节点当成目标
-      if ((el as HTMLElement).dataset && (el as HTMLElement).dataset.glyahhVisualEditor === 'true') return false
+      if ((el as HTMLElement).dataset && (el as HTMLElement).dataset.glyahhVisualEditor === 'true')
+        return false
       return true
     } catch {
       return false
@@ -922,7 +947,10 @@ export function attachVisualWebsiteEditor(opts: {
     ;(parentShield as any).addEventListener('click', onShieldClick as any, true)
     ;(parentShield as any).addEventListener('dblclick', onShieldDblClick as any, true)
     parentShieldWheelListener = onShieldWheel
-    ;(parentShield as any).addEventListener('wheel', onShieldWheel as any, { capture: true, passive: false })
+    ;(parentShield as any).addEventListener('wheel', onShieldWheel as any, {
+      capture: true,
+      passive: false,
+    })
   }
   parentWindowPointerListener = () => {
     if (!parentShield) return
@@ -950,7 +978,9 @@ export function attachVisualWebsiteEditor(opts: {
 
   function getIframeDocHref(): string | null {
     try {
-      return iframeEl.contentWindow?.location?.href ?? iframeEl.contentDocument?.location?.href ?? null
+      return (
+        iframeEl.contentWindow?.location?.href ?? iframeEl.contentDocument?.location?.href ?? null
+      )
     } catch {
       return null
     }
@@ -1128,7 +1158,9 @@ export function attachVisualWebsiteEditor(opts: {
         if (attempts >= maxAttempts) {
           clearRetryTimer()
           reportError(
-            new Error('可视化编辑注入失败：iframe 页面未就绪或仍处于 about:blank（可能预览仍在跳转/加载）'),
+            new Error(
+              '可视化编辑注入失败：iframe 页面未就绪或仍处于 about:blank（可能预览仍在跳转/加载）',
+            ),
           )
         }
         return
@@ -1157,7 +1189,9 @@ export function attachVisualWebsiteEditor(opts: {
         clearRetryTimer()
         // 不再静默：让上层能感知到当前 iframe 无法被注入（常见原因：仍跨域 / CSP / 未就绪）
         reportError(
-          new Error('可视化编辑注入失败：无法向预览 iframe 写入样式/事件（可能仍存在跨域或页面未就绪）'),
+          new Error(
+            '可视化编辑注入失败：无法向预览 iframe 写入样式/事件（可能仍存在跨域或页面未就绪）',
+          ),
         )
       }
     }
@@ -1284,4 +1318,3 @@ export function formatSelectedElementForPrompt(info: VisualSelectedElementInfo):
   if (info.xpath) lines.push(`- xpath: ${info.xpath}`)
   return lines.join('\n')
 }
-

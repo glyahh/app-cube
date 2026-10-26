@@ -191,8 +191,12 @@ onMounted(async () => {
       <section class="search-bar">
         <Form layout="inline">
           <Form.Item label="消息类型">
-            <Input v-model:value="searchForm.messageType" placeholder="user / assistant" allow-clear
-              style="width: 140px" />
+            <Input
+              v-model:value="searchForm.messageType"
+              placeholder="user / assistant"
+              allow-clear
+              style="width: 140px"
+            />
           </Form.Item>
           <Form.Item label="应用 ID">
             <InputNumber v-model:value="searchForm.appId" :min="1" style="width: 140px" />
@@ -202,20 +206,24 @@ onMounted(async () => {
           </Form.Item>
           <Form.Item>
             <Space>
-              <Button type="primary" @click="handleSearch">
-                查询
-              </Button>
-              <Button @click="resetSearch">
-                重置
-              </Button>
+              <Button type="primary" @click="handleSearch"> 查询 </Button>
+              <Button @click="resetSearch"> 重置 </Button>
             </Space>
           </Form.Item>
         </Form>
       </section>
 
       <div class="table-wrapper">
-        <Table :columns="columns" :data-source="tableData" :loading="loading" :pagination="pagination"
-          :scroll="{ x: 1200 }" row-key="id" @change="handleTableChange" bordered />
+        <Table
+          :columns="columns"
+          :data-source="tableData"
+          :loading="loading"
+          :pagination="pagination"
+          :scroll="{ x: 1200 }"
+          row-key="id"
+          @change="handleTableChange"
+          bordered
+        />
       </div>
     </div>
   </main>

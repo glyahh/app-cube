@@ -41,6 +41,9 @@ def run_agent(lines: list[str], timeout: int = 60) -> tuple[list[dict], str, int
         os.environ,
         PYTHONIOENCODING="utf-8",
         AGENT_ENV_FILE=str(AGENT_DIR / "tests" / ".no-such-env-file"),
+        AGENT_MODEL_API_KEY="",
+        DEEPSEEK_API_KEY="",
+        AGENT_MODEL_PROXY_ENABLED="false",
     )
     proc = subprocess.run(
         [sys.executable, "app.py"],

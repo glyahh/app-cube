@@ -74,7 +74,7 @@ class ImportGitReaderTest {
                 ()->true,r->{},input->new String(input.readAllBytes(),java.nio.charset.StandardCharsets.US_ASCII).strip()).value();
         return new ImportGitMetadata.Blob("fixture.bin",id,content.length,false);
     }
-    @Test @EnabledIfSystemProperty(named="import.test.publicGit",matches="true")
+    @com.dbts.glyahhaigeneratecode.ExternalTest
     void managedReaderObtainsBothPublicPlatformsWithoutExecutingProjects() throws Exception {
         var resources=new CopyOnWriteArrayList<ImportProcessRunner.Resource>();
         for(var source:java.util.List.of(ImportRepositorySource.parse("GitHub","https://github.com/octocat/Hello-World"),

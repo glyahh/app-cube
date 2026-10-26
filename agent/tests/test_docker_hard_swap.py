@@ -197,6 +197,7 @@ def test_daemon_failure_is_not_absence_during_reap(manager, monkeypatch, tmp_pat
     assert manager._records[record.session_id] is record
 
 
+@pytest.mark.external
 @pytest.mark.skipif(os.getenv("AGENT_TEST_REAL_DOCKER") != "1", reason="real Docker explicitly required")
 @pytest.mark.parametrize("deny_pin", [False, True])
 def test_real_kernel_admission_and_cleanup(manager, monkeypatch, tmp_path, deny_pin):
@@ -240,6 +241,7 @@ def test_real_kernel_admission_and_cleanup(manager, monkeypatch, tmp_path, deny_
                           "denyPin": deny_pin, "cleanup": "CONFIRMED_ABSENT"}))
 
 
+@pytest.mark.external
 @pytest.mark.skipif(os.getenv("AGENT_TEST_REAL_DOCKER") != "1", reason="real Docker explicitly required")
 def test_real_formal_runtime_refuses_before_model(manager, monkeypatch, tmp_path):
     # get_env 会加载整份 .env；该安全反例不得给后续协议子进程带入真实模型凭据。

@@ -1,0 +1,49 @@
+name: Real AI Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "输入 RUN_REAL_AI 才会产生真实模型调用和费用"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-ai-tests
+  cancel-in-progress: false
+
+jobs:
+  real-model:
+    if: inputs.confirm == 'RUN_REAL_AI'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: real-ai
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: agent/uv.lock
+      - name: Install locked dependencies
+        run: uv sync --directory agent --frozen
+      - name: Require real model credentials before charging the account
+        env:
+          AGENT_MODEL_API_KEY: ${{ secrets.AGENT_MODEL_API_KEY }}
+        run: |
+          if [ -z "${AGENT_MODEL_API_KEY:-}" ]; then
+            echo "real-ai environment 缺少 AGENT_MODEL_API_KEY" >&2
+            exit 1
+          fi
+      - name: One real model request
+        working-directory: agent
+        env:
+          AGENT_MODEL_API_KEY: ${{ secrets.AGENT_MODEL_API_KEY }}
+          AGENT_MODEL_BASE_URL: ${{ secrets.AGENT_MODEL_BASE_URL }}
+          AGENT_MODEL_ID: ${{ secrets.AGENT_MODEL_ID }}
+          AGENT_MODEL_PROXY_ENABLED: "false"
+        run: .venv/bin/python -I -m pytest live_tests -q

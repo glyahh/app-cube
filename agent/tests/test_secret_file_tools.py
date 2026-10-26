@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from backends.local_shell import GuardedShellBackend
-from backends.docker_sandbox import DockerSandboxBackend
+from backends.docker_sandbox import DockerSandboxBackend, SandboxRecord
 
 
 @pytest.fixture(params=['local', 'docker'])
@@ -16,7 +16,9 @@ def backend(request, tmp_path):
     (tmp_path / 'config.py').write_bytes(b'API_TOKEN="VISIBLE_FILE_MARKER"\n')
     if request.param == 'local':
         return GuardedShellBackend(tmp_path)
-    manager = SimpleNamespace(acquire=lambda *a, **kw: SimpleNamespace(container_id='unit-only'))
+    manager = SimpleNamespace(acquire=lambda *a, **kw: SandboxRecord(
+        session_id='unit-only', container_id='unit-only', workspace=tmp_path,
+        image='fixture', created_at=0, last_active_at=0))
     return DockerSandboxBackend(tmp_path, session_id='unit-only', manager=manager)
 
 

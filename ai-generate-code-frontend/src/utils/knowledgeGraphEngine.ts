@@ -163,7 +163,10 @@ export function deriveClusters(nodes: GraphNodeInput[]): Cluster[] {
  * 原型的 importance 是演示数据里写死的；真实图谱里「连得多」就是「更要紧」，
  * 它决定节点半径与标签出现时机。
  */
-export function deriveImportance(nodes: GraphNodeInput[], edges: GraphEdgeInput[]): Map<string, number> {
+export function deriveImportance(
+  nodes: GraphNodeInput[],
+  edges: GraphEdgeInput[],
+): Map<string, number> {
   const degree = new Map<string, number>()
   for (const edge of edges) {
     degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1)
@@ -192,7 +195,8 @@ export function deriveTracePaths(
 ): Array<{ key: string; names: string[]; nodeKeys: string[]; edgeKeys: string[] }> {
   const byKey = new Map(nodes.map((n) => [n.key, n]))
   const endpoints = nodes.filter((n) => (n.kind ?? '').toLowerCase() === 'endpoint').slice(0, 8)
-  const results: Array<{ key: string; names: string[]; nodeKeys: string[]; edgeKeys: string[] }> = []
+  const results: Array<{ key: string; names: string[]; nodeKeys: string[]; edgeKeys: string[] }> =
+    []
 
   for (const start of endpoints) {
     const names = [start.name]
@@ -211,7 +215,8 @@ export function deriveTracePaths(
       }
       const edge = edges.find(
         (e) =>
-          (e.from === current.key && e.to === next.key) || (e.to === current.key && e.from === next.key),
+          (e.from === current.key && e.to === next.key) ||
+          (e.to === current.key && e.from === next.key),
       )
       if (edge) {
         edgeKeys.push(`${edge.from}|${edge.to}`)
@@ -230,7 +235,10 @@ export function deriveTracePaths(
 }
 
 /** 无向邻接表。 */
-export function buildAdjacency(nodes: GraphNodeInput[], edges: GraphEdgeInput[]): Map<string, Set<string>> {
+export function buildAdjacency(
+  nodes: GraphNodeInput[],
+  edges: GraphEdgeInput[],
+): Map<string, Set<string>> {
   const adjacency = new Map<string, Set<string>>(nodes.map((n) => [n.key, new Set<string>()]))
   for (const edge of edges) {
     if (!adjacency.has(edge.from) || !adjacency.has(edge.to)) {
@@ -259,7 +267,16 @@ const HEAT_MIN = 0.014
 const DAMP = 0.86
 const DAMP_DRAG = 0.82
 /** 默认先展示结构层，函数细节通过搜索或选中节点查看。 */
-const STRUCTURE_KINDS = new Set(['file', 'module', 'class', 'endpoint', 'service', 'table', 'database', 'agent'])
+const STRUCTURE_KINDS = new Set([
+  'file',
+  'module',
+  'class',
+  'endpoint',
+  'service',
+  'table',
+  'database',
+  'agent',
+])
 /** 超过这个节点数就降到 dpr=1。 */
 const LOW_DPR_THRESHOLD = 140
 
@@ -299,7 +316,10 @@ export class KnowledgeGraphEngine {
 
   private traceActive = false
   private traceT = 0
-  private tracePaths = new Map<string, { nodeSet: Set<string>; names: string[]; segments: SimEdge[] }>()
+  private tracePaths = new Map<
+    string,
+    { nodeSet: Set<string>; names: string[]; segments: SimEdge[] }
+  >()
 
   private visibleCache: SimNode[] = []
   private visibleSetCache = new Set<string>()
@@ -353,8 +373,13 @@ export class KnowledgeGraphEngine {
 
     this.nodes = nodes.map((node) => {
       const cluster = clusterKeyOf(node)
-      const clusterDef =
-        this.clusters.find((c) => c.id === cluster) ?? { id: cluster, label: cluster, x: 0, y: 0, color: [140, 140, 160] as [number, number, number] }
+      const clusterDef = this.clusters.find((c) => c.id === cluster) ?? {
+        id: cluster,
+        label: cluster,
+        x: 0,
+        y: 0,
+        color: [140, 140, 160] as [number, number, number],
+      }
       const siblings = membersOf.get(cluster) ?? []
       const index = siblings.indexOf(node)
       // 黄金角螺旋铺开，避免同簇节点初始重叠
@@ -398,7 +423,10 @@ export class KnowledgeGraphEngine {
         bias: (hashUnit(edge.from + edge.to + 'b') - 0.5) * 0.36,
       }))
 
-    this.adj = buildAdjacency(nodes, this.edges.map((e) => ({ from: e.a, to: e.b, relation: e.type })))
+    this.adj = buildAdjacency(
+      nodes,
+      this.edges.map((e) => ({ from: e.a, to: e.b, relation: e.type })),
+    )
     this.tracePaths = this.buildTracePaths()
     this.rebuildState()
   }
@@ -406,7 +434,10 @@ export class KnowledgeGraphEngine {
   /**
    * 把纯函数推导出的路径转成渲染需要的形状（节点集合 + 边段）。
    */
-  private buildTracePaths(): Map<string, { nodeSet: Set<string>; names: string[]; segments: SimEdge[] }> {
+  private buildTracePaths(): Map<
+    string,
+    { nodeSet: Set<string>; names: string[]; segments: SimEdge[] }
+  > {
     const inferred = deriveTracePaths(
       this.nodes.map((n) => ({
         key: n.id,
@@ -454,7 +485,9 @@ export class KnowledgeGraphEngine {
 
   private desiredDpr(): number {
     const cap =
-      this.lowPower || this.adaptiveLowQuality || this.visibleCache.length > LOW_DPR_THRESHOLD ? 1 : 1.15
+      this.lowPower || this.adaptiveLowQuality || this.visibleCache.length > LOW_DPR_THRESHOLD
+        ? 1
+        : 1.15
     return Math.min(window.devicePixelRatio || 1, cap)
   }
 
@@ -479,11 +512,17 @@ export class KnowledgeGraphEngine {
   }
 
   private worldToScreen(n: SimNode): { x: number; y: number } {
-    return { x: this.W / 2 + (n.x + this.cam.x) * this.cam.scale, y: this.H / 2 + (n.y + this.cam.y) * this.cam.scale }
+    return {
+      x: this.W / 2 + (n.x + this.cam.x) * this.cam.scale,
+      y: this.H / 2 + (n.y + this.cam.y) * this.cam.scale,
+    }
   }
 
   private screenToWorld(x: number, y: number): { x: number; y: number } {
-    return { x: (x - this.W / 2) / this.cam.scale - this.cam.x, y: (y - this.H / 2) / this.cam.scale - this.cam.y }
+    return {
+      x: (x - this.W / 2) / this.cam.scale - this.cam.x,
+      y: (y - this.H / 2) / this.cam.scale - this.cam.y,
+    }
   }
 
   private updateScreenPositions(): void {
@@ -586,14 +625,14 @@ export class KnowledgeGraphEngine {
     if (this.mode === 'global') {
       list = this.nodes.slice()
     } else {
-      const structure = this.nodes.filter(node => STRUCTURE_KINDS.has(node.kind.toLowerCase()))
+      const structure = this.nodes.filter((node) => STRUCTURE_KINDS.has(node.kind.toLowerCase()))
       const ids = this.selected
         ? new Set([this.selected.id, ...(this.adj.get(this.selected.id) ?? [])])
-        : new Set((structure.length ? structure : this.nodes).map(node => node.id))
+        : new Set((structure.length ? structure : this.nodes).map((node) => node.id))
       if (this.traceActive && this.currentTrace()) {
         for (const id of this.currentTrace()!.nodeSet) ids.add(id)
       }
-      list = this.nodes.filter(node => ids.has(node.id))
+      list = this.nodes.filter((node) => ids.has(node.id))
     }
 
     this.visibleCache = list
@@ -679,7 +718,7 @@ export class KnowledgeGraphEngine {
             const ux = dx / d
             const uy = dy / d
             const minD = 18 + (a.importance + b.importance) * 1.8
-            const rep = (this.mode === 'global' ? 310 : 390) * heat / (d2 * 0.105 + 1)
+            const rep = ((this.mode === 'global' ? 310 : 390) * heat) / (d2 * 0.105 + 1)
             a.vx -= ux * rep * dt
             a.vy -= uy * rep * dt
             b.vx += ux * rep * dt
@@ -740,7 +779,9 @@ export class KnowledgeGraphEngine {
     if (!visible.length) {
       return
     }
-    this.physicsHeat = this.dragNode ? Math.max(0.65, this.physicsHeat) : this.physicsHeat * Math.pow(HEAT_DECAY, dt)
+    this.physicsHeat = this.dragNode
+      ? Math.max(0.65, this.physicsHeat)
+      : this.physicsHeat * Math.pow(HEAT_DECAY, dt)
     if (this.physicsHeat < HEAT_MIN) {
       this.physicsHeat = 0
     }
@@ -775,7 +816,6 @@ export class KnowledgeGraphEngine {
       }
     }
 
-
     for (const node of visible) {
       if (node === this.dragNode) {
         continue
@@ -799,7 +839,15 @@ export class KnowledgeGraphEngine {
   }
 
   private clusterById(id: string): Cluster {
-    return this.clusters.find((c) => c.id === id) ?? { id, label: id, x: 0, y: 0, color: [140, 140, 160] }
+    return (
+      this.clusters.find((c) => c.id === id) ?? {
+        id,
+        label: id,
+        x: 0,
+        y: 0,
+        color: [140, 140, 160],
+      }
+    )
   }
 
   /* ============================ 绘制 ============================ */
@@ -851,7 +899,7 @@ export class KnowledgeGraphEngine {
       }
       return 0.022
     }
-    return edge.type === 'cluster' ? 0.20 : 0.32
+    return edge.type === 'cluster' ? 0.2 : 0.32
   }
 
   private cubicControls(A: SimNode, B: SimNode, edge: SimEdge | null, wobble = 0) {
@@ -916,7 +964,8 @@ export class KnowledgeGraphEngine {
     const wobble = live ? Math.sin(time * 0.0023 + edge.phase) * 0.01 : 0
     const ctx = this.ctx
     ctx.globalAlpha = alpha
-    ctx.strokeStyle = document.documentElement.dataset.theme === 'dark' ? 'rgb(183,187,207)' : '#526078'
+    ctx.strokeStyle =
+      document.documentElement.dataset.theme === 'dark' ? 'rgb(183,187,207)' : '#526078'
     ctx.lineWidth = live ? 0.92 : 0.56
     ctx.beginPath()
     ctx.moveTo(A.sx, A.sy)
@@ -929,7 +978,8 @@ export class KnowledgeGraphEngine {
       const start = Math.max(0, t - 0.048)
       const end = Math.min(1, t + 0.048)
       ctx.globalAlpha = Math.min(0.62, alpha * 0.95)
-      ctx.strokeStyle = document.documentElement.dataset.theme === 'dark' ? 'rgb(222,224,238)' : '#374151'
+      ctx.strokeStyle =
+        document.documentElement.dataset.theme === 'dark' ? 'rgb(222,224,238)' : '#374151'
       ctx.lineWidth = 1.08
       ctx.beginPath()
       for (let i = 0; i < 5; i++) {
@@ -1039,7 +1089,15 @@ export class KnowledgeGraphEngine {
     // 有持续动画（trace 光点 / 线高亮）时节流到 30fps；低配再降一档
     const capTrace = this.traceActive && !moving && !this.isPanning
     const capLine = lineLive && !moving && !this.traceActive
-    const minInterval = capTrace ? (this.lowPower ? 41.7 : 33.3) : capLine ? (this.lowPower ? 50 : 33.3) : 0
+    const minInterval = capTrace
+      ? this.lowPower
+        ? 41.7
+        : 33.3
+      : capLine
+        ? this.lowPower
+          ? 50
+          : 33.3
+        : 0
     if (minInterval && time - this.lastPaint < minInterval) {
       return true
     }
@@ -1072,15 +1130,20 @@ export class KnowledgeGraphEngine {
         continue
       }
       const alpha = this.nodeAlpha(node)
-      const radius = (2.1 + node.importance * 0.54) * Math.min(Math.max(this.cam.scale * 0.84, 0.76), 1.36)
+      const radius =
+        (2.1 + node.importance * 0.54) * Math.min(Math.max(this.cam.scale * 0.84, 0.76), 1.36)
       this.drawShape(node, radius, alpha)
       if (this.shouldLabel(node)) {
         ctx.globalAlpha = alpha
         ctx.shadowBlur = 0
         ctx.fillStyle =
           this.hoverNode?.id === node.id || this.selected?.id === node.id
-            ? (document.documentElement.dataset.theme === 'dark' ? 'rgba(242,243,247,.95)' : '#242733')
-            : (document.documentElement.dataset.theme === 'dark' ? 'rgba(205,207,216,.68)' : '#596273')
+            ? document.documentElement.dataset.theme === 'dark'
+              ? 'rgba(242,243,247,.95)'
+              : '#242733'
+            : document.documentElement.dataset.theme === 'dark'
+              ? 'rgba(205,207,216,.68)'
+              : '#596273'
         ctx.fillText(node.name, node.sx + radius + 6, node.sy + 3)
       }
     }
@@ -1106,7 +1169,13 @@ export class KnowledgeGraphEngine {
       this.resize()
     }
 
-    return this.traceActive || this.physicsHeat > HEAT_MIN || !!this.dragNode || this.cameraMoving() || lineLive
+    return (
+      this.traceActive ||
+      this.physicsHeat > HEAT_MIN ||
+      !!this.dragNode ||
+      this.cameraMoving() ||
+      lineLive
+    )
   }
 
   /* ============================ 交互 ============================ */
@@ -1351,16 +1420,23 @@ export class KnowledgeGraphEngine {
         }
         x /= members.length
         y /= members.length
-        const point = { x: this.W / 2 + (x + this.cam.x) * this.cam.scale, y: this.H / 2 + (y + this.cam.y) * this.cam.scale }
+        const point = {
+          x: this.W / 2 + (x + this.cam.x) * this.cam.scale,
+          y: this.H / 2 + (y + this.cam.y) * this.cam.scale,
+        }
         return {
           id: cluster.id,
           label: cluster.label,
           x: point.x,
           y: point.y,
-          opacity: this.selected?.cluster === cluster.id ? 0.78 : this.mode === 'global' ? 0.72 : 0.38,
+          opacity:
+            this.selected?.cluster === cluster.id ? 0.78 : this.mode === 'global' ? 0.72 : 0.38,
         }
       })
-      .filter((item): item is { id: string; label: string; x: number; y: number; opacity: number } => item !== null)
+      .filter(
+        (item): item is { id: string; label: string; x: number; y: number; opacity: number } =>
+          item !== null,
+      )
   }
 
   nodeCount(): number {

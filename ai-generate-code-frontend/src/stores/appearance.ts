@@ -50,7 +50,15 @@ export const SECTION_KEYS: Record<string, Array<keyof AppearanceSettings>> = {
   colors: ['colorMode', 'primaryColor'],
   fonts: ['fontSize', 'codeFontSize'],
   density: ['compactMode', 'reducedMotion'],
-  preferences: ['defaultCodeType', 'workflowEnabled', 'codeTheme', 'toolCardCollapsed', 'previewExpanded', 'smoothScroll', 'splitRatio'],
+  preferences: [
+    'defaultCodeType',
+    'workflowEnabled',
+    'codeTheme',
+    'toolCardCollapsed',
+    'previewExpanded',
+    'smoothScroll',
+    'splitRatio',
+  ],
 }
 
 /** 默认值：对齐项目现有代码的初值 */
@@ -129,7 +137,7 @@ export function applyToDocument(settings: AppearanceSettings): void {
 }
 
 /** 根据当前设置生成 Ant Design ConfigProvider theme 对象 */
- 
+
 export function resolveThemeConfig(settings: {
   isDark: boolean
   primaryColor: string
@@ -183,7 +191,7 @@ export const useAppearanceStore = defineStore('appearance', () => {
     if (!keys) return
     keys.forEach((k) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (state as any)[k] = DEFAULTS[k]
+      ;(state as any)[k] = DEFAULTS[k]
     })
     persistAndApply()
   }

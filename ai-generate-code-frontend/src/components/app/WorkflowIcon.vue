@@ -12,11 +12,7 @@ const animated = ref(false)
 </script>
 
 <template>
-  <div
-    class="workflow-icon"
-    @mouseenter="animated = true"
-    @mouseleave="animated = false"
-  >
+  <div class="workflow-icon" @mouseenter="animated = true" @mouseleave="animated = false">
     <svg
       :width="size"
       :height="size"

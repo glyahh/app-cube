@@ -44,9 +44,9 @@
             </button>
           </div>
           <div class="toolbox">
-            <button type="button" title="放大" @click="engine?.zoomBy(1.18); startLoop()">＋</button>
-            <button type="button" title="缩小" @click="engine?.zoomBy(0.84); startLoop()">−</button>
-            <button type="button" title="适应视图" @click="engine?.fit(); startLoop()">⌗</button>
+            <button type="button" title="放大" @click="zoomGraph(1.18)">＋</button>
+            <button type="button" title="缩小" @click="zoomGraph(0.84)">−</button>
+            <button type="button" title="适应视图" @click="fitGraph">⌗</button>
             <button type="button" title="重置布局" @click="handleReset">↺</button>
           </div>
         </div>
@@ -268,6 +268,16 @@ function requestDraw(): void {
 
 function startLoop(): void {
   requestDraw()
+}
+
+function zoomGraph(factor: number): void {
+  engine.value?.zoomBy(factor)
+  startLoop()
+}
+
+function fitGraph(): void {
+  engine.value?.fit()
+  startLoop()
 }
 
 function stopLoop(): void {
@@ -522,9 +532,14 @@ function mountGraph(): void {
   startLoop()
 }
 
-const themeObserver = new MutationObserver(() => { startLoop() })
+const themeObserver = new MutationObserver(() => {
+  startLoop()
+})
 onMounted(() => {
-  themeObserver.observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] })
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  })
   mountGraph()
   if (shellRef.value) {
     resizeObserver = new ResizeObserver(() => handleResize())

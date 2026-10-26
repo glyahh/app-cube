@@ -9,7 +9,11 @@ import {
   Switch as ASwitch,
 } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
-import { useAppearanceStore, CODE_THEME_OPTIONS, DEFAULT_CODE_TYPE_OPTIONS } from '@/stores/appearance'
+import {
+  useAppearanceStore,
+  CODE_THEME_OPTIONS,
+  DEFAULT_CODE_TYPE_OPTIONS,
+} from '@/stores/appearance'
 import { useExecutionPreference } from '@/stores/executionPreference'
 import { message } from 'ant-design-vue'
 
@@ -17,24 +21,39 @@ const router = useRouter()
 const store = useAppearanceStore()
 const execution = useExecutionPreference()
 async function saveExecutionPreference(value: boolean | string | number) {
-  try { await execution.save(value === true) }
-  catch { message.error('保存失败，请重试') }
+  try {
+    await execution.save(value === true)
+  } catch {
+    message.error('保存失败，请重试')
+  }
 }
 async function saveStartupFailureAlert(value: boolean | string | number) {
-  try { await execution.saveAlertOnStartupFailure(value === true) }
-  catch { message.error('保存失败，请重试') }
+  try {
+    await execution.saveAlertOnStartupFailure(value === true)
+  } catch {
+    message.error('保存失败，请重试')
+  }
 }
 async function saveRuntimeFailureAlert(value: boolean | string | number) {
-  try { await execution.saveAlertOnRuntimeFailure(value === true) }
-  catch { message.error('保存失败，请重试') }
+  try {
+    await execution.saveAlertOnRuntimeFailure(value === true)
+  } catch {
+    message.error('保存失败，请重试')
+  }
 }
 async function saveAutoModelProxyFallback(value: boolean | string | number) {
-  try { await execution.saveAutoModelProxyFallback(value === true) }
-  catch { message.error('保存失败，请重试') }
+  try {
+    await execution.saveAutoModelProxyFallback(value === true)
+  } catch {
+    message.error('保存失败，请重试')
+  }
 }
 async function saveAutoNameProject(value: boolean | string | number) {
-  try { await execution.saveAutoNameProject(value === true) }
-  catch { message.error('保存失败，请重试') }
+  try {
+    await execution.saveAutoNameProject(value === true)
+  } catch {
+    message.error('保存失败，请重试')
+  }
 }
 const collapseMotionDesc = ref(true) // 减少动画说明列表默认折叠
 
@@ -48,10 +67,7 @@ hello();`
 
 /** 简约的 JS 语法高亮 */
 function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 const highlightedPreview = computed(() => {
@@ -90,10 +106,16 @@ function goBack() {
       <div class="appearance-row">
         <div class="row-label">
           <span class="row-title" id="execution-preference-label">展开思考过程</span>
-          <span class="row-desc">按账号保存，立即同步当前与历史消息；仅控制详情展开，不改变已记录内容。</span>
+          <span class="row-desc"
+            >按账号保存，立即同步当前与历史消息；仅控制详情展开，不改变已记录内容。</span
+          >
         </div>
-        <a-switch :checked="execution.expanded" :loading="execution.saving"
-          aria-labelledby="execution-preference-label" @change="saveExecutionPreference" />
+        <a-switch
+          :checked="execution.expanded"
+          :loading="execution.saving"
+          aria-labelledby="execution-preference-label"
+          @change="saveExecutionPreference"
+        />
       </div>
     </section>
 
@@ -102,26 +124,44 @@ function goBack() {
       <div class="appearance-row">
         <div class="row-label">
           <span class="row-title" id="startup-failure-alert-label">启动异常时弹窗提示</span>
-          <span class="row-desc">应用启动失败（进程异常退出）时弹出提示，可选择让 AI 诊断修复。默认开启。</span>
+          <span class="row-desc"
+            >应用启动失败（进程异常退出）时弹出提示，可选择让 AI 诊断修复。默认开启。</span
+          >
         </div>
-        <a-switch :checked="execution.alertOnStartupFailure" :loading="execution.saving"
-          aria-labelledby="startup-failure-alert-label" @change="saveStartupFailureAlert" />
+        <a-switch
+          :checked="execution.alertOnStartupFailure"
+          :loading="execution.saving"
+          aria-labelledby="startup-failure-alert-label"
+          @change="saveStartupFailureAlert"
+        />
       </div>
       <div class="appearance-row">
         <div class="row-label">
           <span class="row-title" id="runtime-failure-alert-label">运行异常时弹窗提示</span>
-          <span class="row-desc">应用运行期间出现未处理异常时弹出提示。默认关闭，避免偶发错误频繁打扰；错误仍会记录在运行日志里。</span>
+          <span class="row-desc"
+            >应用运行期间出现未处理异常时弹出提示。默认关闭，避免偶发错误频繁打扰；错误仍会记录在运行日志里。</span
+          >
         </div>
-        <a-switch :checked="execution.alertOnRuntimeFailure" :loading="execution.saving"
-          aria-labelledby="runtime-failure-alert-label" @change="saveRuntimeFailureAlert" />
+        <a-switch
+          :checked="execution.alertOnRuntimeFailure"
+          :loading="execution.saving"
+          aria-labelledby="runtime-failure-alert-label"
+          @change="saveRuntimeFailureAlert"
+        />
       </div>
       <div class="appearance-row">
         <div class="row-label">
           <span class="row-title" id="model-proxy-fallback-label">代理连接失败时自动直连</span>
-          <span class="row-desc">仅代理无法建立连接时重试当前模型调用；成功后该应用后续固定直连。默认关闭。</span>
+          <span class="row-desc"
+            >仅代理无法建立连接时重试当前模型调用；成功后该应用后续固定直连。默认关闭。</span
+          >
         </div>
-        <a-switch :checked="execution.autoModelProxyFallback" :loading="execution.saving"
-          aria-labelledby="model-proxy-fallback-label" @change="saveAutoModelProxyFallback" />
+        <a-switch
+          :checked="execution.autoModelProxyFallback"
+          :loading="execution.saving"
+          aria-labelledby="model-proxy-fallback-label"
+          @change="saveAutoModelProxyFallback"
+        />
       </div>
     </section>
     <!-- A. 基础颜色 -->
@@ -137,7 +177,7 @@ function goBack() {
           <a-select
             :value="store.colorMode"
             style="width: 140px"
-            @change="(v) => store.colorMode = v as 'system' | 'light' | 'dark'"
+            @change="(v) => (store.colorMode = v as 'system' | 'light' | 'dark')"
           >
             <a-select-option value="system">跟随系统</a-select-option>
             <a-select-option value="light">浅色</a-select-option>
@@ -158,7 +198,9 @@ function goBack() {
             type="color"
             aria-label="主题强调色"
           />
-          <a-button size="small" @click="store.primaryColor = store.DEFAULTS.primaryColor">重置</a-button>
+          <a-button size="small" @click="store.primaryColor = store.DEFAULTS.primaryColor"
+            >重置</a-button
+          >
         </div>
       </div>
     </section>
@@ -179,7 +221,7 @@ function goBack() {
             :step="1"
             :value="store.fontSize"
             style="width: 160px"
-            @update:value="(v) => store.fontSize = Number(v)"
+            @update:value="(v) => (store.fontSize = Number(v))"
           />
           <span class="slider-value">{{ store.fontSize }}px</span>
           <a-button size="small" @click="store.fontSize = store.DEFAULTS.fontSize">重置</a-button>
@@ -198,16 +240,19 @@ function goBack() {
             :step="1"
             :value="store.codeFontSize"
             style="width: 160px"
-            @update:value="(v) => store.codeFontSize = Number(v)"
+            @update:value="(v) => (store.codeFontSize = Number(v))"
           />
           <span class="slider-value">{{ store.codeFontSize }}px</span>
-          <a-button size="small" @click="store.codeFontSize = store.DEFAULTS.codeFontSize">重置</a-button>
+          <a-button size="small" @click="store.codeFontSize = store.DEFAULTS.codeFontSize"
+            >重置</a-button
+          >
         </div>
       </div>
 
       <!-- 代码字号预览 -->
       <div class="appearance-row appearance-row--code-preview">
-        <pre class="code-preview"
+        <pre
+          class="code-preview"
           :style="{ fontSize: store.codeFontSize + 'px' }"
         ><code v-html="highlightedPreview"></code></pre>
       </div>
@@ -223,7 +268,10 @@ function goBack() {
           <span class="row-desc">减小内边距和间距，显示更多内容</span>
         </div>
         <div class="row-control">
-          <a-switch :checked="store.compactMode" @change="(v) => store.compactMode = Boolean(v)" />
+          <a-switch
+            :checked="store.compactMode"
+            @change="(v) => (store.compactMode = Boolean(v))"
+          />
         </div>
       </div>
 
@@ -233,7 +281,10 @@ function goBack() {
           <span class="row-desc">关闭界面切换和内容加载的过渡动画</span>
         </div>
         <div class="row-control">
-          <a-switch :checked="store.reducedMotion" @change="(v) => store.reducedMotion = Boolean(v)" />
+          <a-switch
+            :checked="store.reducedMotion"
+            @change="(v) => (store.reducedMotion = Boolean(v))"
+          />
         </div>
       </div>
 
@@ -244,7 +295,11 @@ function goBack() {
             class="motion-detail__label motion-detail__label--clickable"
             @click="collapseMotionDesc = !collapseMotionDesc"
           >
-            <span class="motion-detail__arrow" :class="{ 'motion-detail__arrow--expanded': !collapseMotionDesc }">▶</span>
+            <span
+              class="motion-detail__arrow"
+              :class="{ 'motion-detail__arrow--expanded': !collapseMotionDesc }"
+              >▶</span
+            >
             关闭后以下动画将被抑制：
           </div>
           <div v-show="!collapseMotionDesc" class="motion-detail__collapse-wrap">
@@ -260,7 +315,9 @@ function goBack() {
             <div class="motion-demo__header">对比演示</div>
             <div class="motion-demo__body">
               <div class="motion-demo__dot" />
-              <span class="motion-demo__text">{{ store.reducedMotion ? '动画已关闭 — 静态无脉冲' : '动画运行中 — 蓝色圆点规律脉冲' }}</span>
+              <span class="motion-demo__text">{{
+                store.reducedMotion ? '动画已关闭 — 静态无脉冲' : '动画运行中 — 蓝色圆点规律脉冲'
+              }}</span>
             </div>
           </div>
         </div>
@@ -271,10 +328,17 @@ function goBack() {
     <section class="appearance-section">
       <div class="section-header">生成与聊天偏好</div>
       <div class="appearance-row">
-        <div class="row-label"><span id="auto-name-label" class="row-title">自动命名项目</span></div>
+        <div class="row-label">
+          <span id="auto-name-label" class="row-title">自动命名项目</span>
+        </div>
         <div class="row-control">
-          <a-switch :checked="execution.autoNameProject" :loading="execution.saving" :disabled="!execution.ready"
-            aria-labelledby="auto-name-label" @change="saveAutoNameProject" />
+          <a-switch
+            :checked="execution.autoNameProject"
+            :loading="execution.saving"
+            :disabled="!execution.ready"
+            aria-labelledby="auto-name-label"
+            @change="saveAutoNameProject"
+          />
         </div>
       </div>
 
@@ -287,13 +351,16 @@ function goBack() {
           <a-select
             :value="store.defaultCodeType"
             style="width: 140px"
-            @change="(v) => store.defaultCodeType = v as 'auto' | 'html' | 'multi_file' | 'vue_project'"
+            @change="
+              (v) => (store.defaultCodeType = v as 'auto' | 'html' | 'multi_file' | 'vue_project')
+            "
           >
             <a-select-option
               v-for="opt in DEFAULT_CODE_TYPE_OPTIONS"
               :key="opt.value"
               :value="opt.value"
-            >{{ opt.label }}</a-select-option>
+              >{{ opt.label }}</a-select-option
+            >
           </a-select>
         </div>
       </div>
@@ -304,7 +371,10 @@ function goBack() {
           <span class="row-desc">BETA — 逻辑更严谨、图片更贴切</span>
         </div>
         <div class="row-control">
-          <a-switch :checked="store.workflowEnabled" @change="(v) => store.workflowEnabled = Boolean(v)" />
+          <a-switch
+            :checked="store.workflowEnabled"
+            @change="(v) => (store.workflowEnabled = Boolean(v))"
+          />
         </div>
       </div>
 
@@ -317,13 +387,14 @@ function goBack() {
           <a-select
             :value="store.codeTheme"
             style="width: 120px"
-            @change="(v) => store.codeTheme = v as 'default' | 'high-contrast' | 'soft'"
+            @change="(v) => (store.codeTheme = v as 'default' | 'high-contrast' | 'soft')"
           >
             <a-select-option
               v-for="opt in CODE_THEME_OPTIONS"
               :key="opt.value"
               :value="opt.value"
-            >{{ opt.label }}</a-select-option>
+              >{{ opt.label }}</a-select-option
+            >
           </a-select>
         </div>
       </div>
@@ -334,7 +405,10 @@ function goBack() {
           <span class="row-desc">写入/修改文件卡片默认收起</span>
         </div>
         <div class="row-control">
-          <a-switch :checked="store.toolCardCollapsed" @change="(v) => store.toolCardCollapsed = Boolean(v)" />
+          <a-switch
+            :checked="store.toolCardCollapsed"
+            @change="(v) => (store.toolCardCollapsed = Boolean(v))"
+          />
         </div>
       </div>
 
@@ -344,7 +418,10 @@ function goBack() {
           <span class="row-desc">打开对话时显示 iframe 预览</span>
         </div>
         <div class="row-control">
-          <a-switch :checked="store.previewExpanded" @change="(v) => store.previewExpanded = Boolean(v)" />
+          <a-switch
+            :checked="store.previewExpanded"
+            @change="(v) => (store.previewExpanded = Boolean(v))"
+          />
         </div>
       </div>
 
@@ -354,7 +431,10 @@ function goBack() {
           <span class="row-desc">新内容自动滚动到底部</span>
         </div>
         <div class="row-control">
-          <a-switch :checked="store.smoothScroll" @change="(v) => store.smoothScroll = Boolean(v)" />
+          <a-switch
+            :checked="store.smoothScroll"
+            @change="(v) => (store.smoothScroll = Boolean(v))"
+          />
         </div>
       </div>
     </section>
@@ -408,7 +488,7 @@ function goBack() {
 .appearance-section {
   background: var(--bg-card, #fff);
   border-radius: var(--radius-lg, 12px);
-  box-shadow: var(--shadow-card, 0 2px 8px rgba(0,0,0,0.06));
+  box-shadow: var(--shadow-card, 0 2px 8px rgba(0, 0, 0, 0.06));
   overflow: hidden;
   margin-bottom: var(--spacing-md, 16px);
 }
@@ -545,8 +625,15 @@ function goBack() {
 }
 
 @keyframes motion-demo-pulse {
-  0%, 100% { opacity: 0.4; transform: scale(0.9); }
-  50% { opacity: 1; transform: scale(1.15); }
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
 }
 
 .motion-demo__text {
@@ -565,7 +652,7 @@ function goBack() {
   flex: 1;
   margin: 0;
   padding: 10px 14px;
-  font-family: var(--code-font-family, Consolas, Monaco, "Courier New", monospace);
+  font-family: var(--code-font-family, Consolas, Monaco, 'Courier New', monospace);
   line-height: 1.7;
   color: var(--code-text, #d4d4d4);
   background: var(--code-bg, #1e1e1e);
@@ -581,12 +668,26 @@ function goBack() {
   background: none;
 }
 
-.code-preview :deep(.code-keyword) { color: var(--code-keyword, #569cd6); font-weight: 500; }
-.code-preview :deep(.code-string) { color: var(--code-string, #e6b450); }
-.code-preview :deep(.code-comment) { color: var(--code-comment, #7f8ea3); font-style: italic; }
-.code-preview :deep(.code-number) { color: var(--code-number, #c4b5fd); }
-.code-preview :deep(.code-operator) { color: var(--code-operator, #f38ba8); }
-.code-preview :deep(.code-function) { color: var(--code-function, #7ee787); }
+.code-preview :deep(.code-keyword) {
+  color: var(--code-keyword, #569cd6);
+  font-weight: 500;
+}
+.code-preview :deep(.code-string) {
+  color: var(--code-string, #e6b450);
+}
+.code-preview :deep(.code-comment) {
+  color: var(--code-comment, #7f8ea3);
+  font-style: italic;
+}
+.code-preview :deep(.code-number) {
+  color: var(--code-number, #c4b5fd);
+}
+.code-preview :deep(.code-operator) {
+  color: var(--code-operator, #f38ba8);
+}
+.code-preview :deep(.code-function) {
+  color: var(--code-function, #7ee787);
+}
 
 /* ---------- 减少动画折叠 ---------- */
 .motion-detail__label--clickable {
@@ -613,7 +714,9 @@ function goBack() {
 
 .motion-detail__collapse-wrap {
   overflow: hidden;
-  transition: max-height 200ms ease, opacity 150ms ease;
+  transition:
+    max-height 200ms ease,
+    opacity 150ms ease;
 }
 
 /* ---------- 响应式 ---------- */

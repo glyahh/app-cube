@@ -66,6 +66,7 @@ temp/**
 .firecrawl/
 .editorconfig
 AGENTS.md
+!AGENTS.md
 CLAUDE.md
 /CONTEXT.md
 tools/
@@ -83,6 +84,8 @@ __pycache__/
 
 ### 浏览器自动化产物（截图 / 快照 / 控制台日志）###
 .playwright-mcp/
+ai-generate-code-frontend/test-results/
+ai-generate-code-frontend/playwright-report/
 
 ### Prometheus TSDB (runtime state, ~128MB) ###
 /data/

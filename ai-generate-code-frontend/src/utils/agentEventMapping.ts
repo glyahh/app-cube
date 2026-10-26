@@ -99,9 +99,21 @@ export type AgentUiAction =
   | { kind: 'paused'; text: string }
   | { kind: 'done' }
   | { kind: 'model_route_fallback' }
-  | { kind: 'thinking_started'; thinkingId: string; summary: string; details: string; status: string }
+  | {
+      kind: 'thinking_started'
+      thinkingId: string
+      summary: string
+      details: string
+      status: string
+    }
   | { kind: 'thinking_delta'; thinkingId: string; summary: string; details: string; status: string }
-  | { kind: 'thinking_completed'; thinkingId: string; summary: string; details: string; status: string }
+  | {
+      kind: 'thinking_completed'
+      thinkingId: string
+      summary: string
+      details: string
+      status: string
+    }
   | { kind: 'ignore' }
 
 /** 映射一帧 Agent 事件。未知事件一律 ignore —— 新事件不该让前端报错。 */
@@ -113,8 +125,15 @@ export function mapAgentEvent(name: string, payload: Record<string, unknown>): A
       const thinkingId = String(payload.thinkingId ?? '')
       const summary = String(payload.summary ?? '')
       const details = String(payload.details ?? '')
-      const status = String(payload.status ?? (name.endsWith('completed') ? 'completed' : 'running'))
-      const kind = name === 'thinking.started' ? 'thinking_started' : name === 'thinking.delta' ? 'thinking_delta' : 'thinking_completed'
+      const status = String(
+        payload.status ?? (name.endsWith('completed') ? 'completed' : 'running'),
+      )
+      const kind =
+        name === 'thinking.started'
+          ? 'thinking_started'
+          : name === 'thinking.delta'
+            ? 'thinking_delta'
+            : 'thinking_completed'
       return { kind, thinkingId, summary, details, status } as AgentUiAction
     }
     case 'text.delta': {
@@ -134,7 +153,8 @@ export function mapAgentEvent(name: string, payload: Record<string, unknown>): A
         kind: 'tool_started',
         callId: String(payload.callId ?? ''),
         toolName,
-        label: TOOL_LABELS[toolName] || (typeof payload.label === 'string' ? payload.label : '正在处理'),
+        label:
+          TOOL_LABELS[toolName] || (typeof payload.label === 'string' ? payload.label : '正在处理'),
         target: primaryArg(payload),
       }
     }
@@ -145,7 +165,8 @@ export function mapAgentEvent(name: string, payload: Record<string, unknown>): A
         kind: 'tool_finished',
         callId: String(payload.callId ?? ''),
         toolName,
-        label: TOOL_LABELS[toolName] || (typeof payload.label === 'string' ? payload.label : '正在处理'),
+        label:
+          TOOL_LABELS[toolName] || (typeof payload.label === 'string' ? payload.label : '正在处理'),
         status: String(payload.status ?? 'succeeded'),
         ...(typeof payload.exitCode === 'number' ? { exitCode: payload.exitCode } : {}),
         outputPreview: typeof payload.outputPreview === 'string' ? payload.outputPreview : '',

@@ -30,8 +30,15 @@ function resolveRequest(raw: string, method: string, params: Record<string, unkn
   workbenchCalls.push({ method, path })
   if (path === '/app/get/vo' && method === 'GET') {
     const current = requireProject(url.searchParams.get('id') ?? '')
-    return { id: current.appId, appName: current.name, userId: 'preview-user', codeGenType: 'auto',
-      initPrompt: '', hasGeneratedCode: true, isBeta: 0 }
+    return {
+      id: current.appId,
+      appName: current.name,
+      userId: 'preview-user',
+      codeGenType: 'auto',
+      initPrompt: '',
+      hasGeneratedCode: true,
+      isBeta: 0,
+    }
   }
   const history = path.match(/^\/chatHistory\/(app|roundCount)\/([^/]+)$/)
   if (history && method === 'GET') {
@@ -49,11 +56,15 @@ function resolveRequest(raw: string, method: string, params: Record<string, unkn
     // 不用合成代码冒充用户文件内容，当前步骤只接入工作台。
     return []
   }
-  const app = path.match(/^\/app\/([^/]+)\/(workspace|runtime\/status|runtime\/heartbeat|runtime\/incidents)$/)
+  const app = path.match(
+    /^\/app\/([^/]+)\/(workspace|runtime\/status|runtime\/heartbeat|runtime\/incidents)$/,
+  )
   if (app) {
     requireProject(app[1]!)
-    if (app[2] === 'workspace' && method === 'GET') return { hasSource: true, staticEntry: null, capabilities: [], dashboardFeatures: [] }
-    if (app[2] === 'runtime/status' && method === 'GET') return { status: 'STOPPED', running: false, supported: null }
+    if (app[2] === 'workspace' && method === 'GET')
+      return { hasSource: true, staticEntry: null, capabilities: [], dashboardFeatures: [] }
+    if (app[2] === 'runtime/status' && method === 'GET')
+      return { status: 'STOPPED', running: false, supported: null }
     if (app[2] === 'runtime/heartbeat' && method === 'POST') return true
     if (app[2] === 'runtime/incidents' && method === 'GET') return []
   }
@@ -64,8 +75,14 @@ function resolveRequest(raw: string, method: string, params: Record<string, unkn
 export function installWorkbenchTransport() {
   // 1. 已有生成客户端仍使用原调用方式，响应只来自页面内存。
   request.defaults.adapter = async (config) => ({
-    data: { code: 0, data: resolveRequest(config.url ?? '', (config.method ?? 'GET').toUpperCase(), config.params) },
-    status: 200, statusText: 'OK', headers: {}, config,
+    data: {
+      code: 0,
+      data: resolveRequest(config.url ?? '', (config.method ?? 'GET').toUpperCase(), config.params),
+    },
+    status: 200,
+    statusText: 'OK',
+    headers: {},
+    config,
   })
   // 2. 手写 fetch 客户端也隔离；同源静态资源仍按原路径加载。
   const originalFetch = window.fetch.bind(window)
@@ -84,12 +101,18 @@ export function installWorkbenchTransport() {
 }
 
 /** 流式交互替身只在隔离 Vite 配置中替换，不建立 WebSocket/SSE 或调用模型。 */
-export function openAgentStream(_base: string, options: AgentStreamOptions, handlers: AgentStreamHandlers) {
+export function openAgentStream(
+  _base: string,
+  options: AgentStreamOptions,
+  handlers: AgentStreamHandlers,
+) {
   const current = requireProject(String(options.appId))
   workbenchCalls.push({ method: 'LOCAL', path: `/chat/${current.appId}` })
   const timer = setTimeout(() => {
     if (project?.appId !== current.appId || project.taskId !== current.taskId) return
-    handlers.onEvent('text.delta', { content: `当前工程包含 ${current.files.length} 个文件。你想先调整哪个页面或功能？` })
+    handlers.onEvent('text.delta', {
+      content: `当前工程包含 ${current.files.length} 个文件。你想先调整哪个页面或功能？`,
+    })
     handlers.onEvent('done', {})
   }, 600)
   return { close: () => clearTimeout(timer), transport: () => null }

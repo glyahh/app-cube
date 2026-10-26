@@ -109,4 +109,3 @@ export function calculateSplitRatioWithOffset(
   const raw = leftWidth / availableWidth
   return clampRatio(raw)
 }
-

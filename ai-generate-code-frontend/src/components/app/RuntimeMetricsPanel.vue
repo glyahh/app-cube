@@ -244,9 +244,14 @@ watch(paused, (value) => {
   }
 })
 
-const themeObserver = new MutationObserver(() => { render() })
+const themeObserver = new MutationObserver(() => {
+  render()
+})
 onMounted(() => {
-  themeObserver.observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] })
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  })
   if (props.running) {
     startPolling()
   } else {

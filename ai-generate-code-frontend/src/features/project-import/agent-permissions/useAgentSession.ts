@@ -16,10 +16,7 @@ import type {
  * <p>导入应用读取权限会话与候选审阅；普通应用只读取应用级模型偏好。
  * 组件只负责展示，布局由调用方决定。
  */
-export function useAgentSession(input: {
-  appId: Ref<string>
-  streaming: Ref<boolean>
-}) {
+export function useAgentSession(input: { appId: Ref<string>; streaming: Ref<boolean> }) {
   const session = ref<api.SessionSettings | null>(null)
   const options = ref<AgentModelOption[]>([])
   const tool = ref<api.ToolPermission | null>(null)
@@ -55,7 +52,8 @@ export function useAgentSession(input: {
           highRisk: review.value.risk === 'HIGH',
           files: review.value.body.changes.map((change) => ({
             path: change.path,
-            change: change.before === null ? 'ADDED' : change.after === null ? 'DELETED' : 'MODIFIED',
+            change:
+              change.before === null ? 'ADDED' : change.after === null ? 'DELETED' : 'MODIFIED',
             highRisk: review.value?.risk === 'HIGH',
             binary: false,
           })),
@@ -113,25 +111,26 @@ export function useAgentSession(input: {
       if (disposed) return
       tool.value = pending
       // 后端给的是变更类型，前端按 before/after 是否为空推断；这里换算成同义形状。
-      review.value = latest && latest.status === 'WAITING'
-        ? {
-            editId: latest.reviewId,
-            revision: latest.revision,
-            hash: latest.reviewHash,
-            risk: latest.risk,
-            status: latest.status,
-            body: {
-              changes: latest.body.changes.map((change) => ({
-                path: change.path,
-                before: change.change === 'ADDED' ? null : (change.beforeText ?? ''),
-                after: change.change === 'DELETED' ? null : (change.afterText ?? ''),
-                beforeText: change.beforeText ?? null,
-                afterText: change.afterText ?? null,
-                truncated: change.truncated === true,
-              })),
-            },
-          }
-        : null
+      review.value =
+        latest && latest.status === 'WAITING'
+          ? {
+              editId: latest.reviewId,
+              revision: latest.revision,
+              hash: latest.reviewHash,
+              risk: latest.risk,
+              status: latest.status,
+              body: {
+                changes: latest.body.changes.map((change) => ({
+                  path: change.path,
+                  before: change.change === 'ADDED' ? null : (change.beforeText ?? ''),
+                  after: change.change === 'DELETED' ? null : (change.afterText ?? ''),
+                  beforeText: change.beforeText ?? null,
+                  afterText: change.afterText ?? null,
+                  truncated: change.truncated === true,
+                })),
+              },
+            }
+          : null
       return
     }
     const current = await api.active(input.appId.value)
@@ -207,13 +206,18 @@ export function useAgentSession(input: {
       }
       // 普通应用：模式与模型分别存两张表，各有独立 revision；只提交真正变化的那个。
       if (next.mode !== session.value.mode) {
-        const saved = await api.saveEditMode(input.appId.value, modePolicyRevision.value || null, next.mode,
-          sandboxMode.value)
+        const saved = await api.saveEditMode(
+          input.appId.value,
+          modePolicyRevision.value || null,
+          next.mode,
+          sandboxMode.value,
+        )
         if (disposed) return
         modePolicyRevision.value = saved.policyRevision
         session.value = { ...session.value, mode: saved.mode }
       }
-      const modelChanged = next.modelId !== session.value.profileId || next.effort !== session.value.effort
+      const modelChanged =
+        next.modelId !== session.value.profileId || next.effort !== session.value.effort
       if (modelChanged) {
         const savedModel = await api.saveProjectModel(
           input.appId.value,
@@ -282,9 +286,25 @@ export function useAgentSession(input: {
   }
 
   return {
-    session, options, tool, review, state, saving, deciding, error, merged,
-    settings, candidate, diffs, toolRequest, blocked,
+    session,
+    options,
+    tool,
+    review,
+    state,
+    saving,
+    deciding,
+    error,
+    merged,
+    settings,
+    candidate,
+    diffs,
+    toolRequest,
+    blocked,
     isImportApp,
-    load, saveSettings, decideTool, decideReview, dispose,
+    load,
+    saveSettings,
+    decideTool,
+    decideReview,
+    dispose,
   }
 }

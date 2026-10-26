@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 psycopg = pytest.importorskip('psycopg')
+pytestmark = pytest.mark.external
 
 
 def _dsn():

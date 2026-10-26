@@ -43,7 +43,10 @@ export function normalizeDeployUrl(rawUrl: unknown): string {
 /**
  * 根据 deployKey 与 API 前缀拼接部署访问地址（与后端 AppController#buildDeployUrlFromRequest 一致）。
  */
-export function buildDeployUrlFromKey(deployKey: string | null | undefined, apiBaseUrl: string): string {
+export function buildDeployUrlFromKey(
+  deployKey: string | null | undefined,
+  apiBaseUrl: string,
+): string {
   if (deployKey === undefined || deployKey === null || String(deployKey).trim() === '') return ''
   const base = apiBaseUrl.replace(/\/$/, '')
   const relative = `${base}/deploy/${String(deployKey).trim()}/`
