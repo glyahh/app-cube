@@ -24,7 +24,7 @@ class ImportStartupModelExecutorTest {
     ImportStartupService.ModelInput input=new ImportStartupService.ModelInput(files,List.of(range),List.of(known));
     ImportStartupApprovalRepository.Approval approval=new ImportStartupApprovalRepository.Approval(UUID.randomUUID(),UUID.randomUUID(),7,42,UUID.randomUUID(),UUID.randomUUID(),"a".repeat(64),2,3,
         ImportStartupInspectionRepository.RULES_VERSION,List.of("backend"),true,"RUNNING",1,Instant.now().plusSeconds(120),null,null,false);
-    ImportStartupModelExecutor executor()throws Exception{var props=new ImportProperties();props.setStagingRoot(root.resolve("staging"));return new ImportStartupModelExecutor(props,new org.springframework.core.env.StandardEnvironment());}
+    ImportStartupModelExecutor executor()throws Exception{var props=new ImportProperties();props.setStagingRoot(Files.createDirectories(root.resolve("staging")).toRealPath());return new ImportStartupModelExecutor(props,new org.springframework.core.env.StandardEnvironment());}
     String payload()throws Exception{
         var service=new LinkedHashMap<String,Object>();service.put("name","后端");service.put("directory","backend");service.put("command","python -m uvicorn app:app");service.put("build",null);
         service.put("evidence",List.of("backend/app.py"));service.put("source","AGENT");service.put("certainty","INFERRED");service.put("evidenceHashes",Map.of("backend/app.py",HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(files.get("backend/app.py").getBytes(StandardCharsets.UTF_8)))));

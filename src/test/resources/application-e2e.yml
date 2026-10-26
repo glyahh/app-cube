@@ -34,3 +34,9 @@ agent:
 workspace:
   output-root: ${E2E_WORKSPACE_ROOT:target/e2e/code_output}
   deploy-root: ${E2E_DEPLOY_ROOT:target/e2e/code_deploy}
+aliyun:
+  oss:
+    endpoint: https://oss-cn-hangzhou.aliyuncs.com
+    access-key-id: e2e-only
+    access-key-secret: e2e-only
+    bucket-name: e2e-only

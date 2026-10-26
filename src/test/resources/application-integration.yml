@@ -10,3 +10,9 @@ agent:
   pool:
     core-size: 0
     max-size: 1
+aliyun:
+  oss:
+    endpoint: https://oss-cn-hangzhou.aliyuncs.com
+    access-key-id: integration-only
+    access-key-secret: integration-only
+    bucket-name: integration-only

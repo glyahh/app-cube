@@ -6,6 +6,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+@com.dbts.glyahhaigeneratecode.ExternalTest
 class ImportNativeWorkerTest {
     @Test void stoppedBeforeStartCannotLaunchLateProcess() throws Exception {
         var edit=UUID.randomUUID();var lease=UUID.randomUUID();var worker=new ImportNativeWorker(edit,lease);
