@@ -8,10 +8,16 @@
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from backends.local_shell import GuardedShellBackend
 from backends.permissions import CommandRejected
+
+FILE_COMMAND = "type src\\index.html" if sys.platform == "win32" else "cat src/index.html"
+LIST_COMMAND = "dir" if sys.platform == "win32" else "ls"
+MISSING_COMMAND = "type does_not_exist.txt" if sys.platform == "win32" else "cat does_not_exist.txt"
 
 
 @pytest.fixture
@@ -60,13 +66,13 @@ def test_runs_allowed_command(backend):
 
 
 def test_reads_workspace_file(backend):
-    result = backend.execute("type src\\index.html")
+    result = backend.execute(FILE_COMMAND)
     assert result.exit_code == 0
     assert "页面" in result.output
 
 
 def test_reports_nonzero_exit(backend):
-    result = backend.execute("type does_not_exist.txt")
+    result = backend.execute(MISSING_COMMAND)
     assert result.exit_code != 0
     assert "Exit code" in result.output
 
@@ -79,12 +85,14 @@ def test_non_utf8_output_does_not_crash(backend):
     框架原版用 text=True 按默认编码解，会抛 UnicodeDecodeError 把结果吞掉。
     这里必须能把中文原样带回来。
     """
-    result = backend.execute("dir")
+    result = backend.execute(LIST_COMMAND)
 
     assert result.exit_code == 0
     assert result.output != "<no output>", "输出被编码错误吞掉了"
-    # GBK 里的中文目录名应该能读出来
-    assert "中文目录" in result.output or "说明" in result.output
+    assert "src" in result.output
+    if sys.platform == "win32":
+        # GBK 里的中文目录名应该能读出来
+        assert "中文目录" in result.output or "说明" in result.output
 
 
 # ─────────────────────────── 输出治理 ───────────────────────────
@@ -93,7 +101,7 @@ def test_truncates_huge_output(backend, monkeypatch):
     import backends.local_shell as ls
     monkeypatch.setattr(ls, "MAX_OUTPUT_CHARS", 50)
 
-    result = backend.execute("dir")
+    result = backend.execute(LIST_COMMAND)
 
     assert result.truncated is True
     assert "输出已截断" in result.output

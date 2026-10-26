@@ -39,6 +39,8 @@ ALLOWED_COMMANDS = frozenset({
     "git",
     # 无害的
     "echo", "cd",
+    # POSIX 等价命令；路径仍走同一套白名单与越界校验
+    "ls", "cat",
 })
 
 # 会改变执行流的 shell 操作符。禁止它们，一条命令就只能做一件事。
@@ -91,7 +93,7 @@ def ensure_safe_command(command: str, workspace: Path) -> None:
     if not parts:
         raise CommandRejected("命令为空")
 
-    executable = Path(parts[0]).name.lower()
+    executable = Path(parts[0].replace("\\", "/")).name.lower()
     if executable.endswith(".exe"):
         executable = executable[:-4]
     if executable not in ALLOWED_COMMANDS:
@@ -105,8 +107,9 @@ def ensure_safe_command(command: str, workspace: Path) -> None:
         candidate = token.strip()
         if not candidate:
             continue
-        # 单独一个 .. 或在路径中段出现，都算上级引用
-        if ".." in Path(candidate).parts:
+        normalized = candidate.replace("\\", "/")
+        # Windows 与 POSIX 分隔符都要检查；Linux 上 Path 不会把反斜杠当分隔符。
+        if ".." in Path(normalized).parts:
             raise CommandRejected(f"参数 {token!r} 含上级目录引用，不允许")
         # 盘符路径与 POSIX 风格绝对路径都要校验归属
         if _WINDOWS_ABS.match(candidate) or candidate.startswith(("/", "\\")):

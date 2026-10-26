@@ -34,6 +34,8 @@ def rejected(command: str) -> str:
     "dir",
     "dir src",
     "type src/index.html",
+    "ls",
+    "cat src/index.html",
     "python script.py",
     "python -m pytest",
     "pip install -r requirements.txt",
