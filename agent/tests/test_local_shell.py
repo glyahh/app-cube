@@ -101,7 +101,7 @@ def test_truncates_huge_output(backend, monkeypatch):
     import backends.local_shell as ls
     monkeypatch.setattr(ls, "MAX_OUTPUT_CHARS", 50)
 
-    result = backend.execute(LIST_COMMAND)
+    result = backend.execute("echo " + "x" * 100)
 
     assert result.truncated is True
     assert "输出已截断" in result.output
