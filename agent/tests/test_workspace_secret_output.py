@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 import pytest
 
-from backends.docker_sandbox import DockerSandboxBackend
+from backends.docker_sandbox import DockerSandboxBackend, SandboxRecord
 from backends.local_shell import GuardedShellBackend
 from backends.workspace_secrets import WorkspaceSecrets
 
@@ -35,7 +35,9 @@ def backend(request, tmp_path, monkeypatch):
         local_completed = subprocess.CompletedProcess('fixture', 0, output.encode(), output.encode())
         monkeypatch.setattr('backends.local_shell.subprocess.run', lambda *a, **k: local_completed)
     else:
-        manager = SimpleNamespace(acquire=lambda *a, **k: SimpleNamespace(container_id='unit-only'),
+        manager = SimpleNamespace(acquire=lambda *a, **k: SandboxRecord(
+            session_id='unit-only', container_id='unit-only', workspace=tmp_path,
+            image='fixture', created_at=0, last_active_at=0),
                                   execute=lambda *a, **k: completed)
         backend = DockerSandboxBackend(tmp_path, session_id='unit-only', manager=manager)
     return backend, value, values

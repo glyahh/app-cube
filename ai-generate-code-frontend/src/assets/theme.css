@@ -32,7 +32,9 @@
   /* 字号 */
   --font-size-base: 15px;
   --code-font-size: 13px;
-  --font-family-base: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  --font-family-base:
+    Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell,
+    'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
 
   /* 圆角 */
   --radius-sm: 6px;
@@ -71,7 +73,7 @@
 }
 
 /* ---------- 深色模式 ---------- */
-[data-theme="dark"] {
+[data-theme='dark'] {
   --color-primary-bg: #111d2c;
 
   --bg-base: #1a1a2e;
@@ -92,7 +94,7 @@
 }
 
 /* ---------- 紧凑模式 ---------- */
-[data-compact="true"] {
+[data-compact='true'] {
   --font-size-base: 13px;
   --code-font-size: 12px;
   --spacing-xs: 2px;
@@ -103,7 +105,7 @@
 }
 
 /* ---------- 代码块高对比主题 ---------- */
-[data-code-theme="high-contrast"] {
+[data-code-theme='high-contrast'] {
   --code-keyword: #ff79c6;
   --code-string: #f1fa8c;
   --code-comment: #6272a4;
@@ -120,7 +122,7 @@
 }
 
 /* ---------- 代码块柔和主题 ---------- */
-[data-code-theme="soft"] {
+[data-code-theme='soft'] {
   --code-keyword: #5c8ec4;
   --code-string: #c9a85e;
   --code-comment: #8c9aa8;
@@ -138,20 +140,20 @@
 
 /* ---------- 减少动画 ---------- */
 /* 用户设置（data-reduced-motion）与系统偏好双重覆盖 */
-:not([class*="ant-"]) {
+:not([class*='ant-']) {
   transition-duration: var(--transition-duration);
   animation-duration: var(--transition-duration);
 }
 
-[data-reduced-motion="true"] *,
-[data-reduced-motion="true"] *::before,
-[data-reduced-motion="true"] *::after {
+[data-reduced-motion='true'] *,
+[data-reduced-motion='true'] *::before,
+[data-reduced-motion='true'] *::after {
   transition-duration: 0s !important;
   animation-duration: 0s !important;
   animation-iteration-count: 1 !important;
   animation-delay: 0s !important;
 }
 
-[data-reduced-motion="true"] .motion-demo__dot {
+[data-reduced-motion='true'] .motion-demo__dot {
   animation: none !important;
 }

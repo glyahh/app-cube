@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { Layout as ALayout, LayoutContent as ALayoutContent, LayoutHeader as ALayoutHeader } from 'ant-design-vue'
+import {
+  Layout as ALayout,
+  LayoutContent as ALayoutContent,
+  LayoutHeader as ALayoutHeader,
+} from 'ant-design-vue'
 import GlobalHeader from '@/components/GlobalHeader.vue'
 import GlobalFooter from '@/components/GlobalFooter.vue'
 </script>
@@ -56,10 +60,23 @@ import GlobalFooter from '@/components/GlobalFooter.vue'
   }
 }
 /* 聊天工作台独占剩余视口，滚动留在面板内部。 */
-.basic-layout:has(.app-chat-page) { height:100dvh; min-height:0; overflow:hidden; }
-.basic-layout:has(.app-chat-page) .layout-header { flex-shrink:0; }
-.layout-content:has(.app-chat-page) { min-height:0; padding:12px 24px; margin-bottom:48px; overflow:hidden; }
-@media (max-width:768px) {
-  .layout-content:has(.app-chat-page) { padding:8px; }
+.basic-layout:has(.app-chat-page) {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+.basic-layout:has(.app-chat-page) .layout-header {
+  flex-shrink: 0;
+}
+.layout-content:has(.app-chat-page) {
+  min-height: 0;
+  padding: 12px 24px;
+  margin-bottom: 48px;
+  overflow: hidden;
+}
+@media (max-width: 768px) {
+  .layout-content:has(.app-chat-page) {
+    padding: 8px;
+  }
 }
 </style>

@@ -1,12 +1,23 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Table, Button, Modal, Form, Input, Select, message, Space, Image, Tag } from 'ant-design-vue'
+import {
+  Table,
+  Button,
+  Modal,
+  Form,
+  Input,
+  Select,
+  message,
+  Space,
+  Image,
+  Tag,
+} from 'ant-design-vue'
 import type { ColumnsType } from 'ant-design-vue/es/table'
 import {
   userListPageVoUsingPost,
   userOpenApiDeleteUsingPost,
-  userUpdateUsingPost
+  userUpdateUsingPost,
 } from '@/api/userController'
 import type { UserVO, UserUpdateRequest } from '@/api/types'
 import { UserLoginStore } from '@/stores/UserLogin'
@@ -82,14 +93,14 @@ function handleSearch(field: 'id' | 'userAccount', value: string) {
   let filtered = [...originalTableData.value]
 
   if (searchState.value.idValue) {
-    filtered = filtered.filter((item) =>
-      String(item.id || '').includes(searchState.value.idValue)
-    )
+    filtered = filtered.filter((item) => String(item.id || '').includes(searchState.value.idValue))
   }
 
   if (searchState.value.userAccountValue) {
     filtered = filtered.filter((item) =>
-      (item.userAccount || '').toLowerCase().includes(searchState.value.userAccountValue.toLowerCase())
+      (item.userAccount || '')
+        .toLowerCase()
+        .includes(searchState.value.userAccountValue.toLowerCase()),
     )
   }
 
@@ -304,50 +315,81 @@ const columns: ColumnsType<UserVO> = [
       const isHover = searchState.value.hoverField === 'id'
 
       if (isActive) {
-        return h('div', {
-          class: 'search-header-active',
-          style: {
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '100%',
-            height: '100%',
-            padding: '0 4px',
-          },
-        }, [
-          h(Input, {
-            value: searchState.value.idValue,
-            placeholder: '输入ID搜索',
-            size: 'small',
+        return h(
+          'div',
+          {
+            class: 'search-header-active',
             style: {
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               width: '100%',
+              height: '100%',
+              padding: '0 4px',
             },
-            onInput: (e: Event) => {
-              const value = (e.target as HTMLInputElement).value
-              handleSearch('id', value)
-              if (!value && !searchState.value.userAccountValue) {
-                deactivateSearch()
-              }
-            },
-            onBlur: () => {
-              if (!searchState.value.idValue && !searchState.value.userAccountValue) {
-                deactivateSearch()
-              }
-            },
-            onPressEnter: () => {
-              handleSearch('id', searchState.value.idValue)
-            },
-            autofocus: true,
-          }),
-        ])
+          },
+          [
+            h(Input, {
+              value: searchState.value.idValue,
+              placeholder: '输入ID搜索',
+              size: 'small',
+              style: {
+                width: '100%',
+              },
+              onInput: (e: Event) => {
+                const value = (e.target as HTMLInputElement).value
+                handleSearch('id', value)
+                if (!value && !searchState.value.userAccountValue) {
+                  deactivateSearch()
+                }
+              },
+              onBlur: () => {
+                if (!searchState.value.idValue && !searchState.value.userAccountValue) {
+                  deactivateSearch()
+                }
+              },
+              onPressEnter: () => {
+                handleSearch('id', searchState.value.idValue)
+              },
+              autofocus: true,
+            }),
+          ],
+        )
       }
 
       if (isHover) {
-        return h(Button, {
-          type: 'text',
-          size: 'small',
-          class: 'search-trigger-btn search-trigger-id',
-          onClick: () => activateSearch('id'),
+        return h(
+          Button,
+          {
+            type: 'text',
+            size: 'small',
+            class: 'search-trigger-btn search-trigger-id',
+            onClick: () => activateSearch('id'),
+            onMouseenter: () => {
+              searchState.value.hoverField = 'id'
+            },
+            onMouseleave: () => {
+              searchState.value.hoverField = null
+            },
+            style: {
+              width: '100%',
+              height: '100%',
+              border: 'none',
+              background: 'transparent',
+              fontWeight: 500,
+              color: '#1890ff',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              padding: '4px 4px',
+            },
+          },
+          () => 'ID搜索',
+        )
+      }
+
+      return h(
+        'div',
+        {
+          class: 'search-header-default',
           onMouseenter: () => {
             searchState.value.hoverField = 'id'
           },
@@ -355,36 +397,17 @@ const columns: ColumnsType<UserVO> = [
             searchState.value.hoverField = null
           },
           style: {
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            cursor: 'pointer',
             width: '100%',
             height: '100%',
-            border: 'none',
-            background: 'transparent',
-            fontWeight: 500,
-            color: '#1890ff',
-            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-            padding: '4px 4px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           },
-        }, () => 'ID搜索')
-      }
-
-      return h('div', {
-        class: 'search-header-default',
-        onMouseenter: () => {
-          searchState.value.hoverField = 'id'
         },
-        onMouseleave: () => {
-          searchState.value.hoverField = null
-        },
-        style: {
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          cursor: 'pointer',
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
-      }, 'ID')
+        'ID',
+      )
     },
     dataIndex: 'id',
     key: 'id',
@@ -397,49 +420,80 @@ const columns: ColumnsType<UserVO> = [
       const isHover = searchState.value.hoverField === 'userAccount'
 
       if (isActive) {
-        return h('div', {
-          class: 'search-header-active',
-          style: {
-            display: 'flex',
-            alignItems: 'center',
-            width: '100%',
-            height: '100%',
-            padding: '0 4px',
-          },
-        }, [
-          h(Input, {
-            value: searchState.value.userAccountValue,
-            placeholder: '输入账号搜索',
-            size: 'small',
+        return h(
+          'div',
+          {
+            class: 'search-header-active',
             style: {
+              display: 'flex',
+              alignItems: 'center',
               width: '100%',
+              height: '100%',
+              padding: '0 4px',
             },
-            onInput: (e: Event) => {
-              const value = (e.target as HTMLInputElement).value
-              handleSearch('userAccount', value)
-              if (!value && !searchState.value.idValue) {
-                deactivateSearch()
-              }
-            },
-            onBlur: () => {
-              if (!searchState.value.userAccountValue && !searchState.value.idValue) {
-                deactivateSearch()
-              }
-            },
-            onPressEnter: () => {
-              handleSearch('userAccount', searchState.value.userAccountValue)
-            },
-            autofocus: true,
-          }),
-        ])
+          },
+          [
+            h(Input, {
+              value: searchState.value.userAccountValue,
+              placeholder: '输入账号搜索',
+              size: 'small',
+              style: {
+                width: '100%',
+              },
+              onInput: (e: Event) => {
+                const value = (e.target as HTMLInputElement).value
+                handleSearch('userAccount', value)
+                if (!value && !searchState.value.idValue) {
+                  deactivateSearch()
+                }
+              },
+              onBlur: () => {
+                if (!searchState.value.userAccountValue && !searchState.value.idValue) {
+                  deactivateSearch()
+                }
+              },
+              onPressEnter: () => {
+                handleSearch('userAccount', searchState.value.userAccountValue)
+              },
+              autofocus: true,
+            }),
+          ],
+        )
       }
 
       if (isHover) {
-        return h(Button, {
-          type: 'text',
-          size: 'small',
-          class: 'search-trigger-btn',
-          onClick: () => activateSearch('userAccount'),
+        return h(
+          Button,
+          {
+            type: 'text',
+            size: 'small',
+            class: 'search-trigger-btn',
+            onClick: () => activateSearch('userAccount'),
+            onMouseenter: () => {
+              searchState.value.hoverField = 'userAccount'
+            },
+            onMouseleave: () => {
+              searchState.value.hoverField = null
+            },
+            style: {
+              width: '100%',
+              height: '100%',
+              border: 'none',
+              background: 'transparent',
+              fontWeight: 500,
+              color: '#1890ff',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              padding: '4px 8px',
+            },
+          },
+          () => '点击根据账号搜索',
+        )
+      }
+
+      return h(
+        'div',
+        {
+          class: 'search-header-default',
           onMouseenter: () => {
             searchState.value.hoverField = 'userAccount'
           },
@@ -447,35 +501,16 @@ const columns: ColumnsType<UserVO> = [
             searchState.value.hoverField = null
           },
           style: {
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            cursor: 'pointer',
             width: '100%',
             height: '100%',
-            border: 'none',
-            background: 'transparent',
-            fontWeight: 500,
-            color: '#1890ff',
-            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-            padding: '4px 8px',
+            display: 'flex',
+            alignItems: 'center',
           },
-        }, () => '点击根据账号搜索')
-      }
-
-      return h('div', {
-        class: 'search-header-default',
-        onMouseenter: () => {
-          searchState.value.hoverField = 'userAccount'
         },
-        onMouseleave: () => {
-          searchState.value.hoverField = null
-        },
-        style: {
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          cursor: 'pointer',
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-        },
-      }, '账号')
+        '账号',
+      )
     },
     dataIndex: 'userAccount',
     key: 'userAccount',
@@ -550,34 +585,46 @@ const columns: ColumnsType<UserVO> = [
     align: 'center',
     fixed: 'right',
     customRender: ({ record }: { record: UserVO }) => {
-      return h(Space, {
-        direction: 'vertical',
-        size: 'small',
-        style: { width: '100%' },
-      }, () => [
-        h(Button, {
+      return h(
+        Space,
+        {
+          direction: 'vertical',
           size: 'small',
-          onClick: () => openEditModal(record),
-          style: {
-            width: '100%',
-            backgroundColor: '#FFD700',
-            borderColor: '#FFD700',
-            color: '#000',
-          },
-          class: 'edit-btn',
-        }, () => '修改'),
-        h(Button, {
-          size: 'small',
-          onClick: () => openDeleteModal(record),
-          style: {
-            width: '100%',
-            backgroundColor: '#DC143C',
-            borderColor: '#DC143C',
-            color: '#fff',
-          },
-          class: 'delete-btn',
-        }, () => '删除'),
-      ])
+          style: { width: '100%' },
+        },
+        () => [
+          h(
+            Button,
+            {
+              size: 'small',
+              onClick: () => openEditModal(record),
+              style: {
+                width: '100%',
+                backgroundColor: '#FFD700',
+                borderColor: '#FFD700',
+                color: '#000',
+              },
+              class: 'edit-btn',
+            },
+            () => '修改',
+          ),
+          h(
+            Button,
+            {
+              size: 'small',
+              onClick: () => openDeleteModal(record),
+              style: {
+                width: '100%',
+                backgroundColor: '#DC143C',
+                borderColor: '#DC143C',
+                color: '#fff',
+              },
+              class: 'delete-btn',
+            },
+            () => '删除',
+          ),
+        ],
+      )
     },
   },
 ]
@@ -605,17 +652,41 @@ onMounted(async () => {
       </div>
 
       <div class="table-wrapper">
-        <Table :columns="columns" :data-source="tableData" :loading="loading" :pagination="pagination"
-          :scroll="{ x: 1400 }" row-key="id" @change="handleTableChange" bordered />
+        <Table
+          :columns="columns"
+          :data-source="tableData"
+          :loading="loading"
+          :pagination="pagination"
+          :scroll="{ x: 1400 }"
+          row-key="id"
+          @change="handleTableChange"
+          bordered
+        />
       </div>
     </div>
 
     <!-- 修改用户对话框 -->
-    <Modal v-model:open="editModalVisible" title="修改用户信息" :confirm-loading="loading" @ok="handleEditSubmit"
-      @cancel="closeEditModal" width="600px" :mask-closable="false">
-      <Form ref="editFormRef" :model="editForm" :label-col="{ span: 6 }" :wrapper-col="{ span: 16 }"
-        layout="horizontal">
-        <Form.Item label="用户名" name="userName" :rules="[{ required: true, message: '请输入用户名' }]">
+    <Modal
+      v-model:open="editModalVisible"
+      title="修改用户信息"
+      :confirm-loading="loading"
+      @ok="handleEditSubmit"
+      @cancel="closeEditModal"
+      width="600px"
+      :mask-closable="false"
+    >
+      <Form
+        ref="editFormRef"
+        :model="editForm"
+        :label-col="{ span: 6 }"
+        :wrapper-col="{ span: 16 }"
+        layout="horizontal"
+      >
+        <Form.Item
+          label="用户名"
+          name="userName"
+          :rules="[{ required: true, message: '请输入用户名' }]"
+        >
           <Input v-model:value="editForm.userName" placeholder="请输入用户名" />
         </Form.Item>
 
@@ -624,10 +695,18 @@ onMounted(async () => {
         </Form.Item>
 
         <Form.Item label="简介" name="userProfile">
-          <Input.TextArea v-model:value="editForm.userProfile" placeholder="请输入用户简介" :rows="4" />
+          <Input.TextArea
+            v-model:value="editForm.userProfile"
+            placeholder="请输入用户简介"
+            :rows="4"
+          />
         </Form.Item>
 
-        <Form.Item label="用户角色" name="userRole" :rules="[{ required: true, message: '请选择用户角色' }]">
+        <Form.Item
+          label="用户角色"
+          name="userRole"
+          :rules="[{ required: true, message: '请选择用户角色' }]"
+        >
           <Select v-model:value="editForm.userRole" placeholder="请选择用户角色">
             <Select.Option value="user">普通用户</Select.Option>
             <Select.Option value="admin">管理员</Select.Option>
@@ -637,8 +716,16 @@ onMounted(async () => {
     </Modal>
 
     <!-- 删除确认对话框 -->
-    <Modal v-model:open="deleteModalVisible" title="确认删除" @ok="handleDeleteConfirm" @cancel="closeDeleteModal"
-      :confirm-loading="loading" ok-text="确认删除" cancel-text="取消" ok-type="danger">
+    <Modal
+      v-model:open="deleteModalVisible"
+      title="确认删除"
+      @ok="handleDeleteConfirm"
+      @cancel="closeDeleteModal"
+      :confirm-loading="loading"
+      ok-text="确认删除"
+      cancel-text="取消"
+      ok-type="danger"
+    >
       <p>确定要删除该用户吗？此操作不可恢复。</p>
     </Modal>
   </main>
@@ -728,32 +815,32 @@ onMounted(async () => {
 }
 
 :deep(.edit-btn) {
-  background-color: #FFD700 !important;
-  border-color: #FFD700 !important;
+  background-color: #ffd700 !important;
+  border-color: #ffd700 !important;
   color: #000 !important;
   box-shadow: 0 4px 12px rgba(255, 215, 0, 0.4);
   transition: all 0.3s ease;
 }
 
 :deep(.edit-btn:hover) {
-  background-color: #FFEB3B !important;
-  border-color: #FFEB3B !important;
+  background-color: #ffeb3b !important;
+  border-color: #ffeb3b !important;
   color: #000 !important;
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(255, 215, 0, 0.6);
 }
 
 :deep(.delete-btn) {
-  background-color: #DC143C !important;
-  border-color: #DC143C !important;
+  background-color: #dc143c !important;
+  border-color: #dc143c !important;
   color: #fff !important;
   box-shadow: 0 4px 12px rgba(220, 20, 60, 0.4);
   transition: all 0.3s ease;
 }
 
 :deep(.delete-btn:hover) {
-  background-color: #FF0000 !important;
-  border-color: #FF0000 !important;
+  background-color: #ff0000 !important;
+  border-color: #ff0000 !important;
   color: #fff !important;
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(220, 20, 60, 0.6);

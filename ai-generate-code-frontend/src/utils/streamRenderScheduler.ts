@@ -34,8 +34,10 @@ export function createStreamRenderScheduler(
   const order: string[] = []
   const maxBytesPerFrame = options.maxBytesPerFrame ?? DEFAULT_MAX_BYTES_PER_FRAME
   const maxWorkMs = options.maxWorkMs ?? DEFAULT_MAX_WORK_MS
-  const now = options.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()))
-  const fallbackSetTimeout = options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay) as unknown as number)
+  const now =
+    options.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()))
+  const fallbackSetTimeout =
+    options.setTimeout ?? ((callback, delay) => setTimeout(callback, delay) as unknown as number)
   const fallbackClearTimeout = options.clearTimeout ?? ((handle) => clearTimeout(handle))
   const scheduleFrame =
     options.scheduleFrame ??
@@ -80,7 +82,8 @@ export function createStreamRenderScheduler(
           const source = queue.chunks[0] ?? ''
           const sourceBytes = byteLength(source)
           const available = remainingBytes - streamBytes
-          const take = sourceBytes <= available ? source.length : takePrefixByBytes(source, available)
+          const take =
+            sourceBytes <= available ? source.length : takePrefixByBytes(source, available)
           parts.push(source.slice(0, take))
           if (take === source.length) queue.chunks.shift()
           else queue.chunks[0] = source.slice(take)

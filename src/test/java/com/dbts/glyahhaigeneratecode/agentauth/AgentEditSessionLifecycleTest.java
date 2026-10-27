@@ -1,5 +1,6 @@
 package com.dbts.glyahhaigeneratecode.agentauth;
 
+import com.dbts.glyahhaigeneratecode.ExternalTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -16,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  *
  * <p>需要 AGENT_POSTGRES_DSN 与 V44–V47；缺失时整类跳过。
  */
+@ExternalTest
 class AgentEditSessionLifecycleTest {
     private static final String DSN = dsn();
 

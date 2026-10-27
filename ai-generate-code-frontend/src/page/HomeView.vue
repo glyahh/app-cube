@@ -119,7 +119,9 @@ const ossOrigin = computed(() => {
   if (envOrigin) return envOrigin.replace(/\/$/, '')
   // 备用：从已有 cover 数据中反推 origin
   const all = [...(goodApps.value.records ?? []), ...(myApps.value.records ?? [])]
-  const cover = all.find((x) => x.cover && typeof x.cover === 'string' && String(x.cover).trim() !== '')?.cover
+  const cover = all.find(
+    (x) => x.cover && typeof x.cover === 'string' && String(x.cover).trim() !== '',
+  )?.cover
   if (!cover) return ''
   const c = String(cover).trim()
   try {
@@ -551,19 +553,19 @@ onMounted(() => {
 
 <template>
   <main class="home-page">
-    <AModal v-model:open="deployModalVisible" title="部署成功" :footer="null" centered @cancel="handleDeployModalClose">
+    <AModal
+      v-model:open="deployModalVisible"
+      title="部署成功"
+      :footer="null"
+      centered
+      @cancel="handleDeployModalClose"
+    >
       <div class="deploy-modal">
-        <p class="deploy-modal-text">
-          应用已成功部署，访问地址如下：
-        </p>
+        <p class="deploy-modal-text">应用已成功部署，访问地址如下：</p>
         <AInput readonly :value="deployUrl" class="deploy-modal-input" />
         <div class="deploy-modal-actions">
-          <AButton type="primary" @click="handleDeployVisit">
-            一键访问
-          </AButton>
-          <AButton @click="handleDeployCopy">
-            复制地址
-          </AButton>
+          <AButton type="primary" @click="handleDeployVisit"> 一键访问 </AButton>
+          <AButton @click="handleDeployCopy"> 复制地址 </AButton>
         </div>
       </div>
     </AModal>
@@ -579,17 +581,27 @@ onMounted(() => {
         <div class="prompt-card-border">
           <div class="prompt-card-beam" aria-hidden="true" />
           <div class="prompt-card">
-            <AInput.TextArea v-model:value="prompt" class="prompt-input" :rows="3"
-              placeholder="使用应用魔方创建一个小工具，例如：旅行计划记录网站……" />
+            <AInput.TextArea
+              v-model:value="prompt"
+              class="prompt-input"
+              :rows="3"
+              placeholder="使用应用魔方创建一个小工具，例如：旅行计划记录网站……"
+            />
             <div class="prompt-footer">
-              <div class="prompt-hint">
-                支持自然语言描述，越具体效果越好
-              </div>
+              <div class="prompt-hint">支持自然语言描述，越具体效果越好</div>
               <div class="prompt-actions">
                 <!-- Loop 按钮（带 beta 标志） -->
-                <LoopPickerTrigger ref="loopPickerRef" :single-select="true" :show-beta="true" @single-change="onLoopSingleChange" />
+                <LoopPickerTrigger
+                  ref="loopPickerRef"
+                  :single-select="true"
+                  :show-beta="true"
+                  @single-change="onLoopSingleChange"
+                />
                 <!-- 工作流生成按钮（? 帮助按钮在里面，Loop 选择时禁用，去掉 beta 标志） -->
-                <ATooltip :title="selectedLoopId ? '已选择 Loop 时暂不支持工作流生成' : workflowBetaTooltip" placement="top">
+                <ATooltip
+                  :title="selectedLoopId ? '已选择 Loop 时暂不支持工作流生成' : workflowBetaTooltip"
+                  placement="top"
+                >
                   <button
                     type="button"
                     class="workflow-beta-btn"
@@ -622,14 +634,22 @@ onMounted(() => {
                 <AButton type="primary" shape="round" :loading="creating" @click="handleCreateApp">
                   开始生成
                 </AButton>
-                <AButton shape="round" @click="router.push({ name: 'project-import' })">导入项目</AButton>
+                <AButton shape="round" @click="router.push({ name: 'project-import' })"
+                  >导入项目</AButton
+                >
               </div>
             </div>
           </div>
         </div>
         <div class="prompt-quick-row">
-          <AButton v-for="item in quickPrompts" :key="item.label" size="large" shape="round"
-            class="prompt-quick-btn" @click="handleQuickPrompt(item)">
+          <AButton
+            v-for="item in quickPrompts"
+            :key="item.label"
+            size="large"
+            shape="round"
+            class="prompt-quick-btn"
+            @click="handleQuickPrompt(item)"
+          >
             {{ item.label }}
           </AButton>
         </div>
@@ -649,9 +669,7 @@ onMounted(() => {
             allow-clear
             @press-enter="loadGoodApps"
           />
-          <AButton type="primary" ghost @click="loadGoodApps">
-            搜索
-          </AButton>
+          <AButton type="primary" ghost @click="loadGoodApps"> 搜索 </AButton>
         </div>
       </div>
 
@@ -684,9 +702,15 @@ onMounted(() => {
       </div>
 
       <div v-if="goodApps.total > 0" class="pagination-wrap">
-        <APagination :current="goodApps.pageNum" :page-size="goodApps.pageSize" :total="goodApps.total"
-          :show-size-changer="true" :page-size-options="['10', '20', '40', '80']" @change="handleGoodPageChange"
-          @show-size-change="handleGoodPageChange" />
+        <APagination
+          :current="goodApps.pageNum"
+          :page-size="goodApps.pageSize"
+          :total="goodApps.total"
+          :show-size-changer="true"
+          :page-size-options="['10', '20', '40', '80']"
+          @change="handleGoodPageChange"
+          @show-size-change="handleGoodPageChange"
+        />
       </div>
     </section>
 
@@ -742,9 +766,7 @@ onMounted(() => {
               style="width: 180px"
               @press-enter="loadMyApps"
             />
-            <AButton type="primary" ghost @click="loadMyApps">
-              搜索
-            </AButton>
+            <AButton type="primary" ghost @click="loadMyApps"> 搜索 </AButton>
           </div>
         </div>
         <div class="card-grid" v-loading="myApps.loading">
@@ -798,28 +820,22 @@ onMounted(() => {
                     </ATag>
                   </div>
                   <div class="app-meta">
-                  <div class="app-meta-type">
-                    <span class="app-meta-type-label">生成类型</span>
-                    <span class="app-meta-type-tag">
-                      {{ app.codeGenType || 'multi_file' }}
-                    </span>
+                    <div class="app-meta-type">
+                      <span class="app-meta-type-label">生成类型</span>
+                      <span class="app-meta-type-tag">
+                        {{ app.codeGenType || 'multi_file' }}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div class="app-actions" @click.stop>
-                <AButton size="small" type="link" danger @click="handleDeleteApp(app)">
-                  删除
-                </AButton>
-                <AButton size="small" type="link" @click="goEdit(app)">
-                  编辑
-                </AButton>
-                <AButton size="small" type="link" @click="handleDeploy(app)">
-                  部署
-                </AButton>
-                <AButton size="small" type="link" @click="handleUndeploy(app)">
-                  下线
-                </AButton>
-              </div>
+                <div class="app-actions" @click.stop>
+                  <AButton size="small" type="link" danger @click="handleDeleteApp(app)">
+                    删除
+                  </AButton>
+                  <AButton size="small" type="link" @click="goEdit(app)"> 编辑 </AButton>
+                  <AButton size="small" type="link" @click="handleDeploy(app)"> 部署 </AButton>
+                  <AButton size="small" type="link" @click="handleUndeploy(app)"> 下线 </AButton>
+                </div>
               </div>
             </ACard>
           </template>
@@ -830,9 +846,15 @@ onMounted(() => {
           </template>
         </div>
         <div v-if="myApps.total > 0" class="pagination-wrap">
-          <APagination :current="myApps.pageNum" :page-size="myApps.pageSize" :total="myApps.total"
-            :show-size-changer="true" :page-size-options="['10', '20', '40', '80']" @change="handleMyPageChange"
-            @show-size-change="handleMyPageChange" />
+          <APagination
+            :current="myApps.pageNum"
+            :page-size="myApps.pageSize"
+            :total="myApps.total"
+            :show-size-changer="true"
+            :page-size-options="['10', '20', '40', '80']"
+            @change="handleMyPageChange"
+            @show-size-change="handleMyPageChange"
+          />
         </div>
       </div>
     </section>
@@ -994,22 +1016,20 @@ onMounted(() => {
   z-index: 2;
   border-radius: inherit;
   pointer-events: none;
-  background:
-    linear-gradient(
-      120deg,
-      rgba(59, 130, 246, 0.42),
-      rgba(45, 212, 191, 0.42),
-      rgba(244, 114, 182, 0.42),
-      rgba(129, 140, 248, 0.42),
-      rgba(59, 130, 246, 0.42)
-    );
+  background: linear-gradient(
+    120deg,
+    rgba(59, 130, 246, 0.42),
+    rgba(45, 212, 191, 0.42),
+    rgba(244, 114, 182, 0.42),
+    rgba(129, 140, 248, 0.42),
+    rgba(59, 130, 246, 0.42)
+  );
   background-size: 300% 300%;
   background-position: 0% 50%;
   opacity: 1;
   animation:
     beamIntroBorderFlow var(--beam-intro-duration) linear forwards,
-    beamIntroFadeOut 0.38s ease-out calc(var(--beam-intro-duration) - 0.38s)
-      forwards;
+    beamIntroFadeOut 0.38s ease-out calc(var(--beam-intro-duration) - 0.38s) forwards;
 }
 
 @keyframes beamIntroBorderFlow {
@@ -1211,7 +1231,9 @@ onMounted(() => {
   color: var(--text-secondary, rgba(15, 23, 42, 0.5));
   background: rgba(15, 23, 42, 0.06);
   cursor: help;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 .workflow-beta-help-icon:hover {
   background: rgba(59, 130, 246, 0.14);
@@ -1228,12 +1250,16 @@ onMounted(() => {
   background: rgba(148, 163, 184, 0.2);
 }
 
-
 .workflow-beta-btn--active {
   border-color: rgba(59, 130, 246, 0.48);
   background:
     radial-gradient(circle at 0 0, rgba(129, 140, 248, 0.28), transparent 55%),
-    linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(45, 212, 191, 0.2), rgba(129, 140, 248, 0.18)),
+    linear-gradient(
+      135deg,
+      rgba(56, 189, 248, 0.18),
+      rgba(45, 212, 191, 0.2),
+      rgba(129, 140, 248, 0.18)
+    ),
     rgba(255, 255, 255, 0.9);
   box-shadow:
     0 16px 34px rgba(15, 23, 42, 0.14),
@@ -1361,7 +1387,12 @@ onMounted(() => {
   border-radius: 999px;
   background:
     radial-gradient(circle at 16% 20%, rgba(191, 219, 254, 0.55), transparent 40%),
-    linear-gradient(120deg, rgba(219, 234, 254, 0.9), rgba(186, 230, 253, 0.84), rgba(224, 242, 254, 0.88));
+    linear-gradient(
+      120deg,
+      rgba(219, 234, 254, 0.9),
+      rgba(186, 230, 253, 0.84),
+      rgba(224, 242, 254, 0.88)
+    );
   color: var(--color-primary, #1e3a8a);
   display: inline-flex;
   align-items: center;
@@ -1389,7 +1420,12 @@ onMounted(() => {
   border-color: rgba(37, 99, 235, 0.42);
   background:
     radial-gradient(circle at 16% 20%, rgba(96, 165, 250, 0.35), transparent 40%),
-    linear-gradient(120deg, rgba(191, 219, 254, 0.92), rgba(125, 211, 252, 0.88), rgba(191, 219, 254, 0.9));
+    linear-gradient(
+      120deg,
+      rgba(191, 219, 254, 0.92),
+      rgba(125, 211, 252, 0.88),
+      rgba(191, 219, 254, 0.9)
+    );
   box-shadow:
     0 12px 26px rgba(37, 99, 235, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.65);
@@ -1517,7 +1553,12 @@ onMounted(() => {
     radial-gradient(circle at 8% 0%, rgba(56, 189, 248, 0.2), transparent 38%),
     radial-gradient(circle at 92% 8%, rgba(129, 140, 248, 0.2), transparent 38%),
     radial-gradient(circle at 48% 120%, rgba(45, 212, 191, 0.16), transparent 44%),
-    linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(236, 253, 245, 0.94), rgba(239, 246, 255, 0.96));
+    linear-gradient(
+      135deg,
+      rgba(248, 250, 252, 0.98),
+      rgba(236, 253, 245, 0.94),
+      rgba(239, 246, 255, 0.96)
+    );
 }
 
 .apps-section--featured::after {
@@ -1535,7 +1576,12 @@ onMounted(() => {
     radial-gradient(circle at 12% -6%, rgba(251, 191, 36, 0.18), transparent 36%),
     radial-gradient(circle at 88% 4%, rgba(244, 114, 182, 0.14), transparent 34%),
     radial-gradient(circle at 76% 112%, rgba(99, 102, 241, 0.14), transparent 40%),
-    linear-gradient(136deg, rgba(255, 255, 255, 0.98), rgba(254, 242, 242, 0.94), rgba(238, 242, 255, 0.95));
+    linear-gradient(
+      136deg,
+      rgba(255, 255, 255, 0.98),
+      rgba(254, 242, 242, 0.94),
+      rgba(238, 242, 255, 0.95)
+    );
 }
 
 .apps-section--mine::after {
@@ -1693,13 +1739,12 @@ onMounted(() => {
 /* 已部署：墨绿主色 + 内光边，与首页蓝紫 hero 区分，避免「又一坨紫渐变」 */
 .my-app-card--deployed {
   border-color: rgba(13, 148, 136, 0.42) !important;
-  background:
-    linear-gradient(
-      152deg,
-      rgba(236, 253, 245, 0.97) 0%,
-      rgba(255, 255, 255, 0.92) 42%,
-      rgba(240, 253, 250, 0.9) 100%
-    );
+  background: linear-gradient(
+    152deg,
+    rgba(236, 253, 245, 0.97) 0%,
+    rgba(255, 255, 255, 0.92) 42%,
+    rgba(240, 253, 250, 0.9) 100%
+  );
   box-shadow:
     0 10px 28px rgba(15, 23, 42, 0.07),
     0 0 0 1px rgba(13, 148, 136, 0.1) inset;
@@ -1711,7 +1756,6 @@ onMounted(() => {
     0 14px 34px rgba(15, 23, 42, 0.12),
     0 0 0 1px rgba(13, 148, 136, 0.16) inset;
 }
-
 
 .app-gen-pipeline-badge {
   position: absolute;
@@ -1972,26 +2016,36 @@ onMounted(() => {
   }
 }
 /* ========== 深色模式覆盖 ========== */
-[data-theme="dark"] .workflow-beta-btn--active {
+[data-theme='dark'] .workflow-beta-btn--active {
   background:
     radial-gradient(circle at 0 0, rgba(99, 102, 241, 0.35), transparent 55%),
-    linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(45, 212, 191, 0.25), rgba(129, 140, 248, 0.25)),
+    linear-gradient(
+      135deg,
+      rgba(56, 189, 248, 0.25),
+      rgba(45, 212, 191, 0.25),
+      rgba(129, 140, 248, 0.25)
+    ),
     var(--bg-card, #1e1e36);
   box-shadow:
     0 16px 34px rgba(0, 0, 0, 0.3),
     0 0 0 1px rgba(99, 102, 241, 0.3);
 }
 
-[data-theme="dark"] .workflow-beta-btn-icon {
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.6), rgba(129, 140, 248, 0.5), rgba(45, 212, 191, 0.5));
+[data-theme='dark'] .workflow-beta-btn-icon {
+  background: linear-gradient(
+    135deg,
+    rgba(56, 189, 248, 0.6),
+    rgba(129, 140, 248, 0.5),
+    rgba(45, 212, 191, 0.5)
+  );
 }
 
-[data-theme="dark"] .workflow-beta-btn-badge {
+[data-theme='dark'] .workflow-beta-btn-badge {
   background: rgba(99, 102, 241, 0.25);
   color: #a5b4fc;
 }
 
-[data-theme="dark"] .code-type-auto-btn {
+[data-theme='dark'] .code-type-auto-btn {
   border-color: rgba(99, 102, 241, 0.3);
   background:
     radial-gradient(circle at 16% 20%, rgba(99, 102, 241, 0.2), transparent 40%),
@@ -2002,7 +2056,7 @@ onMounted(() => {
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-[data-theme="dark"] .code-type-auto-btn:hover {
+[data-theme='dark'] .code-type-auto-btn:hover {
   transform: translateY(-1px);
   box-shadow:
     0 10px 20px rgba(0, 0, 0, 0.25),
@@ -2010,7 +2064,7 @@ onMounted(() => {
   border-color: rgba(99, 102, 241, 0.45);
 }
 
-[data-theme="dark"] .code-type-auto-btn.is-active {
+[data-theme='dark'] .code-type-auto-btn.is-active {
   border-color: rgba(129, 140, 248, 0.5);
   background:
     radial-gradient(circle at 16% 20%, rgba(129, 140, 248, 0.25), transparent 40%),
@@ -2021,18 +2075,18 @@ onMounted(() => {
   color: #c7d2fe;
 }
 
-[data-theme="dark"] .code-type-option-btn {
+[data-theme='dark'] .code-type-option-btn {
   border-color: rgba(148, 163, 184, 0.15);
 }
 
-[data-theme="dark"] .code-type-option-btn.is-selected {
+[data-theme='dark'] .code-type-option-btn.is-selected {
   background: color-mix(in srgb, var(--accent) 22%, var(--bg-elevated, #252542));
   border-color: color-mix(in srgb, var(--accent) 50%, rgba(148, 163, 184, 0.15));
   color: var(--text-base, #e0e0e0);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.3);
 }
 
-[data-theme="dark"] .apps-section {
+[data-theme='dark'] .apps-section {
   background: var(--bg-card, #1e1e36);
   box-shadow:
     0 12px 30px rgba(0, 0, 0, 0.2),
@@ -2040,7 +2094,7 @@ onMounted(() => {
     0 0 0 1px rgba(148, 163, 184, 0.1) inset;
 }
 
-[data-theme="dark"] .apps-section--featured::before {
+[data-theme='dark'] .apps-section--featured::before {
   background:
     radial-gradient(circle at 8% 0%, rgba(99, 102, 241, 0.18), transparent 38%),
     radial-gradient(circle at 92% 8%, rgba(129, 140, 248, 0.15), transparent 38%),
@@ -2048,7 +2102,7 @@ onMounted(() => {
     linear-gradient(135deg, rgba(30, 30, 54, 0.98), rgba(26, 26, 46, 0.95), rgba(30, 30, 54, 0.96));
 }
 
-[data-theme="dark"] .apps-section--featured::after {
+[data-theme='dark'] .apps-section--featured::after {
   background:
     linear-gradient(120deg, rgba(99, 102, 241, 0.08), rgba(56, 189, 248, 0.04)),
     repeating-linear-gradient(
@@ -2058,7 +2112,7 @@ onMounted(() => {
     );
 }
 
-[data-theme="dark"] .apps-section--mine::before {
+[data-theme='dark'] .apps-section--mine::before {
   background:
     radial-gradient(circle at 12% -6%, rgba(251, 191, 36, 0.12), transparent 36%),
     radial-gradient(circle at 88% 4%, rgba(244, 114, 182, 0.1), transparent 34%),
@@ -2066,7 +2120,7 @@ onMounted(() => {
     linear-gradient(136deg, rgba(30, 30, 54, 0.98), rgba(37, 37, 66, 0.95), rgba(30, 30, 54, 0.96));
 }
 
-[data-theme="dark"] .apps-section--mine::after {
+[data-theme='dark'] .apps-section--mine::after {
   background:
     linear-gradient(125deg, rgba(99, 102, 241, 0.06), rgba(236, 72, 153, 0.04)),
     repeating-linear-gradient(
@@ -2076,28 +2130,27 @@ onMounted(() => {
     );
 }
 
-[data-theme="dark"] .my-app-card--deployed {
+[data-theme='dark'] .my-app-card--deployed {
   border-color: rgba(13, 148, 136, 0.4) !important;
-  background:
-    linear-gradient(
-      152deg,
-      rgba(30, 30, 54, 0.97) 0%,
-      rgba(26, 26, 46, 0.92) 42%,
-      rgba(30, 30, 54, 0.95) 100%
-    );
+  background: linear-gradient(
+    152deg,
+    rgba(30, 30, 54, 0.97) 0%,
+    rgba(26, 26, 46, 0.92) 42%,
+    rgba(30, 30, 54, 0.95) 100%
+  );
   box-shadow:
     0 10px 28px rgba(0, 0, 0, 0.2),
     0 0 0 1px rgba(13, 148, 136, 0.12) inset;
 }
 
-[data-theme="dark"] .my-app-card--deployed:hover {
+[data-theme='dark'] .my-app-card--deployed:hover {
   border-color: rgba(13, 148, 136, 0.55) !important;
   box-shadow:
     0 14px 34px rgba(0, 0, 0, 0.25),
     0 0 0 1px rgba(13, 148, 136, 0.2) inset;
 }
 
-[data-theme="dark"] .app-meta-type {
+[data-theme='dark'] .app-meta-type {
   background:
     radial-gradient(circle at 0 0, rgba(148, 163, 184, 0.25), transparent 60%),
     var(--bg-soft, #16213e);
@@ -2106,7 +2159,7 @@ onMounted(() => {
     0 0 0 1px rgba(148, 163, 184, 0.2);
 }
 
-[data-theme="dark"] .app-meta-type-tag {
+[data-theme='dark'] .app-meta-type-tag {
   background: linear-gradient(135deg, rgba(96, 165, 250, 0.3), rgba(52, 211, 153, 0.25));
   box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3);
   color: var(--text-base, #e0e0e0);

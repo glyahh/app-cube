@@ -19,6 +19,7 @@ import java.util.function.Supplier;
  * [受控夹具] 真实 Docker/PostgreSQL 隔离执行核对：只在验证脚本传入夹具描述时运行，否则跳过。
  * 夹具工程由 scripts/checks/verify-startup-isolation-real.py 生成并导入，命令全部是夹具内的小脚本；不运行用户真实工程。
  */
+@com.dbts.glyahhaigeneratecode.ExternalTest
 class ImportExecutionRealHarnessTest {
     static final ObjectMapper JSON=new ObjectMapper();
 

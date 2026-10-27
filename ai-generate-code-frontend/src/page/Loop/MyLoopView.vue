@@ -10,8 +10,24 @@
         <a-button type="primary" @click="handleCreate">
           <template #icon>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <line x1="7" y1="1" x2="7" y2="13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-              <line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              <line
+                x1="7"
+                y1="1"
+                x2="7"
+                y2="13"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+              <line
+                x1="1"
+                y1="7"
+                x2="13"
+                y2="7"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
             </svg>
           </template>
           创建 Loop
@@ -19,8 +35,22 @@
         <a-button @click="showImportModal = true">
           <template #icon>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M7 1v8M3 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-              <line x1="2" y1="11" x2="12" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              <path
+                d="M7 1v8M3 6l4 4 4-4"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <line
+                x1="2"
+                y1="11"
+                x2="12"
+                y2="11"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
             </svg>
           </template>
           导入 Skill
@@ -38,13 +68,71 @@
       <a-empty>
         <template #image>
           <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
-            <rect x="30" y="25" width="60" height="70" rx="10" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.25" />
-            <line x1="45" y1="50" x2="75" y2="50" stroke="currentColor" stroke-width="1.5" opacity="0.2" />
-            <line x1="45" y1="60" x2="75" y2="60" stroke="currentColor" stroke-width="1.5" opacity="0.2" />
-            <line x1="45" y1="70" x2="65" y2="70" stroke="currentColor" stroke-width="1.5" opacity="0.2" />
-            <circle cx="60" cy="40" r="8" stroke="var(--primary-color)" stroke-width="1.5" fill="none" opacity="0.4" />
-            <line x1="60" y1="36" x2="60" y2="44" stroke="var(--primary-color)" stroke-width="1.5" opacity="0.4" />
-            <line x1="56" y1="40" x2="64" y2="40" stroke="var(--primary-color)" stroke-width="1.5" opacity="0.4" />
+            <rect
+              x="30"
+              y="25"
+              width="60"
+              height="70"
+              rx="10"
+              stroke="currentColor"
+              stroke-width="1.5"
+              fill="none"
+              opacity="0.25"
+            />
+            <line
+              x1="45"
+              y1="50"
+              x2="75"
+              y2="50"
+              stroke="currentColor"
+              stroke-width="1.5"
+              opacity="0.2"
+            />
+            <line
+              x1="45"
+              y1="60"
+              x2="75"
+              y2="60"
+              stroke="currentColor"
+              stroke-width="1.5"
+              opacity="0.2"
+            />
+            <line
+              x1="45"
+              y1="70"
+              x2="65"
+              y2="70"
+              stroke="currentColor"
+              stroke-width="1.5"
+              opacity="0.2"
+            />
+            <circle
+              cx="60"
+              cy="40"
+              r="8"
+              stroke="var(--primary-color)"
+              stroke-width="1.5"
+              fill="none"
+              opacity="0.4"
+            />
+            <line
+              x1="60"
+              y1="36"
+              x2="60"
+              y2="44"
+              stroke="var(--primary-color)"
+              stroke-width="1.5"
+              opacity="0.4"
+            />
+            <line
+              x1="56"
+              y1="40"
+              x2="64"
+              y2="40"
+              stroke="var(--primary-color)"
+              stroke-width="1.5"
+              opacity="0.4"
+            />
           </svg>
         </template>
         <template #description>
@@ -57,17 +145,29 @@
 
     <!-- 卡片网格 -->
     <div v-else class="loop-grid">
-      <div
-        v-for="loop in myList"
-        :key="loop.id"
-        class="loop-card"
-        @click="handleEdit(loop.id)"
-      >
+      <div v-for="loop in myList" :key="loop.id" class="loop-card" @click="handleEdit(loop.id)">
         <!-- 卡片图标区 -->
         <div class="loop-card-icon">
           <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-            <rect x="8" y="8" width="24" height="24" rx="6" stroke="var(--primary-color)" stroke-width="1.5" fill="none" opacity="0.3" />
-            <path d="M14 20l4 4 8-8" stroke="var(--primary-color)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+            <rect
+              x="8"
+              y="8"
+              width="24"
+              height="24"
+              rx="6"
+              stroke="var(--primary-color)"
+              stroke-width="1.5"
+              fill="none"
+              opacity="0.3"
+            />
+            <path
+              d="M14 20l4 4 8-8"
+              stroke="var(--primary-color)"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              fill="none"
+            />
           </svg>
         </div>
         <!-- 卡片正文 -->
@@ -89,13 +189,9 @@
             <a-tag color="gold" class="featured-tag">已精选</a-tag>
           </template>
           <template v-else>
-            <a-button type="link" size="small" @click="handleApplyGood(loop)">
-              申请精选
-            </a-button>
+            <a-button type="link" size="small" @click="handleApplyGood(loop)"> 申请精选 </a-button>
           </template>
-          <a-button type="link" size="small" danger @click="handleDelete(loop)">
-            删除
-          </a-button>
+          <a-button type="link" size="small" danger @click="handleDelete(loop)"> 删除 </a-button>
         </div>
       </div>
     </div>
@@ -112,7 +208,8 @@
         <a-tab-pane key="paste" tab="粘贴内容">
           <div class="import-tip">
             <p>粘贴 <code>.md</code> 或 <code>.json</code> 格式内容，自动识别并转换：</p>
-            <pre class="import-example">---
+            <pre class="import-example">
+---
 name: 我的技能
 description: 一个示例技能
 visibility: public
@@ -122,7 +219,8 @@ visibility: public
 你是一个 XX 专家
 
 ## 约束与边界
-- 输出简洁</pre>
+- 输出简洁</pre
+            >
           </div>
           <a-textarea
             v-model:value="importContent"
@@ -142,7 +240,14 @@ visibility: public
             :show-upload-list="false"
           >
             <p class="ant-upload-drag-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <svg
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+              >
                 <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
               </svg>
             </p>
@@ -161,7 +266,9 @@ visibility: public
       :confirm-loading="applying"
       @ok="handleSubmitApply"
     >
-      <p>申请将 <strong>{{ applyingLoop?.loopName }}</strong> 加入精选市场。</p>
+      <p>
+        申请将 <strong>{{ applyingLoop?.loopName }}</strong> 加入精选市场。
+      </p>
       <a-textarea
         v-model:value="applyReason"
         :rows="3"
@@ -430,7 +537,9 @@ onMounted(() => {
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
-  transition: box-shadow 0.3s ease, transform 0.3s ease;
+  transition:
+    box-shadow 0.3s ease,
+    transform 0.3s ease;
   display: flex;
   flex-direction: column;
 }

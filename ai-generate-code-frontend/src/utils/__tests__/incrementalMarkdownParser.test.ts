@@ -5,7 +5,8 @@ import { parseMarkdownWithCode } from '../markdownParser'
 
 describe('IncrementalMarkdownParser', () => {
   it('matches full parsing when input arrives in 1-8 character chunks', () => {
-    const source = '说明\n### src/App.vue\n```vue\n<template>\n  <main>Hello</main>\n</template>\n```\n完成'
+    const source =
+      '说明\n### src/App.vue\n```vue\n<template>\n  <main>Hello</main>\n</template>\n```\n完成'
     const parser = new IncrementalMarkdownParser()
 
     for (let index = 0; index < source.length; ) {
@@ -15,7 +16,9 @@ describe('IncrementalMarkdownParser', () => {
     }
     const actual = parser.finish()
 
-    expect(actual.map(({ id: _id, status: _status, ...block }) => block)).toEqual(parseMarkdownWithCode(source))
+    expect(actual.map(({ id: _id, status: _status, ...block }) => block)).toEqual(
+      parseMarkdownWithCode(source),
+    )
     expect(actual.every((block) => block.status === 'complete')).toBe(true)
   })
 
@@ -37,7 +40,8 @@ describe('IncrementalMarkdownParser', () => {
   })
 
   it('handles CRLF, longer fences, language info, and file labels', () => {
-    const source = '### src/main.ts\r\n\r\n    ````typescript strict\r\nlet ready = true\r\n    ````\r\n'
+    const source =
+      '### src/main.ts\r\n\r\n    ````typescript strict\r\nlet ready = true\r\n    ````\r\n'
     const parser = new IncrementalMarkdownParser()
     parser.append(source.slice(0, 17))
     parser.append(source.slice(17))

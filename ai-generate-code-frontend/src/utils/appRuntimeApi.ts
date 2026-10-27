@@ -162,9 +162,7 @@ export async function loadOpenIncidents(opts: BaseOpts): Promise<RuntimeIncident
 }
 
 /** 关闭异常提示；记录仍然保留在服务端 */
-export async function dismissIncident(
-  opts: BaseOpts & { incidentId: number },
-): Promise<boolean> {
+export async function dismissIncident(opts: BaseOpts & { incidentId: number }): Promise<boolean> {
   const url = `${baseUrlOf(opts.apiBaseUrl)}/app/${encodeURIComponent(opts.appId)}/runtime/incidents/${encodeURIComponent(String(opts.incidentId))}/dismiss`
   const res = await fetch(url, { method: 'POST', credentials: 'include' })
   return readEnvelope<boolean>(res, '关闭提示')

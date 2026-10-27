@@ -15,29 +15,36 @@ export const useExecutionPreference = defineStore('executionPreference', () => {
   const ready = ref(false)
   let version = 0
 
-  watch(() => login.userLogin.id, async (id) => {
-    const current = ++version
-    expanded.value = false
-    alertOnStartupFailure.value = true
-    alertOnRuntimeFailure.value = false
-    autoModelProxyFallback.value = false
-    autoNameProject.value = true
-    saving.value = false
-    ready.value = !id
-    if (!id) return
-    try {
-      const { data } = await request.get('/user/preferences')
-      if (current === version && (data.code === 0 || data.code === 20000)) {
-        expanded.value = data.data.expandExecutionProcess === true
-        // 后端已把库里的 null 折叠成默认值，这里只做兜底
-        alertOnStartupFailure.value = data.data.alertOnStartupFailure !== false
-        alertOnRuntimeFailure.value = data.data.alertOnRuntimeFailure === true
-        autoModelProxyFallback.value = data.data.autoModelProxyFallback === true
-        autoNameProject.value = data.data.autoNameProject !== false
+  watch(
+    () => login.userLogin.id,
+    async (id) => {
+      const current = ++version
+      expanded.value = false
+      alertOnStartupFailure.value = true
+      alertOnRuntimeFailure.value = false
+      autoModelProxyFallback.value = false
+      autoNameProject.value = true
+      saving.value = false
+      ready.value = !id
+      if (!id) return
+      try {
+        const { data } = await request.get('/user/preferences')
+        if (current === version && (data.code === 0 || data.code === 20000)) {
+          expanded.value = data.data.expandExecutionProcess === true
+          // 后端已把库里的 null 折叠成默认值，这里只做兜底
+          alertOnStartupFailure.value = data.data.alertOnStartupFailure !== false
+          alertOnRuntimeFailure.value = data.data.alertOnRuntimeFailure === true
+          autoModelProxyFallback.value = data.data.autoModelProxyFallback === true
+          autoNameProject.value = data.data.autoNameProject !== false
+        }
+      } catch {
+        /* 读取失败保持默认值。 */
+      } finally {
+        if (current === version) ready.value = true
       }
-    } catch { /* 读取失败保持默认值。 */ }
-    finally { if (current === version) ready.value = true }
-  }, { immediate: true })
+    },
+    { immediate: true },
+  )
 
   async function save(value: boolean) {
     const current = ++version
@@ -47,7 +54,10 @@ export const useExecutionPreference = defineStore('executionPreference', () => {
       if (data.code !== 0 && data.code !== 20000) throw new Error('保存失败，请重试')
       if (current === version) expanded.value = data.data.expandExecutionProcess === true
     } finally {
-      if (current === version) { saving.value = false; ready.value = true }
+      if (current === version) {
+        saving.value = false
+        ready.value = true
+      }
     }
   }
 
@@ -59,7 +69,10 @@ export const useExecutionPreference = defineStore('executionPreference', () => {
       if (data.code !== 0 && data.code !== 20000) throw new Error('保存失败，请重试')
       if (current === version) alertOnStartupFailure.value = value
     } finally {
-      if (current === version) { saving.value = false; ready.value = true }
+      if (current === version) {
+        saving.value = false
+        ready.value = true
+      }
     }
   }
 
@@ -71,7 +84,10 @@ export const useExecutionPreference = defineStore('executionPreference', () => {
       if (data.code !== 0 && data.code !== 20000) throw new Error('保存失败，请重试')
       if (current === version) alertOnRuntimeFailure.value = value
     } finally {
-      if (current === version) { saving.value = false; ready.value = true }
+      if (current === version) {
+        saving.value = false
+        ready.value = true
+      }
     }
   }
 
@@ -83,7 +99,10 @@ export const useExecutionPreference = defineStore('executionPreference', () => {
       if (data.code !== 0 && data.code !== 20000) throw new Error('保存失败，请重试')
       if (current === version) autoModelProxyFallback.value = value
     } finally {
-      if (current === version) { saving.value = false; ready.value = true }
+      if (current === version) {
+        saving.value = false
+        ready.value = true
+      }
     }
   }
 
@@ -95,7 +114,10 @@ export const useExecutionPreference = defineStore('executionPreference', () => {
       if (data.code !== 0 && data.code !== 20000) throw new Error('保存失败')
       if (current === version) autoNameProject.value = value
     } finally {
-      if (current === version) { saving.value = false; ready.value = true }
+      if (current === version) {
+        saving.value = false
+        ready.value = true
+      }
     }
   }
 

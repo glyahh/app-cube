@@ -1,5 +1,5 @@
 import { shallowMount, flushPromises } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import AppChatView from '../AppChatView.vue'
 
 const appearanceState = {
@@ -10,11 +10,31 @@ const appearanceState = {
 
 vi.mock('ant-design-vue', async () => {
   const { defineComponent, h } = await import('vue')
-  const shell = defineComponent({ setup: (_, { slots }) => () => h('div', slots.default?.()) })
+  const shell = defineComponent({
+    setup:
+      (_, { slots }) =>
+      () =>
+        h('div', slots.default?.()),
+  })
   return {
-    message: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), success: vi.fn(), loading: vi.fn(() => vi.fn()), destroy: vi.fn() },
-    Button: shell, Input: shell, Spin: shell, Empty: shell, Modal: shell,
-    Tooltip: shell, Alert: shell, Textarea: shell, Checkbox: shell, CheckboxGroup: shell,
+    message: {
+      info: vi.fn(),
+      warning: vi.fn(),
+      error: vi.fn(),
+      success: vi.fn(),
+      loading: vi.fn(() => vi.fn()),
+      destroy: vi.fn(),
+    },
+    Button: shell,
+    Input: shell,
+    Spin: shell,
+    Empty: shell,
+    Modal: shell,
+    Tooltip: shell,
+    Alert: shell,
+    Textarea: shell,
+    Checkbox: shell,
+    CheckboxGroup: shell,
   }
 })
 vi.mock('@/components/loop/AppLoopInjectBar.vue', () => ({ default: { template: '<div />' } }))
@@ -37,7 +57,9 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }))
 vi.mock('@/api/appController', () => ({
-  appGetVoUsingGet: vi.fn().mockResolvedValue({ data: { code: 0, data: { id: '1', codeGenType: 'html' } } }),
+  appGetVoUsingGet: vi
+    .fn()
+    .mockResolvedValue({ data: { code: 0, data: { id: '1', codeGenType: 'html' } } }),
   appApplyUsingPost: vi.fn(),
 }))
 vi.mock('@/api/chatHistoryController', () => ({
@@ -49,7 +71,10 @@ vi.mock('@/stores/UserLogin', () => ({ UserLoginStore: () => ({ userLogin: { id:
 vi.mock('@/stores/appearance', () => ({ useAppearanceStore: () => appearanceState }))
 vi.mock('@/stores/executionPreference', () => ({ useExecutionPreference: () => ({}) }))
 vi.mock('@/utils/agentStreamTransport', () => ({ openAgentStream: vi.fn() }))
-vi.mock('@/utils/projectFilesEcho', () => ({ loadProjectFilesEchoFromDisk: vi.fn().mockResolvedValue([]), filterLockFiles: (items: unknown) => items }))
+vi.mock('@/utils/projectFilesEcho', () => ({
+  loadProjectFilesEchoFromDisk: vi.fn().mockResolvedValue([]),
+  filterLockFiles: (items: unknown) => items,
+}))
 
 describe('AppChatView main-splitter 控制按钮', () => {
   it('上方按钮放大预览区（▶），中间恢复等分（⛶），下方按钮放大聊天区（◀）', async () => {

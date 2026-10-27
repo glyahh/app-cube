@@ -11,7 +11,7 @@ import static org.mockito.ArgumentMatchers.*;
 class ImportPythonStartupReaderTest {
     @TempDir Path root;
     Map<String,String> input(){return Map.of("backend/requirements.txt","fastapi\nuvicorn","backend/app.py","raise RuntimeError('must not execute')\nfrom fastapi import FastAPI\napp=FastAPI()");}
-    ImportProperties properties(){var props=new ImportProperties();props.setStagingRoot(root.resolve("imports"));return props;}
+    ImportProperties properties(){var props=new ImportProperties();try{props.setStagingRoot(Files.createDirectories(root.resolve("imports")).toRealPath());}catch(java.io.IOException error){throw new IllegalStateException(error);}return props;}
     @Test void actualManagedParserReturnsBoundCandidatesWithoutImportingProject()throws Exception{
         var reader=new ImportPythonStartupReader(properties());var files=input();var original=new ImportStartupScanner().scan(files,".");
         var result=reader.supplement(original,files,()->true);assertEquals(original.inputHash(),result.inputHash());

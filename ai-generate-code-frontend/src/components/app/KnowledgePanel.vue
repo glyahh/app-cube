@@ -34,9 +34,7 @@
       </div>
     </header>
     <div v-if="loadError" class="kn-alert" role="alert">{{ loadError }}</div>
-    <div v-if="status?.outdated" class="kn-alert">
-      知识待更新
-    </div>
+    <div v-if="status?.outdated" class="kn-alert">知识待更新</div>
     <div v-if="taskRunning" class="kn-progress" role="status">
       <span>{{ status?.phase || '正在分析源码' }}</span
       ><span>{{ status?.progress || 0 }}%</span>
@@ -82,7 +80,6 @@
         </div>
         <div v-else class="kn-doc-layout">
           <nav class="kn-doc-index" aria-label="文档目录">
-
             <button
               v-for="(doc, index) in docs"
               :key="doc.id"
@@ -96,8 +93,9 @@
             </button>
           </nav>
           <article v-if="selectedDoc" class="kn-doc">
-
-            <h3 v-if="!/^#{1,6}\s/.test((selectedDoc.content || '').trimStart())">{{ selectedDoc.title }}</h3>
+            <h3 v-if="!/^#{1,6}\s/.test((selectedDoc.content || '').trimStart())">
+              {{ selectedDoc.title }}
+            </h3>
             <div class="wb-markdown" v-html="renderSafeMarkdown(selectedDoc.content || '')" />
           </article>
         </div>
@@ -105,8 +103,7 @@
       <div v-else class="kn-qa">
         <div class="kn-qa-history" aria-live="polite">
           <div v-if="qaHistory.length === 0" class="wb-empty">
-            <span class="kn-spark">✦</span><strong>询问项目</strong
-            ><span>基于项目源码回答</span>
+            <span class="kn-spark">✦</span><strong>询问项目</strong><span>基于项目源码回答</span>
             <div class="kn-suggestions">
               <button type="button" class="wb-button" @click="question = '这个项目的入口在哪？'">
                 项目从哪里开始？</button
@@ -628,7 +625,11 @@ onBeforeUnmount(() => {
   }
 }
 
-
-.kn-header .wb-eyebrow { display:none; }
-.kn-header .wb-heading { font-size:16px; margin:0 0 3px; }
+.kn-header .wb-eyebrow {
+  display: none;
+}
+.kn-header .wb-heading {
+  font-size: 16px;
+  margin: 0 0 3px;
+}
 </style>

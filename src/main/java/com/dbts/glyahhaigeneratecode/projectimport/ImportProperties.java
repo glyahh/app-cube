@@ -4,6 +4,8 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Set;
@@ -35,4 +37,15 @@ public class ImportProperties {
     private Duration uploadTimeout = Duration.ofMinutes(5);
     private Duration stopTimeout = Duration.ofSeconds(5);
     private Set<String> allowedOrigins = Set.of("http://localhost:5173", "http://127.0.0.1:5173");
+
+    /** venv 在 Linux 常用符号链接指向真实解释器；配置边界先解析，避免被受管路径守卫误判。 */
+    public Path getCredentialPython() {
+        Path configured = credentialPython.toAbsolutePath().normalize();
+        if (!Files.isRegularFile(configured)) return configured;
+        try {
+            return configured.toRealPath();
+        } catch (IOException error) {
+            return configured;
+        }
+    }
 }

@@ -101,16 +101,12 @@ onUnmounted(() => {
   if (copyCodeTimer) clearTimeout(copyCodeTimer)
   if (copyPathTimer) clearTimeout(copyPathTimer)
 })
-
 </script>
 
 <template>
   <div class="collapsible-code-block">
     <!-- 卡片头部（始终可见） -->
-    <ToolExecCardHeader
-      :action-label="actionLabel"
-      :target-path="filePath"
-    >
+    <ToolExecCardHeader :action-label="actionLabel" :target-path="filePath">
       <!-- slot：action-label 后的触发区，hover 显示"复制" -->
       <template #action-label-after>
         <span
@@ -141,28 +137,16 @@ onUnmounted(() => {
           :title="collapsed ? '展开代码' : '收起代码'"
           @click.stop="toggleCollapse"
         >
-          <img
-            :src="collapsed ? iconExpand : iconCollapse"
-            class="collapse-eye-img"
-            alt=""
-          />
+          <img :src="collapsed ? iconExpand : iconCollapse" class="collapse-eye-img" alt="" />
         </button>
       </template>
     </ToolExecCardHeader>
 
     <!-- 可折叠内容区：max-height 动画控制展开/收起 -->
-    <div
-      v-if="!collapsed"
-      class="collapse-body"
-      :class="{ 'collapse-body--expanded': true }"
-    >
+    <div v-if="!collapsed" class="collapse-body" :class="{ 'collapse-body--expanded': true }">
       <!-- 写入文件模式 -->
       <template v-if="isWriteMode">
-        <CodeBlock
-          :code="code"
-          :language="language"
-          :is-streaming="isStreaming"
-        />
+        <CodeBlock :code="code" :language="language" :is-streaming="isStreaming" />
       </template>
 
       <!-- 修改文件模式 -->
@@ -198,11 +182,13 @@ onUnmounted(() => {
   max-height: 0;
   overflow: hidden;
   opacity: 0;
-  transition: max-height 250ms ease, opacity 200ms ease;
+  transition:
+    max-height 250ms ease,
+    opacity 200ms ease;
 }
 
 .collapse-body--expanded {
-  max-height: 3000px;  /* 足够容纳代码块（CodeBlock 本身限制 60vh） */
+  max-height: 3000px; /* 足够容纳代码块（CodeBlock 本身限制 60vh） */
   opacity: 1;
 }
 

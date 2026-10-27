@@ -25,7 +25,6 @@ async function check(name,run){await run();report.checks.push({name,status:'PASS
 async function choice(label,value){await page.locator(`[aria-label="${label}"]`).click();await page.locator('.ant-select-dropdown:visible .ant-select-item-option-content').filter({hasText:new RegExp(`^${value}$`)}).click()}
 const manager=()=>page.locator('.ant-modal:visible').filter({has:page.getByText('仓库凭据',{exact:true})})
 const editor=()=>page.locator('.ant-modal:visible').last()
-let credentialId
 try {
   const account=`import_git_browser_${randomBytes(8).toString('hex')}`,password=randomBytes(24).toString('hex')
   const register=await context.request.post(`${base}/api/user/register`,{data:{userAccount:account,userPassword:password,checkPassword:password}})
@@ -48,7 +47,7 @@ try {
     await editor().getByRole('button',{name:/^保\s*存$/}).click()
     await expect(manager().getByText('浏览器专用',{exact:true})).toBeVisible()
     const credentials=await api('/project/import/credentials');expect(credentials).toHaveLength(1)
-    credentialId=credentials[0].id;expect(credentials[0].version).toBe('1');expect(credentials[0]).not.toHaveProperty('token')
+    expect(credentials[0].version).toBe('1');expect(credentials[0]).not.toHaveProperty('token')
     expect(await page.locator('#import-credential-token:visible').count()).toBe(0)
   })
   await check('备注不换身份，替换有警告且推进语义版本',async()=>{

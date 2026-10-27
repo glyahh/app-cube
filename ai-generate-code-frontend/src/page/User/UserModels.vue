@@ -166,11 +166,15 @@ async function fetchModels() {
   }
   fetchingModels.value = true
   try {
-    const result = await call<{ models: string[]; message: string }>('/model-config/models', 'post', {
-      id: form.id || undefined,
-      baseUrl: form.baseUrl.trim(),
-      apiKey: form.apiKey.trim() || undefined,
-    })
+    const result = await call<{ models: string[]; message: string }>(
+      '/model-config/models',
+      'post',
+      {
+        id: form.id || undefined,
+        baseUrl: form.baseUrl.trim(),
+        apiKey: form.apiKey.trim() || undefined,
+      },
+    )
     const merged = [...new Set([...result.models, ...form.models])]
     availableModels.value = merged
     if (!form.models.length && form.model && merged.includes(form.model)) {
@@ -386,17 +390,27 @@ onMounted(load)
         </AFormItem>
         <AFormItem label="模型">
           <div class="model-toolbar">
-            <AButton size="small" :loading="fetchingModels" @click="fetchModels">一键获取模型列表</AButton>
+            <AButton size="small" :loading="fetchingModels" @click="fetchModels"
+              >一键获取模型列表</AButton
+            >
             <span class="model-hint">填写 Key 后获取，按需勾选</span>
           </div>
-          <ACheckboxGroup v-if="availableModels.length" v-model:value="form.models" class="model-checkboxes">
+          <ACheckboxGroup
+            v-if="availableModels.length"
+            v-model:value="form.models"
+            class="model-checkboxes"
+          >
             <ACheckbox v-for="model in availableModels" :key="model" :value="model">
               {{ model }}
             </ACheckbox>
           </ACheckboxGroup>
           <div v-else class="model-empty">还没有模型，先获取或手动添加。</div>
           <div class="manual-model">
-            <AInput v-model:value="manualModel" placeholder="手动添加模型 ID" @press-enter="addManualModel" />
+            <AInput
+              v-model:value="manualModel"
+              placeholder="手动添加模型 ID"
+              @press-enter="addManualModel"
+            />
             <AButton size="small" @click="addManualModel">添加</AButton>
           </div>
         </AFormItem>
@@ -414,14 +428,27 @@ onMounted(load)
         </AFormItem>
         <div class="form-grid">
           <AFormItem label="上下文窗口">
-            <AInputNumber v-model:value="form.contextWindow" :min="1024" :max="100000000" style="width: 100%" />
+            <AInputNumber
+              v-model:value="form.contextWindow"
+              :min="1024"
+              :max="100000000"
+              style="width: 100%"
+            />
           </AFormItem>
           <AFormItem label="最大输出">
-            <AInputNumber v-model:value="form.maxOutputTokens" :min="1" :max="1000000" style="width: 100%" />
+            <AInputNumber
+              v-model:value="form.maxOutputTokens"
+              :min="1"
+              :max="1000000"
+              style="width: 100%"
+            />
           </AFormItem>
         </div>
         <AFormItem label="思考力度">
-          <ACheckboxGroup v-model:value="form.efforts" :options="['low', 'medium', 'high', 'xhigh', 'max']" />
+          <ACheckboxGroup
+            v-model:value="form.efforts"
+            :options="['low', 'medium', 'high', 'xhigh', 'max']"
+          />
         </AFormItem>
         <AFormItem v-if="!editing?.isDefault" label="设为默认模型">
           <AButton

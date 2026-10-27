@@ -27,7 +27,8 @@ import ReferenceFooterBackdropModule from './components/ReferenceFooterBackdropM
             <p class="project-title-side">Workflow-native · Stream-first · Production-ready</p>
           </div>
           <p class="project-desc">
-            一个面向高效开发的 AI 代码生成平台，支持多种工作流与代码模式，帮助你从需求到可运行项目快速闭环。
+            一个面向高效开发的 AI
+            代码生成平台，支持多种工作流与代码模式，帮助你从需求到可运行项目快速闭环。
           </p>
         </header>
 
@@ -83,9 +84,7 @@ import ReferenceFooterBackdropModule from './components/ReferenceFooterBackdropM
         </section>
 
         <section class="cta-row" aria-label="actions">
-          <a class="enter-button" href="http://localhost:5173/" aria-label="进入主站">
-            进入主站
-          </a>
+          <a class="enter-button" href="http://localhost:5173/" aria-label="进入主站"> 进入主站 </a>
         </section>
       </section>
     </section>
@@ -291,7 +290,10 @@ import ReferenceFooterBackdropModule from './components/ReferenceFooterBackdropM
   background: rgba(8, 22, 17, 0.78);
   border: 1px solid rgba(71, 85, 105, 0.45);
   padding: 15px;
-  transition: transform 260ms ease, box-shadow 260ms ease, border-color 260ms ease;
+  transition:
+    transform 260ms ease,
+    box-shadow 260ms ease,
+    border-color 260ms ease;
 }
 
 .metric-item::before {
@@ -299,7 +301,12 @@ import ReferenceFooterBackdropModule from './components/ReferenceFooterBackdropM
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(120deg, transparent 22%, rgba(255, 255, 255, 0.4) 45%, transparent 66%);
+  background: linear-gradient(
+    120deg,
+    transparent 22%,
+    rgba(255, 255, 255, 0.4) 45%,
+    transparent 66%
+  );
   transform: translateX(-130%);
   animation: cardShimmer 5s ease-in-out infinite;
 }
@@ -345,11 +352,13 @@ import ReferenceFooterBackdropModule from './components/ReferenceFooterBackdropM
   border-radius: 16px;
   border: 1px solid rgba(71, 85, 105, 0.4);
   background:
-    linear-gradient(160deg, rgba(8, 22, 17, 0.92), rgba(6, 17, 13, 0.88)),
-    rgba(8, 22, 17, 0.9);
+    linear-gradient(160deg, rgba(8, 22, 17, 0.92), rgba(6, 17, 13, 0.88)), rgba(8, 22, 17, 0.9);
   padding: 16px;
   min-height: 152px;
-  transition: transform 260ms ease, border-color 260ms ease, box-shadow 260ms ease;
+  transition:
+    transform 260ms ease,
+    border-color 260ms ease,
+    box-shadow 260ms ease;
 }
 
 .capability-card:hover {
@@ -390,8 +399,7 @@ import ReferenceFooterBackdropModule from './components/ReferenceFooterBackdropM
   border-radius: 16px;
   border: 1px solid rgba(71, 85, 105, 0.44);
   background:
-    linear-gradient(180deg, rgba(8, 22, 17, 0.92), rgba(6, 16, 12, 0.86)),
-    rgba(8, 22, 17, 0.9);
+    linear-gradient(180deg, rgba(8, 22, 17, 0.92), rgba(6, 16, 12, 0.86)), rgba(8, 22, 17, 0.9);
   padding: 16px;
   overflow: hidden;
 }
@@ -477,8 +485,12 @@ import ReferenceFooterBackdropModule from './components/ReferenceFooterBackdropM
   background:
     linear-gradient(105deg, transparent 34%, rgba(167, 243, 208, 0.34) 47%, transparent 58%),
     linear-gradient(180deg, rgba(11, 20, 16, 0.9), rgba(6, 12, 10, 0.88));
-  background-size: 210% 100%, 100% 100%;
-  background-position: 120% 0, 0 0;
+  background-size:
+    210% 100%,
+    100% 100%;
+  background-position:
+    120% 0,
+    0 0;
   animation: enterButtonBeam 4.2s linear infinite;
 }
 
@@ -508,10 +520,14 @@ import ReferenceFooterBackdropModule from './components/ReferenceFooterBackdropM
 
 @keyframes enterButtonBeam {
   0% {
-    background-position: 120% 0, 0 0;
+    background-position:
+      120% 0,
+      0 0;
   }
   100% {
-    background-position: -120% 0, 0 0;
+    background-position:
+      -120% 0,
+      0 0;
   }
 }
 

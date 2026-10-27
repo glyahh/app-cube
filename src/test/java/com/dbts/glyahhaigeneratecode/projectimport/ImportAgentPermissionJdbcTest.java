@@ -21,7 +21,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 真实PG的策略、许可和发布反例；副作用与真实Docker另行验收。 */
-@EnabledIfEnvironmentVariable(named = "AGENT_TEST_REAL_PERMISSIONS", matches = "1")
+@com.dbts.glyahhaigeneratecode.ExternalTest
 class ImportAgentPermissionJdbcTest {
     @Test void realConstraintsAndCasRejectBypassAndKeepImmutableAudits() throws Exception {
         String schema = "permission_" + UUID.randomUUID().toString().replace("-", "");

@@ -11,7 +11,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ImportGitReaderTest {
     @TempDir Path directory;
-    Path git(){return Path.of(System.getProperty("import.test.git","D:/mainJava/all lib/Git/cmd/git.exe"));}
+    Path git(){
+        String configured=System.getProperty("import.test.git");
+        if(configured!=null&&!configured.isBlank())return Path.of(configured);
+        return Path.of(System.getProperty("os.name").toLowerCase().contains("win")
+                ?"D:/mainJava/all lib/Git/cmd/git.exe":"/usr/bin/git");
+    }
     @Test void ownedBareMetadataAndEmptyConfigAreSeparateFromSource() throws Exception {
         var resources=new CopyOnWriteArrayList<ImportProcessRunner.Resource>();
         var eligible=new AtomicBoolean(true);
@@ -33,7 +38,7 @@ class ImportGitReaderTest {
     @Test void nativeGitUsesPrivateAskpassPipeWithoutTokenInConfigOrArguments() throws Exception {
         var source=ImportRepositorySource.parse("GitHub","https://github.com/octocat/Hello-World");
         var resources=new CopyOnWriteArrayList<ImportProcessRunner.Resource>();
-        Path python=Path.of("agent/.venv/Scripts/python.exe").toAbsolutePath();
+        Path python=Path.of("agent/.venv",System.getProperty("os.name").toLowerCase().contains("win")?"Scripts/python.exe":"bin/python").toAbsolutePath();
         Path helper=Path.of("scripts/import-git-askpass.py").toAbsolutePath();
         try(var broker=new ImportCredentialBroker(source,()->true,()->new ImportCredentialBroker.Secret("fixture-account","FAKE_NATIVE_GIT_SECRET"))) {
             var env=new java.util.HashMap<>(ImportGitReader.askpass(python,helper,broker,directory));
@@ -48,7 +53,7 @@ class ImportGitReaderTest {
             assertFalse(command.toString().contains("FAKE_NATIVE_GIT_SECRET"));
             assertFalse(env.toString().contains("FAKE_NATIVE_GIT_SECRET"));
             assertEquals(0,Files.size(directory.resolve("empty.gitconfig")));
-            String wrapper=Files.readString(directory.resolve("askpass.cmd"));
+            String wrapper=Files.readString(directory.resolve(System.getProperty("os.name").toLowerCase().contains("win")?"askpass.cmd":"askpass.sh"));
             assertFalse(wrapper.contains("FAKE_NATIVE_GIT_SECRET"));assertFalse(wrapper.contains(broker.capability()));
         }
         resources.forEach(resource->assertFalse(ProcessHandle.of(resource.pid()).map(ProcessHandle::isAlive).orElse(false)));
@@ -74,7 +79,7 @@ class ImportGitReaderTest {
                 ()->true,r->{},input->new String(input.readAllBytes(),java.nio.charset.StandardCharsets.US_ASCII).strip()).value();
         return new ImportGitMetadata.Blob("fixture.bin",id,content.length,false);
     }
-    @Test @EnabledIfSystemProperty(named="import.test.publicGit",matches="true")
+    @com.dbts.glyahhaigeneratecode.ExternalTest
     void managedReaderObtainsBothPublicPlatformsWithoutExecutingProjects() throws Exception {
         var resources=new CopyOnWriteArrayList<ImportProcessRunner.Resource>();
         for(var source:java.util.List.of(ImportRepositorySource.parse("GitHub","https://github.com/octocat/Hello-World"),

@@ -138,7 +138,12 @@ describe('knowledgeGraphEngine 的布局推导', () => {
 
       expect(paths).toHaveLength(1)
       expect(paths[0]?.key).toBe('GET /users')
-      expect(paths[0]?.names).toEqual(['GET /users', 'UserController', 'UserRepository', 'PostgreSQL'])
+      expect(paths[0]?.names).toEqual([
+        'GET /users',
+        'UserController',
+        'UserRepository',
+        'PostgreSQL',
+      ])
       expect(paths[0]?.nodeKeys).toHaveLength(4)
       expect(paths[0]?.edgeKeys).toHaveLength(3)
     })
@@ -165,7 +170,12 @@ describe('knowledgeGraphEngine 的布局推导', () => {
     })
 
     it('跳数受 maxHops 限制', () => {
-      const nodes = [node('E', 'endpoint'), node('A', 'class'), node('B', 'class'), node('C', 'class')]
+      const nodes = [
+        node('E', 'endpoint'),
+        node('A', 'class'),
+        node('B', 'class'),
+        node('C', 'class'),
+      ]
       const edges: GraphEdgeInput[] = [
         { from: 'E', to: 'A', relation: 'calls' },
         { from: 'A', to: 'B', relation: 'calls' },
@@ -186,28 +196,31 @@ describe('图谱拖拽物理', () => {
     const canvas = document.createElement('canvas')
     vi.spyOn(canvas, 'getContext').mockReturnValue(ctx as CanvasRenderingContext2D)
     const shell = document.createElement('div')
-    vi.spyOn(shell, 'getBoundingClientRect').mockReturnValue({width:900,height:600} as DOMRect)
+    vi.spyOn(shell, 'getBoundingClientRect').mockReturnValue({ width: 900, height: 600 } as DOMRect)
     const engine = new KnowledgeGraphEngine(canvas, shell)
-    engine.load([node('a','file'),node('b','file')], [{from:'a',to:'b',relation:'calls'}])
+    engine.load([node('a', 'file'), node('b', 'file')], [{ from: 'a', to: 'b', relation: 'calls' }])
     engine.resize()
     engine.fit()
     engine.tick(100)
     const first = engine.search('a')[0]!
     expect(first).toBeTruthy()
     // 通过绘制坐标驱动真实指针路径，不单测替身力模型。
-    const nodes = (engine as unknown as {nodes:Array<{x:number;y:number;sx:number;sy:number}>}).nodes
-    const a = nodes[0]!, b = nodes[1]!
-    const old = {x:b.x,y:b.y}
-    expect(engine.pointerDown(a.sx,a.sy)).toBe('node')
-    engine.pointerMove(a.sx+80,a.sy+20,{x:80,y:20})
-    const target = {x:a.x,y:a.y}
-    for(let i=1;i<=30;i++) engine.tick(100+i*16.67)
+    const nodes = (
+      engine as unknown as { nodes: Array<{ x: number; y: number; sx: number; sy: number }> }
+    ).nodes
+    const a = nodes[0]!,
+      b = nodes[1]!
+    const old = { x: b.x, y: b.y }
+    expect(engine.pointerDown(a.sx, a.sy)).toBe('node')
+    engine.pointerMove(a.sx + 80, a.sy + 20, { x: 80, y: 20 })
+    const target = { x: a.x, y: a.y }
+    for (let i = 1; i <= 30; i++) engine.tick(100 + i * 16.67)
     expect(a.x).toBe(target.x)
     expect(a.y).toBe(target.y)
-    expect(Math.hypot(b.x-old.x,b.y-old.y)).toBeGreaterThan(1)
+    expect(Math.hypot(b.x - old.x, b.y - old.y)).toBeGreaterThan(1)
     engine.pointerUp()
-    for(let i=31;i<=650;i++) engine.tick(100+i*16.67)
-    expect(nodes.every(n=>Number.isFinite(n.x)&&Number.isFinite(n.y))).toBe(true)
+    for (let i = 31; i <= 650; i++) engine.tick(100 + i * 16.67)
+    expect(nodes.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y))).toBe(true)
     expect(engine.stats().heat).toBe(0)
   })
 })
@@ -222,8 +235,13 @@ describe('图谱不按数量补节点', () => {
     return engine
   }
   it('默认展示结构，全局保留完整数据，搜索仍可找到辅助函数', () => {
-    const engine = graph([node('main','file'),node('scene','module'),node('helper','function')],
-      [{from:'main',to:'scene',relation:'imports'},{from:'scene',to:'helper',relation:'contains'}])
+    const engine = graph(
+      [node('main', 'file'), node('scene', 'module'), node('helper', 'function')],
+      [
+        { from: 'main', to: 'scene', relation: 'imports' },
+        { from: 'scene', to: 'helper', relation: 'contains' },
+      ],
+    )
     expect(engine.stats().visible).toBe(2)
     expect(engine.stats().edges).toBe(1)
     expect(engine.search('helper')).toHaveLength(1)
@@ -232,10 +250,16 @@ describe('图谱不按数量补节点', () => {
     expect(engine.stats().edges).toBe(2)
   })
   it('选中后只保留直接邻居，不加二跳、同目录和无关节点', () => {
-    const nodes = [node('root','file'),node('child','function'),node('grandchild','function'),
-      ...Array.from({length:30},(_,i)=>node('unrelated'+i,'function'))]
-    const engine = graph(nodes, [{from:'root',to:'child',relation:'calls'},
-      {from:'child',to:'grandchild',relation:'calls'}])
+    const nodes = [
+      node('root', 'file'),
+      node('child', 'function'),
+      node('grandchild', 'function'),
+      ...Array.from({ length: 30 }, (_, i) => node('unrelated' + i, 'function')),
+    ]
+    const engine = graph(nodes, [
+      { from: 'root', to: 'child', relation: 'calls' },
+      { from: 'child', to: 'grandchild', relation: 'calls' },
+    ])
     engine.selectByKey('root')
     expect(engine.stats().visible).toBe(2)
     engine.selectByKey('unrelated0')
@@ -243,7 +267,7 @@ describe('图谱不按数量补节点', () => {
     expect(engine.stats().edges).toBe(0)
   })
   it('没有结构类型时保留已有内容，不猜测或凭数量裁剪', () => {
-    expect(graph([node('core','function')],[]).stats().visible).toBe(1)
-    expect(graph([],[]).stats().visible).toBe(0)
+    expect(graph([node('core', 'function')], []).stats().visible).toBe(1)
+    expect(graph([], []).stats().visible).toBe(0)
   })
 })

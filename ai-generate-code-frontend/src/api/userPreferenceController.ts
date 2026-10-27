@@ -1,19 +1,15 @@
 /* eslint-disable */
 // @ts-ignore
-import request from '@/request';
+import request from '@/request'
 
-import * as API from './types';
+import * as API from './types'
 
 /** 此处后端没有提供注释 GET /user/preferences */
-export function userPreferencesUsingGet({
-  options,
-}: {
-  options?: { [key: string]: unknown };
-}) {
+export function userPreferencesUsingGet({ options }: { options?: { [key: string]: unknown } }) {
   return request<API.BaseResponsePreference>('/user/preferences', {
     method: 'GET',
     ...(options || {}),
-  });
+  })
 }
 
 /** 此处后端没有提供注释 PUT /user/preferences */
@@ -21,8 +17,8 @@ export function userPreferencesUsingPut({
   body,
   options,
 }: {
-  body: API.Preference;
-  options?: { [key: string]: unknown };
+  body: API.Preference
+  options?: { [key: string]: unknown }
 }) {
   return request<API.BaseResponsePreference>('/user/preferences', {
     method: 'PUT',
@@ -31,5 +27,5 @@ export function userPreferencesUsingPut({
     },
     data: body,
     ...(options || {}),
-  });
+  })
 }

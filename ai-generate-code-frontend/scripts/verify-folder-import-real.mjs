@@ -136,8 +136,13 @@ try {
   for (const { appId } of result.applications) {
     try {
       const deleted = await api('/app/delete', { id: appId })
-      if (deleted !== true) throw new Error('业务删除未成功')
-      result.cleanup.push({ appId, deleted })
+      if (deleted !== true) {
+        result.status = 'FAIL'
+        result.cleanup.push({ appId, error: '业务删除未成功' })
+        process.exitCode = 1
+      } else {
+        result.cleanup.push({ appId, deleted })
+      }
     } catch (error) {
       result.status = 'FAIL'
       result.cleanup.push({ appId, error: error.message })

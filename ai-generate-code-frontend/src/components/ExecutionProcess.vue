@@ -20,7 +20,16 @@ const expanded = computed(() => manualExpanded.value ?? props.active)
         :class="{ 'execution-process__chevron--expanded': expanded }"
         aria-hidden="true"
       >
-        <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <svg
+          viewBox="0 0 24 24"
+          width="12"
+          height="12"
+          stroke="currentColor"
+          stroke-width="2.5"
+          fill="none"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </span>
@@ -64,7 +73,9 @@ const expanded = computed(() => manualExpanded.value ?? props.active)
   width: 14px;
   height: 14px;
   color: #8c8c8c;
-  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s ease;
+  transition:
+    transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.15s ease;
 }
 .execution-process__toggle:hover .execution-process__chevron {
   color: #1677ff;

@@ -16,7 +16,11 @@ describe('UserLogin initialization', () => {
 
   it('shares one in-flight request between concurrent callers', async () => {
     let resolveRequest!: (value: unknown) => void
-    getLogin.mockReturnValueOnce(new Promise((resolve) => { resolveRequest = resolve }))
+    getLogin.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRequest = resolve
+      }),
+    )
     const { UserLoginStore } = await import('../UserLogin')
     const store = UserLoginStore()
 

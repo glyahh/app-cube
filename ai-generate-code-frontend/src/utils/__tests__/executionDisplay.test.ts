@@ -22,7 +22,10 @@ describe('execution display filtering', () => {
     expect(cleanExecutionText('', false, true)).toBe('')
   })
   it('deduplicates only within one stage', () => {
-    expect(thinkingLines('检查完毕', ['检查完毕', '标签正常', '标签正常'])).toEqual(['检查完毕', '标签正常'])
+    expect(thinkingLines('检查完毕', ['检查完毕', '标签正常', '标签正常'])).toEqual([
+      '检查完毕',
+      '标签正常',
+    ])
     expect(thinkingLines('检查完毕', ['检查完毕，标签正常'])).toEqual(['检查完毕，标签正常'])
     expect(thinkingLines('检查完毕', ['标签正常'])).toEqual(['检查完毕', '标签正常'])
   })

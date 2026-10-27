@@ -16,7 +16,7 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 实际PostgreSQL及Java持久方法；仅操作本轮事务内schema，不修改正式业务表。 */
-@EnabledIfEnvironmentVariable(named="AGENT_TEST_REAL_EDIT_JDBC",matches="1")
+@com.dbts.glyahhaigeneratecode.ExternalTest
 class ImportAgentEditJdbcTest {
     @TempDir Path temporary;
     Connection connect()throws Exception{

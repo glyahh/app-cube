@@ -34,7 +34,7 @@ class AgentRunPersistenceTest {
                 event("thinking.completed", "123:thinking:2", "", "")
         )), request).blockLast();
         var json = ArgumentCaptor.forClass(String.class);
-        verify(history, times(1)).saveAgentMessage(eq(1L), eq(2L), eq("本轮未产生最终回答。"), json.capture());
+        verify(history, times(1)).saveAgentMessage(eq(1L), eq(2L), eq("本轮已执行，未生成文字总结。"), json.capture());
         var rows = mapper.readTree(json.getValue());
         assertEquals(2, rows.size());
         assertEquals("123:thinking:1", rows.get(0).path("thinkingId").asText());

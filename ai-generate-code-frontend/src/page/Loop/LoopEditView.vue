@@ -5,8 +5,7 @@
 <script setup lang="ts">
 import LoopCreateView from './LoopCreateView.vue'
 
-defineProps<{id: string}> ()
-
+defineProps<{ id: string }>()
 </script>
 
 <style scoped>

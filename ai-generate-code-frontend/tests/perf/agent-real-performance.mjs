@@ -101,7 +101,11 @@ try {
       const ids = execFileSync('wsl.exe', ['-d', 'Ubuntu', '--', 'docker', 'ps', '-aq', '--filter', `label=glyahh.session_id=app:${appId}`], { encoding: 'utf8' }).trim().split(/\s+/).filter(Boolean)
       for (const id of ids) {
         const [info] = JSON.parse(execFileSync('wsl.exe', ['-d', 'Ubuntu', '--', 'docker', 'inspect', id], { encoding: 'utf8' }))
-        if (info.Config.Labels['glyahh.session_id'] !== `app:${appId}` || !info.Mounts.some(m => m.Destination === '/workspace' && m.Source.replace(/\\/g, '/').endsWith(`/temp/code_output/project_${appId}`))) throw Error('container identity mismatch')
+        if (info.Config.Labels['glyahh.session_id'] !== `app:${appId}` || !info.Mounts.some(m => m.Destination === '/workspace' && m.Source.replace(/\\/g, '/').endsWith(`/temp/code_output/project_${appId}`))) {
+          report.cleanup.push({ appId, error: 'container identity mismatch', containerId: id })
+          process.exitCode = 1
+          continue
+        }
         execFileSync('wsl.exe', ['-d', 'Ubuntu', '--', 'docker', 'rm', '-f', id])
       }
       await api('/app/delete', { id: appId })

@@ -1,11 +1,7 @@
 import request from '@/request'
 import { appLoopListVoUsingPost } from '@/api/appLoopController'
 import { loopGetVoUsingGet, loopUpdateUsingPost } from '@/api/loopController'
-import type {
-  BaseResponseLoopVO,
-  BaseResponseVoid,
-  LoopUpdateRequest,
-} from '@/api/types'
+import type { BaseResponseLoopVO, BaseResponseVoid, LoopUpdateRequest } from '@/api/types'
 
 export type LongId = string | number
 

@@ -26,13 +26,19 @@ describe('LoopPickerTrigger', () => {
   it('emits the selected Loop id before its detail request finishes', async () => {
     mocks.list.mockResolvedValueOnce({ data: { code: 20000, data: [] } })
     let resolveDetail!: (value: unknown) => void
-    mocks.get.mockReturnValueOnce(new Promise((resolve) => { resolveDetail = resolve }))
+    mocks.get.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDetail = resolve
+      }),
+    )
     const wrapper = shallowMount(LoopPickerTrigger, { props: { singleSelect: true } })
     await flushPromises()
 
-    const selection = (wrapper.vm as unknown as {
-      onSingleSelect: (loop: { id: string; loopName: string }) => Promise<void>
-    }).onSingleSelect({ id: '42', loopName: 'Fast Loop' })
+    const selection = (
+      wrapper.vm as unknown as {
+        onSingleSelect: (loop: { id: string; loopName: string }) => Promise<void>
+      }
+    ).onSingleSelect({ id: '42', loopName: 'Fast Loop' })
     await nextTick()
 
     expect(wrapper.emitted('singleChange')?.at(-1)?.[0]).toMatchObject({
@@ -49,8 +55,16 @@ describe('LoopPickerTrigger', () => {
     let resolveFirst!: (value: unknown) => void
     let resolveSecond!: (value: unknown) => void
     mocks.get
-      .mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve }))
-      .mockReturnValueOnce(new Promise((resolve) => { resolveSecond = resolve }))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSecond = resolve
+        }),
+      )
     const wrapper = shallowMount(LoopPickerTrigger, { props: { singleSelect: true } })
     await flushPromises()
     const vm = wrapper.vm as unknown as {
@@ -74,7 +88,11 @@ describe('LoopPickerTrigger', () => {
   it('cancels a numeric Loop selection before its detail response finishes', async () => {
     mocks.list.mockResolvedValueOnce({ data: { code: 20000, data: [] } })
     let resolveDetail!: (value: unknown) => void
-    mocks.get.mockReturnValueOnce(new Promise((resolve) => { resolveDetail = resolve }))
+    mocks.get.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDetail = resolve
+      }),
+    )
     const wrapper = shallowMount(LoopPickerTrigger, { props: { singleSelect: true } })
     await flushPromises()
     const vm = wrapper.vm as unknown as {

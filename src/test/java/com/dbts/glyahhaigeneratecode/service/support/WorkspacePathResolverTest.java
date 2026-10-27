@@ -107,23 +107,24 @@ class WorkspacePathResolverTest {
     }
 
     private static int junction(Path link, Path target) throws Exception {
+        if (!System.getProperty("os.name").startsWith("Windows")) {
+            Files.createSymbolicLink(link, target);
+            return 0;
+        }
         Process process = new ProcessBuilder("cmd", "/c", "mklink", "/J", link.toString(), target.toString()).start();
         return process.waitFor();
     }
 
     @Test
-    @DisplayName("工作区内部的符号链接不能解析到目录外")
+    @DisplayName("工作区内部的链接目录不能解析到目录外")
     void rejectsSymlinkInsideWorkspace() throws Exception {
-        Path outside = tempRoot.resolve("secret.txt");
-        Files.writeString(outside, "secret");
-        Path link = tempRoot.resolve("code_output").resolve("html_123").resolve("link.txt");
+        Path outside = tempRoot.resolve("outside");
+        Files.createDirectories(outside);
+        Files.writeString(outside.resolve("secret.txt"), "secret");
+        Path link = tempRoot.resolve("code_output").resolve("html_123").resolve("linked");
         Files.createDirectories(link.getParent());
-        try {
-            Files.createSymbolicLink(link, outside);
-        } catch (Exception error) {
-            org.junit.jupiter.api.Assumptions.assumeTrue(false, error.getMessage());
-        }
-        assertThrows(MyException.class, () -> resolver.resolveOutputResource("html_123", "link.txt"));
+        assertEquals(0, junction(link, outside));
+        assertThrows(MyException.class, () -> resolver.resolveOutputResource("html_123", "linked/secret.txt"));
     }
 
     @Test

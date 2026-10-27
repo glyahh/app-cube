@@ -31,7 +31,11 @@ describe('CodeGenerateEntry', () => {
 
   it('uses one immutable selection snapshot for app creation and navigation', async () => {
     let resolveCreate!: (value: unknown) => void
-    mocks.addApp.mockReturnValueOnce(new Promise((resolve) => { resolveCreate = resolve }))
+    mocks.addApp.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCreate = resolve
+      }),
+    )
     const wrapper = shallowMount(CodeGenerateEntry)
     const vm = wrapper.vm as unknown as {
       prompt: string
@@ -46,17 +50,25 @@ describe('CodeGenerateEntry', () => {
     resolveCreate({ data: { code: 20000, data: '9001' } })
     await creation
 
-    expect(mocks.addApp).toHaveBeenCalledWith(expect.objectContaining({
-      body: expect.objectContaining({ loopIds: ['1001'] }),
-    }))
-    expect(mocks.push).toHaveBeenCalledWith(expect.objectContaining({
-      query: expect.objectContaining({ loopId: '1001' }),
-    }))
+    expect(mocks.addApp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ loopIds: ['1001'] }),
+      }),
+    )
+    expect(mocks.push).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({ loopId: '1001' }),
+      }),
+    )
   })
 
   it('ignores repeated create attempts while a request is pending', async () => {
     let resolveCreate!: (value: unknown) => void
-    mocks.addApp.mockReturnValueOnce(new Promise((resolve) => { resolveCreate = resolve }))
+    mocks.addApp.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCreate = resolve
+      }),
+    )
     const wrapper = shallowMount(CodeGenerateEntry)
     const vm = wrapper.vm as unknown as {
       prompt: string

@@ -1,5 +1,6 @@
 package com.dbts.glyahhaigeneratecode.agentauth;
 
+import com.dbts.glyahhaigeneratecode.ExternalTest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>需要 AGENT_POSTGRES_DSN 与 V44–V46 已应用；缺失时整类跳过，
  * 不把「没跑」记成「通过」。
  */
+@ExternalTest
 class AgentPermissionGateJdbcTest {
     private static final String DSN = dsn();
 

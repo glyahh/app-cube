@@ -12,7 +12,15 @@
             @click="currentStep = idx"
           >
             <div class="flow-node-index">
-              <svg v-if="step.icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg
+                v-if="step.icon"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
                 <path :d="step.icon" />
               </svg>
               <span v-else>{{ idx + 1 }}</span>
@@ -45,14 +53,32 @@
               <a-form-item label="可见性">
                 <a-radio-group v-model:value="form.visibility">
                   <a-radio value="public">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      style="vertical-align: -2px; margin-right: 4px"
+                    >
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
                     </svg>
                     公开
                   </a-radio>
                   <a-radio value="private">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0110 0v4" />
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      style="vertical-align: -2px; margin-right: 4px"
+                    >
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0110 0v4" />
                     </svg>
                     私有
                   </a-radio>
@@ -74,10 +100,7 @@
           <a-divider class="step-divider" />
 
           <!-- 当前步骤编辑区 -->
-          <div
-            v-for="(step, idx) in form.steps"
-            :key="step.key"
-          >
+          <div v-for="(step, idx) in form.steps" :key="step.key">
             <a-form-item
               v-if="idx === currentStep"
               :label="`${step.label}`"
@@ -109,17 +132,33 @@
             <a-space>
               <a-button type="primary" @click="handleSave" :loading="saving">
                 <template #icon>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
                     <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
-                    <polyline points="17,21 17,13 7,13 7,21" /><polyline points="7,3 7,8 15,8" />
+                    <polyline points="17,21 17,13 7,13 7,21" />
+                    <polyline points="7,3 7,8 15,8" />
                   </svg>
                 </template>
                 保存
               </a-button>
               <a-button @click="handleCancel">
                 <template #icon>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
                   </svg>
                 </template>
                 取消
@@ -170,16 +209,36 @@ const currentStepLabel = computed(() => templateSteps[currentStep.value]?.label 
 
 /** 5 步模板：每个步骤附带 SVG path 图标 */
 const templateSteps = [
-  { key: 'role', label: '角色设定', icon: 'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 3a4 4 0 100 8 4 4 0 000-8z',
-    placeholder: '你扮演…\n例如：你是一个资深的 Vue 前端工程师' },
-  { key: 'context', label: '背景上下文', icon: 'M9 12h6M9 16h6M12 2a10 10 0 110 20 10 10 0 010-20z',
-    placeholder: '补充背景信息…\n例如：用户需要生成一个响应式管理后台' },
-  { key: 'constraints', label: '约束与边界', icon: 'M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z',
-    placeholder: '行为限制、输出规范…\n例如：- 使用 Vue 3 + TypeScript\n- 响应式布局\n- 输出简洁' },
-  { key: 'workflow', label: '执行步骤', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 5h6M9 12l2 2 4-4',
-    placeholder: '1. 分析需求\n2. 设计数据流\n3. 生成核心代码\n4. 优化与打包' },
-  { key: 'output', label: '输出格式', icon: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8',
-    placeholder: '返回 Markdown 格式结果\n或：生成可直接运行的 HTML 文件' },
+  {
+    key: 'role',
+    label: '角色设定',
+    icon: 'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 3a4 4 0 100 8 4 4 0 000-8z',
+    placeholder: '你扮演…\n例如：你是一个资深的 Vue 前端工程师',
+  },
+  {
+    key: 'context',
+    label: '背景上下文',
+    icon: 'M9 12h6M9 16h6M12 2a10 10 0 110 20 10 10 0 010-20z',
+    placeholder: '补充背景信息…\n例如：用户需要生成一个响应式管理后台',
+  },
+  {
+    key: 'constraints',
+    label: '约束与边界',
+    icon: 'M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z',
+    placeholder: '行为限制、输出规范…\n例如：- 使用 Vue 3 + TypeScript\n- 响应式布局\n- 输出简洁',
+  },
+  {
+    key: 'workflow',
+    label: '执行步骤',
+    icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 5h6M9 12l2 2 4-4',
+    placeholder: '1. 分析需求\n2. 设计数据流\n3. 生成核心代码\n4. 优化与打包',
+  },
+  {
+    key: 'output',
+    label: '输出格式',
+    icon: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8',
+    placeholder: '返回 Markdown 格式结果\n或：生成可直接运行的 HTML 文件',
+  },
 ]
 
 const form = reactive<{
@@ -228,7 +287,7 @@ const handleSave = async () => {
       await new Promise<void>((resolve, reject) => {
         Modal.confirm({
           title: '部分步骤未填写',
-          content: `你只填写了 ${form.steps.length - emptySteps.length}/${form.steps.length} 步，空的步骤（${emptySteps.map(s => s.label).join('、')}）将被跳过，仅保存已填写内容。确定保存？`,
+          content: `你只填写了 ${form.steps.length - emptySteps.length}/${form.steps.length} 步，空的步骤（${emptySteps.map((s) => s.label).join('、')}）将被跳过，仅保存已填写内容。确定保存？`,
           okText: '确定保存',
           cancelText: '继续编辑',
           onOk: () => resolve(),
@@ -348,8 +407,9 @@ onMounted(async () => {
   cursor: pointer;
   border-radius: 8px;
   position: relative;
-  transition: background var(--transition-duration, 0.2s) ease,
-              border-color var(--transition-duration, 0.2s) ease;
+  transition:
+    background var(--transition-duration, 0.2s) ease,
+    border-color var(--transition-duration, 0.2s) ease;
   border: 1px solid transparent;
 }
 

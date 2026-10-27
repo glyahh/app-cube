@@ -11,7 +11,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 由真实卷脚本创建并清理夹具；本类实际调用生产WSL平台引擎，不使用协议替身。 */
-@EnabledIfEnvironmentVariable(named="AGENT_TEST_CANDIDATE_FIXTURE",matches=".+")
+@com.dbts.glyahhaigeneratecode.ExternalTest
 class ImportAgentCandidatePlatformTest {
     @Test void productionReaderBuildsFrozenAndVerifiesActualSealedCandidate()throws Exception{
         var node=new ObjectMapper().readTree(Files.readAllBytes(Path.of(System.getenv("AGENT_TEST_CANDIDATE_FIXTURE"))));

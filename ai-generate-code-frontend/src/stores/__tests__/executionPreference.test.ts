@@ -10,11 +10,20 @@ vi.mock('@/request', () => ({ default: mocks }))
 vi.mock('@/api', () => ({ userGetLoginUsingGet: vi.fn() }))
 
 describe('executionPreference', () => {
-  beforeEach(() => { setActivePinia(createPinia()); vi.clearAllMocks() })
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
   it('defaults collapsed and loads account preference', async () => {
-    mocks.get.mockResolvedValue({ data: { code: 20000, data: {
-      expandExecutionProcess: true, autoModelProxyFallback: true,
-    } } })
+    mocks.get.mockResolvedValue({
+      data: {
+        code: 20000,
+        data: {
+          expandExecutionProcess: true,
+          autoModelProxyFallback: true,
+        },
+      },
+    })
     const pref = useExecutionPreference()
     expect(pref.expanded).toBe(false)
     UserLoginStore().setLoginUser({ id: '1' })
@@ -42,7 +51,11 @@ describe('executionPreference', () => {
   })
   it('ignores old account response after logout', async () => {
     let complete!: (result: unknown) => void
-    mocks.get.mockReturnValue(new Promise(resolve => { complete = resolve }))
+    mocks.get.mockReturnValue(
+      new Promise((resolve) => {
+        complete = resolve
+      }),
+    )
     const pref = useExecutionPreference()
     UserLoginStore().setLoginUser({ id: '1' })
     await nextTick()
@@ -53,11 +66,11 @@ describe('executionPreference', () => {
     expect(pref.expanded).toBe(false)
   })
   it('automatic naming defaults on and persists only its own field', async () => {
-    mocks.put.mockResolvedValue({ data: { code: 0, data: { autoNameProject:false } } })
+    mocks.put.mockResolvedValue({ data: { code: 0, data: { autoNameProject: false } } })
     const pref = useExecutionPreference()
     expect(pref.autoNameProject).toBe(true)
     await pref.saveAutoNameProject(false)
-    expect(mocks.put).toHaveBeenCalledWith('/user/preferences', { autoNameProject:false })
+    expect(mocks.put).toHaveBeenCalledWith('/user/preferences', { autoNameProject: false })
     expect(pref.autoNameProject).toBe(false)
   })
 })

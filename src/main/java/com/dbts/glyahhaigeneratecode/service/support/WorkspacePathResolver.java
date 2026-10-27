@@ -82,6 +82,9 @@ public class WorkspacePathResolver {
      */
     public Path resolveDeployResource(String deployKey, String resourcePath) {
         // 同 resolveOutputResource：两段解析，避免 ../ 跨到别的发布目录
+        if (deployKey == null || !deployKey.matches("[a-zA-Z0-9_-]+")) {
+            throw new MyException(ErrorCode.PARAMS_ERROR, "目录名称无效");
+        }
         Path deployDir = guardWithin(props.getDeployRoot(), deployKey);
         String relative = normalize(resourcePath);
         if (!PublicDeployFiles.isPublicPath(relative)) {
@@ -103,7 +106,7 @@ public class WorkspacePathResolver {
         if (resourcePath == null) {
             return "";
         }
-        String trimmed = resourcePath.trim();
+        String trimmed = resourcePath.trim().replace('\\', '/');
         while (trimmed.startsWith("/") || trimmed.startsWith("\\")) {
             trimmed = trimmed.substring(1);
         }

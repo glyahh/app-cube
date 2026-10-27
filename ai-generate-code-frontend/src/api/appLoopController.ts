@@ -1,8 +1,8 @@
 /* eslint-disable */
 // @ts-ignore
-import request from '@/request';
+import request from '@/request'
 
-import * as API from './types';
+import * as API from './types'
 
 /** 此处后端没有提供注释 POST /app/loop/add */
 export function appLoopAddUsingPost({
@@ -10,8 +10,8 @@ export function appLoopAddUsingPost({
   options,
 }: {
   // 叠加生成的Param类型 (非body参数openapi默认没有生成对象)
-  params: API.AppLoopAddUsingPostParams;
-  options?: { [key: string]: unknown };
+  params: API.AppLoopAddUsingPostParams
+  options?: { [key: string]: unknown }
 }) {
   return request<API.BaseResponseVoid>('/app/loop/add', {
     method: 'POST',
@@ -19,7 +19,7 @@ export function appLoopAddUsingPost({
       ...params,
     },
     ...(options || {}),
-  });
+  })
 }
 
 /** 此处后端没有提供注释 POST /app/loop/bind */
@@ -29,9 +29,9 @@ export function appLoopBindUsingPost({
   options,
 }: {
   // 叠加生成的Param类型 (非body参数openapi默认没有生成对象)
-  params: API.AppLoopBindUsingPostParams;
-  body: API.AppLoopBindUsingPostBody;
-  options?: { [key: string]: unknown };
+  params: API.AppLoopBindUsingPostParams
+  body: API.AppLoopBindUsingPostBody
+  options?: { [key: string]: unknown }
 }) {
   return request<API.BaseResponseVoid>('/app/loop/bind', {
     method: 'POST',
@@ -43,7 +43,7 @@ export function appLoopBindUsingPost({
     },
     data: body,
     ...(options || {}),
-  });
+  })
 }
 
 /** 此处后端没有提供注释 POST /app/loop/list/vo */
@@ -52,8 +52,8 @@ export function appLoopListVoUsingPost({
   options,
 }: {
   // 叠加生成的Param类型 (非body参数openapi默认没有生成对象)
-  params: API.AppLoopListVoUsingPostParams;
-  options?: { [key: string]: unknown };
+  params: API.AppLoopListVoUsingPostParams
+  options?: { [key: string]: unknown }
 }) {
   return request<API.BaseResponseListMapStringObject>('/app/loop/list/vo', {
     method: 'POST',
@@ -61,7 +61,7 @@ export function appLoopListVoUsingPost({
       ...params,
     },
     ...(options || {}),
-  });
+  })
 }
 
 /** 此处后端没有提供注释 POST /app/loop/remove */
@@ -70,8 +70,8 @@ export function appLoopRemoveUsingPost({
   options,
 }: {
   // 叠加生成的Param类型 (非body参数openapi默认没有生成对象)
-  params: API.AppLoopRemoveUsingPostParams;
-  options?: { [key: string]: unknown };
+  params: API.AppLoopRemoveUsingPostParams
+  options?: { [key: string]: unknown }
 }) {
   return request<API.BaseResponseVoid>('/app/loop/remove', {
     method: 'POST',
@@ -79,5 +79,5 @@ export function appLoopRemoveUsingPost({
       ...params,
     },
     ...(options || {}),
-  });
+  })
 }

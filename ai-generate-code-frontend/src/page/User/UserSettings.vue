@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { UserLoginStore } from '@/stores/UserLogin'
-import { userUpdateUsingPut, userPersonalizationGetUsingGet, userPersonalizationPutUsingPut } from '@/api/userController'
+import {
+  userUpdateUsingPut,
+  userPersonalizationGetUsingGet,
+  userPersonalizationPutUsingPut,
+} from '@/api/userController'
 import type { UserUpdateRequest } from '@/api/types'
 import type { ApplyHistoryVO } from '@/api/types'
 import { appApplyListMyHistoryUsingPost, appApplyUsingPost } from '@/api/appController'
@@ -62,7 +66,8 @@ function validatePasswordForm(): string | null {
   if (!passwordForm.value.oldPassword) return '请输入原密码'
   if (!passwordForm.value.newPassword) return '请输入新密码'
   if (passwordForm.value.newPassword.length < 8) return '新密码不得少于 8 位'
-  if (passwordForm.value.newPassword !== passwordForm.value.confirmPassword) return '两次输入的新密码不一致'
+  if (passwordForm.value.newPassword !== passwordForm.value.confirmPassword)
+    return '两次输入的新密码不一致'
   return null
 }
 
@@ -159,13 +164,19 @@ function customCount(val?: string) {
 async function handlePersonalizationSubmit() {
   personalizationLoading.value = true
   try {
-    const res = await userPersonalizationPutUsingPut({ body: { appStyle: personalizationForm.value.appStyle, answerStyle: personalizationForm.value.answerStyle } })
+    const res = await userPersonalizationPutUsingPut({
+      body: {
+        appStyle: personalizationForm.value.appStyle,
+        answerStyle: personalizationForm.value.answerStyle,
+      },
+    })
     if (res?.data?.data === true) message.success('保存成功')
     else message.error(res?.data?.message || '保存失败')
   } catch (e: any) {
     message.error(e?.response?.data?.message || e?.message || '保存失败')
+  } finally {
+    personalizationLoading.value = false
   }
-  finally { personalizationLoading.value = false }
 }
 
 // 申请管理 / 用户请求（模拟数据）
@@ -286,8 +297,12 @@ watch(
         个人设置
       </h2>
       <nav class="sidebar-nav">
-        <button v-for="item in menuItems" :key="item.key" :class="['nav-item', { active: activeMenu === item.key }]"
-          @click="activeMenu = item.key">
+        <button
+          v-for="item in menuItems"
+          :key="item.key"
+          :class="['nav-item', { active: activeMenu === item.key }]"
+          @click="activeMenu = item.key"
+        >
           <component :is="item.icon" class="nav-icon" />
           <span>{{ item.key === 'apply' ? applyMenuLabel : item.label }}</span>
         </button>
@@ -309,16 +324,34 @@ watch(
               </div>
               <a-form layout="vertical" class="profile-form">
                 <a-form-item label="昵称">
-                  <a-input v-model:value="profileForm.userName" placeholder="请输入昵称" size="large" />
+                  <a-input
+                    v-model:value="profileForm.userName"
+                    placeholder="请输入昵称"
+                    size="large"
+                  />
                 </a-form-item>
                 <a-form-item label="头像链接">
-                  <a-input v-model:value="profileForm.userAvatar" placeholder="输入头像 URL" size="large" />
+                  <a-input
+                    v-model:value="profileForm.userAvatar"
+                    placeholder="输入头像 URL"
+                    size="large"
+                  />
                 </a-form-item>
                 <a-form-item label="个人简介">
-                  <a-textarea v-model:value="profileForm.userProfile" placeholder="写点什么介绍自己" :rows="4" size="large" />
+                  <a-textarea
+                    v-model:value="profileForm.userProfile"
+                    placeholder="写点什么介绍自己"
+                    :rows="4"
+                    size="large"
+                  />
                 </a-form-item>
-                <a-button type="primary" size="large" :loading="profileLoading" class="submit-btn"
-                  @click="handleProfileSubmit">
+                <a-button
+                  type="primary"
+                  size="large"
+                  :loading="profileLoading"
+                  class="submit-btn"
+                  @click="handleProfileSubmit"
+                >
                   保存修改
                 </a-button>
               </a-form>
@@ -331,13 +364,32 @@ watch(
             <div class="form-card">
               <a-form layout="vertical">
                 <a-form-item label="应用风格">
-                  <a-textarea v-model:value="personalizationForm.appStyle" placeholder="例如：我喜欢简洁、使用毛玻璃效果、主色调为蓝色..." :rows="5" size="large" :maxlength="2000" :show-count="{ formatter: ({ value }) => customCount(value) }" />
+                  <a-textarea
+                    v-model:value="personalizationForm.appStyle"
+                    placeholder="例如：我喜欢简洁、使用毛玻璃效果、主色调为蓝色..."
+                    :rows="5"
+                    size="large"
+                    :maxlength="2000"
+                    :show-count="{ formatter: ({ value }) => customCount(value) }"
+                  />
                 </a-form-item>
                 <a-form-item label="回答风格">
-                  <a-textarea v-model:value="personalizationForm.answerStyle" placeholder="例如：用正式的语气回答，代码与解释交替..." :rows="5" size="large" :maxlength="2000" :show-count="{ formatter: ({ value }) => customCount(value) }" />
+                  <a-textarea
+                    v-model:value="personalizationForm.answerStyle"
+                    placeholder="例如：用正式的语气回答，代码与解释交替..."
+                    :rows="5"
+                    size="large"
+                    :maxlength="2000"
+                    :show-count="{ formatter: ({ value }) => customCount(value) }"
+                  />
                 </a-form-item>
-                <a-button type="primary" size="large" :loading="personalizationLoading" class="submit-btn"
-                  @click="handlePersonalizationSubmit">
+                <a-button
+                  type="primary"
+                  size="large"
+                  :loading="personalizationLoading"
+                  class="submit-btn"
+                  @click="handlePersonalizationSubmit"
+                >
                   保存配置
                 </a-button>
               </a-form>
@@ -349,16 +401,33 @@ watch(
             <div class="form-card">
               <a-form layout="vertical" class="password-form">
                 <a-form-item label="原密码">
-                  <a-input-password v-model:value="passwordForm.oldPassword" placeholder="请输入原密码" size="large" />
+                  <a-input-password
+                    v-model:value="passwordForm.oldPassword"
+                    placeholder="请输入原密码"
+                    size="large"
+                  />
                 </a-form-item>
                 <a-form-item label="新密码">
-                  <a-input-password v-model:value="passwordForm.newPassword" placeholder="至少 8 位" size="large" />
+                  <a-input-password
+                    v-model:value="passwordForm.newPassword"
+                    placeholder="至少 8 位"
+                    size="large"
+                  />
                 </a-form-item>
                 <a-form-item label="确认新密码">
-                  <a-input-password v-model:value="passwordForm.confirmPassword" placeholder="再次输入新密码" size="large" />
+                  <a-input-password
+                    v-model:value="passwordForm.confirmPassword"
+                    placeholder="再次输入新密码"
+                    size="large"
+                  />
                 </a-form-item>
-                <a-button type="primary" size="large" :loading="passwordLoading" class="submit-btn"
-                  @click="handlePasswordSubmit">
+                <a-button
+                  type="primary"
+                  size="large"
+                  :loading="passwordLoading"
+                  class="submit-btn"
+                  @click="handlePasswordSubmit"
+                >
                   修改密码
                 </a-button>
               </a-form>
@@ -380,7 +449,13 @@ watch(
                 placeholder="请简单说明你申请成为管理员的理由（选填）"
                 class="apply-reason-input"
               />
-              <a-button type="primary" size="large" class="apply-btn" :loading="applyLoading" @click="handleApplyAdmin">
+              <a-button
+                type="primary"
+                size="large"
+                class="apply-btn"
+                :loading="applyLoading"
+                @click="handleApplyAdmin"
+              >
                 申请成为管理员
               </a-button>
             </div>
@@ -399,7 +474,12 @@ watch(
                     <span class="req-time">{{ req.applyTime }}</span>
                   </div>
                   <div class="request-actions">
-                    <a-button type="primary" size="small" :loading="applyLoading" @click="handleApprove(req.id)">
+                    <a-button
+                      type="primary"
+                      size="small"
+                      :loading="applyLoading"
+                      @click="handleApprove(req.id)"
+                    >
                       同意
                     </a-button>
                     <a-button size="small" :loading="applyLoading" @click="handleReject(req.id)">
@@ -417,7 +497,9 @@ watch(
 
             <div class="form-card">
               <div class="history-toolbar">
-                <div class="history-last-updated" v-if="historyLastUpdatedAt">上次刷新：{{ historyLastUpdatedAt }}</div>
+                <div class="history-last-updated" v-if="historyLastUpdatedAt">
+                  上次刷新：{{ historyLastUpdatedAt }}
+                </div>
                 <a-button :loading="historyLoading" @click="loadMyHistory(true)">刷新</a-button>
               </div>
 
@@ -429,13 +511,20 @@ watch(
               <div v-else class="history-list">
                 <div
                   v-for="item in historyList"
-                  :key="String(item.applyId ?? `${item.operate ?? 'x'}-${item.createTime ?? ''}-${item.reviewTime ?? ''}`)"
+                  :key="
+                    String(
+                      item.applyId ??
+                        `${item.operate ?? 'x'}-${item.createTime ?? ''}-${item.reviewTime ?? ''}`,
+                    )
+                  "
                   class="history-item"
                 >
                   <div class="history-head">
                     <div class="history-title">
                       <span class="history-operate">{{ operateText(item.operate) }}</span>
-                      <a-tag :color="statusMeta(item.status).color">{{ statusMeta(item.status).text }}</a-tag>
+                      <a-tag :color="statusMeta(item.status).color">{{
+                        statusMeta(item.status).text
+                      }}</a-tag>
                     </div>
                     <div class="history-time">
                       <span v-if="item.createTime">提交：{{ item.createTime }}</span>
@@ -479,7 +568,11 @@ watch(
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap');
 
 .settings-page {
-  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'DM Sans',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   display: flex;
   gap: 32px;
   max-width: 1000px;
@@ -787,7 +880,9 @@ watch(
 /* 过渡动画 */
 .panel-fade-enter-active,
 .panel-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 
 .panel-fade-enter-from {

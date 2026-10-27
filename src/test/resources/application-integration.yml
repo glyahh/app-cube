@@ -1,0 +1,18 @@
+spring:
+  config:
+    import: optional:file:target/integration-empty.properties[.properties]
+  main:
+    allow-bean-definition-overriding: true
+agent:
+  runtime:
+    python-executable: python
+    script-path: src/test/resources/agent-stub.py
+  pool:
+    core-size: 0
+    max-size: 1
+aliyun:
+  oss:
+    endpoint: https://oss-cn-hangzhou.aliyuncs.com
+    access-key-id: integration-only
+    access-key-secret: integration-only
+    bucket-name: integration-only

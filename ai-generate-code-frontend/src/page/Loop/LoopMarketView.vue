@@ -8,8 +8,24 @@
       <a-button type="primary" class="create-loop-btn" @click="goCreate">
         <template #icon>
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <line x1="7" y1="1" x2="7" y2="13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-            <line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            <line
+              x1="7"
+              y1="1"
+              x2="7"
+              y2="13"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+            <line
+              x1="1"
+              y1="7"
+              x2="13"
+              y2="7"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
           </svg>
         </template>
         创作我的 Loop
@@ -25,9 +41,35 @@
           <a-empty description="暂无精选 Loop">
             <template #image>
               <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
-                <rect x="20" y="30" width="80" height="60" rx="8" stroke="currentColor" stroke-width="2" fill="none" opacity="0.3" />
-                <circle cx="60" cy="55" r="12" stroke="currentColor" stroke-width="2" fill="none" opacity="0.3" />
-                <line x1="42" y1="78" x2="78" y2="78" stroke="currentColor" stroke-width="2" opacity="0.2" />
+                <rect
+                  x="20"
+                  y="30"
+                  width="80"
+                  height="60"
+                  rx="8"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  fill="none"
+                  opacity="0.3"
+                />
+                <circle
+                  cx="60"
+                  cy="55"
+                  r="12"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  fill="none"
+                  opacity="0.3"
+                />
+                <line
+                  x1="42"
+                  y1="78"
+                  x2="78"
+                  y2="78"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  opacity="0.2"
+                />
               </svg>
             </template>
           </a-empty>
@@ -41,8 +83,23 @@
           >
             <div class="loop-card-icon">
               <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                <circle cx="24" cy="24" r="20" stroke="var(--primary-color)" stroke-width="1.5" fill="none" opacity="0.3" />
-                <path d="M18 28l6-8 6 8" stroke="var(--primary-color)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                <circle
+                  cx="24"
+                  cy="24"
+                  r="20"
+                  stroke="var(--primary-color)"
+                  stroke-width="1.5"
+                  fill="none"
+                  opacity="0.3"
+                />
+                <path
+                  d="M18 28l6-8 6 8"
+                  stroke="var(--primary-color)"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  fill="none"
+                />
                 <circle cx="24" cy="20" r="2" fill="var(--primary-color)" opacity="0.6" />
               </svg>
             </div>
@@ -52,8 +109,20 @@
               <div class="loop-card-meta">
                 <span class="loop-card-author">
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <circle cx="6" cy="4" r="2.5" stroke="currentColor" stroke-width="1" fill="none" />
-                    <path d="M2 11c0-2.5 1.79-4.5 4-4.5s4 2 4 4.5" stroke="currentColor" stroke-width="1" fill="none" />
+                    <circle
+                      cx="6"
+                      cy="4"
+                      r="2.5"
+                      stroke="currentColor"
+                      stroke-width="1"
+                      fill="none"
+                    />
+                    <path
+                      d="M2 11c0-2.5 1.79-4.5 4-4.5s4 2 4 4.5"
+                      stroke="currentColor"
+                      stroke-width="1"
+                      fill="none"
+                    />
                   </svg>
                   用户 {{ loop.userId }}
                 </span>
@@ -95,8 +164,23 @@
           >
             <div class="loop-card-icon">
               <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                <circle cx="24" cy="24" r="20" stroke="var(--primary-color)" stroke-width="1.5" fill="none" opacity="0.3" />
-                <path d="M18 28l6-8 6 8" stroke="var(--primary-color)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                <circle
+                  cx="24"
+                  cy="24"
+                  r="20"
+                  stroke="var(--primary-color)"
+                  stroke-width="1.5"
+                  fill="none"
+                  opacity="0.3"
+                />
+                <path
+                  d="M18 28l6-8 6 8"
+                  stroke="var(--primary-color)"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  fill="none"
+                />
                 <circle cx="24" cy="20" r="2" fill="var(--primary-color)" opacity="0.6" />
               </svg>
             </div>
@@ -299,7 +383,9 @@ onMounted(() => {
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
-  transition: box-shadow 0.3s ease, transform 0.3s ease;
+  transition:
+    box-shadow 0.3s ease,
+    transform 0.3s ease;
   display: flex;
   flex-direction: column;
 }

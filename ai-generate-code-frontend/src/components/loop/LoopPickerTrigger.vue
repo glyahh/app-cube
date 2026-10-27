@@ -22,7 +22,9 @@
           <!-- 已选中的 Loop compiledPrompt 预览 -->
           <div v-if="selectedSingleLoop" class="picker-prompt-preview">
             <div class="picker-preview-label">已选 Loop 注入内容预览</div>
-            <pre class="picker-preview-text">{{ selectedSingleLoop.compiledPrompt || '(无注入内容)' }}</pre>
+            <pre class="picker-preview-text">{{
+              selectedSingleLoop.compiledPrompt || '(无注入内容)'
+            }}</pre>
           </div>
         </template>
         <!-- 多选模式：checkbox（默认） -->
@@ -37,11 +39,27 @@
       </div>
     </template>
     <div class="loop-pill-wrap">
-      <a-button class="loop-pill" :type="singleSelect ? (selectedSingleId ? 'primary' : 'default') : (selectedIds.length > 0 ? 'primary' : 'default')">
+      <a-button
+        class="loop-pill"
+        :type="
+          singleSelect
+            ? selectedSingleId
+              ? 'primary'
+              : 'default'
+            : selectedIds.length > 0
+              ? 'primary'
+              : 'default'
+        "
+      >
         <span class="loop-pill-text">
-          Loop{{ singleSelect
-            ? (selectedSingleLoop ? ' · 已选' : '')
-            : (selectedIds.length > 0 ? ' · ' + selectedIds.length : '')
+          Loop{{
+            singleSelect
+              ? selectedSingleLoop
+                ? ' · 已选'
+                : ''
+              : selectedIds.length > 0
+                ? ' · ' + selectedIds.length
+                : ''
           }}
         </span>
       </a-button>
@@ -68,13 +86,16 @@ interface SelectedLoopInfo {
   compiledPrompt: string
 }
 
-const props = withDefaults(defineProps<{
-  singleSelect?: boolean
-  showBeta?: boolean
-}>(), {
-  singleSelect: false,
-  showBeta: false,
-})
+const props = withDefaults(
+  defineProps<{
+    singleSelect?: boolean
+    showBeta?: boolean
+  }>(),
+  {
+    singleSelect: false,
+    showBeta: false,
+  },
+)
 
 const router = useRouter()
 const visible = ref(false)
