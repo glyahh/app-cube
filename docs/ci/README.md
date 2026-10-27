@@ -4,8 +4,7 @@
 
 ```text
 Codex 开发 -> 创建 PR -> PR Checks + Codex Review
-          -> 人工评论 /codex fix 或直接修改并 push
-          -> 新 run 自动重跑 -> merge-gate 全绿 -> 合并
+          -> 直接修改并 push -> 新 run 自动重跑 -> merge-gate 全绿 -> 合并
 ```
 
 智能审查和确定性检查分开：Codex Review 找高价值设计/安全/并发问题；`merge-gate` 只根据 JUnit、pytest、Vitest、Playwright、Lint、类型检查和构建结果判定。
@@ -73,6 +72,8 @@ GitHub 设置的目标：
 
 ## Codex
 
-- `Codex PR Review`：默认需要仓库变量 `CODEX_REVIEW_ENABLED=true` 和 secret `OPENAI_API_KEY`；不使用该变量时不会产生调用费用。
-- `/codex fix`：仅仓库写权限用户、同仓库 PR 可触发。Codex 只改工作区，受保护路径 `.github/**`、`AGENTS.md`、`CLAUDE.md`、git 元数据不可修改；补丁在独立 job 校验后推送，再重新触发 PR Checks。
+- Review 走 ChatGPT 侧的 GitHub 集成，消耗 ChatGPT 套餐额度，不使用 OpenAI API key；仓库不配置 `OPENAI_API_KEY`，也没有 `CODEX_REVIEW_ENABLED` 开关。
+- 启用：把仓库连接到 Codex，在 `chatgpt.com/settings/code-review` 为该仓库打开 Automatic review。单次审查直接在 PR 评论 `@codex review`。
+- 审查规则写在根 `AGENTS.md` 的 `## Code Review Rules`，Codex 读取离改动最近的一份。
+- Codex 只报 P0/P1 问题，结果是普通 PR 评论，不参与合并判定。
 - `Real AI Tests`：仅在 `real-ai` environment 手动确认后运行。

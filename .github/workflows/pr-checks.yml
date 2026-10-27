@@ -55,15 +55,15 @@ jobs:
               - '.mvn/**'
               - 'src/**'
               - 'scripts/ci/**'
-              - '.github/workflows/pr-checks.yml'
+              - '.github/**'
             agent:
               - 'agent/**'
               - 'scripts/ci/**'
-              - '.github/workflows/pr-checks.yml'
+              - '.github/**'
             frontend:
               - 'ai-generate-code-frontend/**'
               - 'scripts/ci/**'
-              - '.github/workflows/pr-checks.yml'
+              - '.github/**'
 
   backend:
     name: backend

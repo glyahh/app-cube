@@ -207,6 +207,16 @@ agent/                    # Python 执行面（不是 Java 包）
 - 每个测试 job 使用 `scripts/ci/check_test_results.py` 检查报告：必须有真实 case，failure/error/skipped 必须为 0。报告缺失按失败处理。
 - 前端 ESLint 存量违规记录在 `ai-generate-code-frontend/eslint-suppressions.json`，按规则计数；新增违规仍失败。修复后运行 `npx eslint --prune-suppressions` 收缩基线，不关闭规则。
 - 已修复缺陷保留可复现的防复发测试；映射见 `docs/ci/regression-inventory.md`。先红后绿，不复制实现、不制造常量测试。
-- Codex Review 只报高置信度 correctness/security/authorization/data loss/concurrency/migration/meaningful regression; 不重复 lint、格式和类型检查，不运行构建。审查不是合并条件。
-- `/codex fix` 仅同仓库 PR 和仓库写权限用户可用。Codex 在无网络 workspace 改文件，经过路径白名单、20 文件/200 KB 上限后由独立 job 推送，并重新触发 PR Checks；AI 不直接合并。
+- Codex Review 走 ChatGPT 的 GitHub 集成，消耗套餐额度而不是 API key；仓库不保存模型密钥。只报高置信度 correctness/security/authorization/data loss/concurrency/migration/meaningful regression; 不重复 lint、格式和类型检查，不运行构建。审查不是合并条件。
+- Codex 的开关与触发在 `chatgpt.com/settings/code-review` 和 PR 评论 `@codex review` 中管理，不通过仓库 workflow 调用。任何需要 `OPENAI_API_KEY` 的 Codex 工作流都不要加回。
 - 分支保护要求：从 PR 合并、必需检查 `merge-gate`、禁止直接 push/force push/删除 `master` 与 `code_board`。权限不足时在 GitHub Branch protection 或 Rulesets 手动配置。
+
+## Code Review Rules
+
+### 只报会阻止合并的缺陷
+
+只报告 correctness、security/authorization、data loss、concurrency、事务、迁移，以及真实行为缺少回归覆盖。lint、格式、命名、类型检查由 CI 负责，不要重复。
+
+### 给可执行的证据
+
+每条问题包含 `path:line`、具体失败场景和最小修复。没有这类问题就明确说没有，不要凑数，也不要写总结或赞美。
