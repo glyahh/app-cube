@@ -203,7 +203,7 @@ agent/                    # Python 执行面（不是 Java 包）
 - `.github/workflows/pr-checks.yml` 按改动路径运行：Java 编译/单测/安全回归/Testcontainers/构建，Python 离线 pytest，前端类型/Lint/格式/Vitest/构建/Playwright。工作流、公共脚本和 `.github/**` 改动触发全部检查；每周一完整运行。
 - 路径未命中的 job 是 `skipped`，不是测试跳过。`merge-gate` 要求被选中的 job 必须 `success`；失败、取消或缺失都阻止合并。
 - 必需测试禁止真实模型调用。CI 不配置模型密钥，Python 在无外网 namespace 运行，模型交互只用本地 Mock Server 或 stdio stub。禁止用空测试、无条件跳过、吞异常或伪造报告让检查变绿。
-- `external` 标签用于真实数据库、Docker 或外部服务的旧验收，不进入合并门禁；未运行不等于通过。真实模型测试只在 `agent/live_tests/`，仅由 `Real AI Tests` 手动工作流触发并产生费用。
+- `external` 标签用于真实数据库、Docker 或外部服务的旧验收，不进入合并门禁；未运行不等于通过。真实模型测试只在 `agent/live_tests/`，不进入 CI，仓库不保存模型密钥；需要时本地手动执行，费用自负。
 - 每个测试 job 使用 `scripts/ci/check_test_results.py` 检查报告：必须有真实 case，failure/error/skipped 必须为 0。报告缺失按失败处理。
 - 前端 ESLint 存量违规记录在 `ai-generate-code-frontend/eslint-suppressions.json`，按规则计数；新增违规仍失败。修复后运行 `npx eslint --prune-suppressions` 收缩基线，不关闭规则。
 - 已修复缺陷保留可复现的防复发测试；映射见 `docs/ci/regression-inventory.md`。先红后绿，不复制实现、不制造常量测试。

@@ -30,7 +30,7 @@ ESLint 用仓库内 `eslint-suppressions.json` 固化已有 104 个存量违规�
 - Python 默认测试在 `unshare --net` 的隔离网络中运行；需要 HTTP 的用例只访问本地 mock server。
 - `agent/tests/conftest.py` 将 `AGENT_ENV_FILE` 指向不存在文件，并清除数据库与模型环境变量；不要移除这个防护来“修测试”。
 - Java 的 Agent 测试使用 `src/test/resources/agent-stub.py`；E2E 的生成与编辑均由该 stdio stub 提供，不调用任何模型。
-- 真实模型验收只有 `.github/workflows/real-ai.yml`，必须手动输入 `RUN_REAL_AI`，在受保护的 `real-ai` environment 中运行 `agent/live_tests`。
+- 真实模型测试不进入 CI，仓库不保存模型密钥。需要时在本地配好环境后手动运行 `agent/live_tests`，费用自负。
 
 ## 确定性证据
 
@@ -76,4 +76,3 @@ GitHub 设置的目标：
 - 启用：把仓库连接到 Codex，在 `chatgpt.com/settings/code-review` 为该仓库打开 Automatic review。单次审查直接在 PR 评论 `@codex review`。
 - 审查规则写在根 `AGENTS.md` 的 `## Code Review Rules`，Codex 读取离改动最近的一份。
 - 只报置信度 80 以上、会阻止合并的问题，分 Important / Nit / Pre-existing；不投 APPROVE 或 REQUEST CHANGES，结果是普通 PR 评论，不参与合并判定。
-- `Real AI Tests`：仅在 `real-ai` environment 手动确认后运行。
