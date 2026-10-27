@@ -9,7 +9,7 @@
 - 每个测试 job 使用 `scripts/ci/check_test_results.py` 校验 JUnit/Playwright/pytest 报告：报告必须存在、包含真实 case、无 failure/error/skip。只会出报告而不检查的环境问题按失败处理。
 - ESLint 存量违规由 `ai-generate-code-frontend/eslint-suppressions.json` 精确计数抑制；新增违规不自动进入基线，修完后用 `--prune-suppressions` 收缩。
 - 已修复的重要缺陷必须保留或新增可复现的防复发测试；当前映射见 `docs/ci/regression-inventory.md`。修复先红后绿，不复用会被删掉的临时验证。
-- Codex Review 走 ChatGPT 的 GitHub 集成，消耗套餐额度而不是 API key；仓库不保存模型密钥。只报告高置信度、可行动的 correctness / security / authorization / data loss / concurrency / migration / meaningful regression 缺口；不重复 lint、格式和类型检查，不运行构建。审查结果不是合并条件。
+- Codex Review 走 ChatGPT 的 GitHub 集成，消耗套餐额度而不是 API key；仓库不保存模型密钥。只报告置信度 80 以上、可行动的 correctness / security / authorization / data loss / concurrency / migration / meaningful regression 缺口，分 Important / Nit / Pre-existing；不重复 lint、格式和类型检查，不运行构建，不投 APPROVE 或 REQUEST CHANGES。审查结果不是合并条件。
 - Codex 的开关与触发在 `chatgpt.com/settings/code-review` 和 PR 评论 `@codex review` 中管理，不通过仓库 workflow 调用。任何需要 `OPENAI_API_KEY` 的 Codex 工作流都不要加回。
 - 失败排查先看对应 job 的准确命令、日志和上传的测试报告；不要根据本地通过推断 CI 通过。CI 状态只看真实 run。
 - `master` 与 `code_board` 的分支保护要求来自 PR、线性历史可选，唯一必需状态是 `merge-gate`，禁止直接 push/force push/删除分支。权限不足时在 GitHub Branch protection 或 Rulesets 中按此配置。

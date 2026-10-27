@@ -75,5 +75,5 @@ GitHub 设置的目标：
 - Review 走 ChatGPT 侧的 GitHub 集成，消耗 ChatGPT 套餐额度，不使用 OpenAI API key；仓库不配置 `OPENAI_API_KEY`，也没有 `CODEX_REVIEW_ENABLED` 开关。
 - 启用：把仓库连接到 Codex，在 `chatgpt.com/settings/code-review` 为该仓库打开 Automatic review。单次审查直接在 PR 评论 `@codex review`。
 - 审查规则写在根 `AGENTS.md` 的 `## Code Review Rules`，Codex 读取离改动最近的一份。
-- Codex 只报 P0/P1 问题，结果是普通 PR 评论，不参与合并判定。
+- 只报置信度 80 以上、会阻止合并的问题，分 Important / Nit / Pre-existing；不投 APPROVE 或 REQUEST CHANGES，结果是普通 PR 评论，不参与合并判定。
 - `Real AI Tests`：仅在 `real-ai` environment 手动确认后运行。

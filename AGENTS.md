@@ -217,6 +217,14 @@ agent/                    # Python 执行面（不是 Java 包）
 
 只报告 correctness、security/authorization、data loss、concurrency、事务、迁移，以及真实行为缺少回归覆盖。lint、格式、命名、类型检查由 CI 负责，不要重复。
 
+### 置信度低于 80 不报
+
+每条问题标注 0 到 100 的置信度，低于 80 直接不输出。分级只用三种：Important 是合并前必须修，Nit 是可以不改，Pre-existing 是本 PR 之前就有的问题。Nit 最多 5 条，多出来的合并成一句说明。
+
 ### 给可执行的证据
 
-每条问题包含 `path:line`、具体失败场景和最小修复。没有这类问题就明确说没有，不要凑数，也不要写总结或赞美。
+每条问题包含 `path:line`、具体失败场景和最小修复。没有这类问题就明确回 LGTM，不要凑数，也不要写总结或赞美。
+
+### 不投票
+
+不要提交 APPROVE 或 REQUEST CHANGES，合并决定留给维护者。
