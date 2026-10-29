@@ -141,7 +141,7 @@ public final class ImportAgentPublication {
                 ||!candidate.toString().equals(journal.path("candidate").asText())||!backup.toString().equals(journal.path("backup").asText())
                 ||!e.sourceHash().equals(journal.path("originalHash").asText()))throw new IOException("PUBLICATION_IDENTITY_INVALID");
         for(Path path:List.of(source,folder,candidate,backup))ProjectImportStaging.guardManagedPath(path);
-        if("COMMITTED".equals(row.publishPhase())){finishCommitted(row,journal,source,folder,backup);return;}
+        if("COMMITTED".equals(row.publishPhase())){markSnapshotCommitted(row,source);finishCommitted(row,journal,source,folder,backup);return;}
         // 未提交：移动实际发生但阶段未写入时，仍能从备份/新目录摘要确定恢复方向。
         if(Files.exists(backup,LinkOption.NOFOLLOW_LINKS)){
             requireHash(e.id(),backup,e.sourceHash());
@@ -155,6 +155,13 @@ public final class ImportAgentPublication {
         requireHash(e.id(),source,e.sourceHash());
         removeTree(candidate);if(Files.exists(folder,LinkOption.NOFOLLOW_LINKS))Files.delete(folder);
         outputs.finish(row,false);row=release(row);ledger.finishPublication(row,false);
+    }
+
+    /** 重启恢复的已提交分支补写快照终态，避免快照停留在 PENDING 后跳过内容冲突检查。 */
+    private void markSnapshotCommitted(ImportAgentEditLedger.Row row,Path source){
+        if(row.snapshotId()==null||row.snapshotId().isBlank())return;
+        try{snapshotService.markCommitted(source,row.snapshotId());}
+        catch(IOException error){log.warn("恢复后快照标记未写入 edit={}",row.identity().id());}
     }
 
     private void finishCommitted(ImportAgentEditLedger.Row row,com.fasterxml.jackson.databind.JsonNode journal,Path source,Path folder,Path backup)throws IOException{
