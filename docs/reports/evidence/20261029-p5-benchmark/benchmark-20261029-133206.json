@@ -1,0 +1,94 @@
+{
+  "generatedAt": "2026-10-29T05:32:06.967844+00:00",
+  "mode": "grade-only",
+  "solutionApplied": true,
+  "tasks": [
+    {
+      "id": "01-java-bug-fix",
+      "ok": true,
+      "agentExecuted": false,
+      "driverOk": null,
+      "driverOutput": null,
+      "protectedChanged": [],
+      "grades": [
+        {
+          "cmd": "javac -d out src/Calculator.java src/CalculatorTest.java && java -cp out CalculatorTest",
+          "ok": true,
+          "exitCode": 0,
+          "missingFiles": [],
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "02-frontend-bug-fix",
+      "ok": true,
+      "agentExecuted": false,
+      "driverOk": null,
+      "driverOutput": null,
+      "protectedChanged": [],
+      "grades": [
+        {
+          "cmd": "node --test sum.test.mjs",
+          "ok": true,
+          "exitCode": 0,
+          "missingFiles": [],
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "03-dependency-upgrade",
+      "ok": true,
+      "agentExecuted": false,
+      "driverOk": null,
+      "driverOutput": null,
+      "protectedChanged": [],
+      "grades": [
+        {
+          "cmd": "node --test use.test.mjs",
+          "ok": true,
+          "exitCode": 0,
+          "missingFiles": [],
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "04-api-failure-repro",
+      "ok": true,
+      "agentExecuted": false,
+      "driverOk": null,
+      "driverOutput": null,
+      "protectedChanged": [],
+      "grades": [
+        {
+          "cmd": "node --test handler.test.mjs",
+          "ok": true,
+          "exitCode": 0,
+          "missingFiles": [],
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "05-import-then-test",
+      "ok": true,
+      "agentExecuted": false,
+      "driverOk": null,
+      "driverOutput": null,
+      "protectedChanged": [],
+      "grades": [
+        {
+          "cmd": "node --test string-utils.test.mjs",
+          "ok": true,
+          "exitCode": 0,
+          "missingFiles": [],
+          "stderr": ""
+        }
+      ]
+    }
+  ],
+  "ok": true,
+  "elapsedMs": 2390
+}

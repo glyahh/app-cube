@@ -1,0 +1,22 @@
+{
+  "id": "02-frontend-bug-fix",
+  "repo": "local-fixture",
+  "commit": "seed",
+  "prompt": "sum.mjs 的加法实现有误，测试失败。修复实现，不要修改测试文件。",
+  "setup": [],
+  "grade": [
+    {
+      "cmd": "node --test sum.test.mjs",
+      "expectExit": 0,
+      "files": []
+    }
+  ],
+  "timeoutSec": 300,
+  "maxAttempts": 2,
+  "model": "configured",
+  "backend": "local_shell",
+  "notes": "评分只认 node --test 的退出码。",
+  "protected": [
+    "sum.test.mjs"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "id": "03-dependency-upgrade",
+  "repo": "local-fixture",
+  "commit": "seed",
+  "prompt": "vendor 目录里已经有 greet-v2，但 use.mjs 仍引用 v1。升级到 v2 让测试通过，不要修改 vendor 与测试文件。",
+  "setup": [],
+  "grade": [
+    {
+      "cmd": "node --test use.test.mjs",
+      "expectExit": 0,
+      "files": []
+    }
+  ],
+  "timeoutSec": 300,
+  "maxAttempts": 2,
+  "model": "configured",
+  "backend": "local_shell",
+  "notes": "评分只认测试退出码；vendor 与测试由 seed 固定。",
+  "protected": [
+    "use.test.mjs",
+    "vendor/greet-v1.mjs",
+    "vendor/greet-v2.mjs"
+  ]
+}

@@ -84,6 +84,8 @@ Java 路径以下均相对于 `src/main/java/com/dbts/glyahhaigeneratecode/`。�
 | [secret_free_view.py](../agent/backends/secret_free_view.py)、[secret_free_docker.py](../agent/backends/secret_free_docker.py) | 导入视图处理秘密路径、替换标记、私有恢复状态与编辑资格；文件工具接入许可 | 容器实际挂载、Shell 与文件工具是否一致隔离；未识别秘密与派生文件是否泄露 |
 | [ImportAgentPublication](../src/main/java/com/dbts/glyahhaigeneratecode/projectimport/ImportAgentPublication.java) | 同锁检查资格及源摘要，独立读取候选，记录目录移动阶段并恢复；提交后再清理 | 数据库与文件系统之间的崩溃窗口、取消竞态及当前候选批准绑定 |
 | [PublicDeployFiles](../src/main/java/com/dbts/glyahhaigeneratecode/service/support/PublicDeployFiles.java) | 按路径与扩展名筛选常规资源，检查目录真实路径，暂存后替换发布目录 | 所有发布入口是否调用；允许扩展名内嵌秘密、旧发布残留和直接文件服务路由 |
+| [ImportExecutionSandbox](../src/main/java/com/dbts/glyahhaigeneratecode/projectimport/ImportExecutionSandbox.java)、[import_disk_volume.py](../scripts/import_disk_volume.py) | 导入执行与编辑容器固定 `--network none`、`--read-only`、`--cap-drop ALL`、`--user 65534:65534`；依赖安装与构建显式使用专用 egress 网络 `glyahh-imp-egress` | 实际容器 inspect、egress 网络的出网范围与 DNS 策略 |
+| [docker_sandbox.py](../agent/backends/docker_sandbox.py) | 生成容器使用 `--network bridge`、`--cap-drop ALL`、`no-new-privileges`、pids 512、memory 4g、cpus 2；镜像以 uid 1001 运行 | 实际容器 inspect；bridge 可出网属于已知边界 |
 
 下列观察不能被当成已有安全保证：
 
@@ -148,6 +150,7 @@ Java 路径以下均相对于 `src/main/java/com/dbts/glyahhaigeneratecode/`。�
 - **路径与影响：** 工程脚本借继承环境、宿主机挂载、Docker socket、特权参数或无限输出/进程/文件突破范围，影响宿主机或其他应用。
 - **安全要求：** 管理端权限不传给项目；实际执行环境具有限额与清理身份。容器运行成功、只读工具接口或模型提示词不能证明 Shell 被隔离。
 - **验证：** 先检查实际启动参数与挂载；必要时在获准的专用环境做有上限的假负载，确认限额与停止结果。本文件不授权压力测试、宿主机探测或执行逃逸代码。
+- **现有入口：** `scripts/checks/verify-sandbox-isolation.ps1` 起容器后 `docker inspect`，由 `scripts/checks/assert-sandbox-inspect.py` 判定网络、只读根、用户、cap-drop、限额与挂载；Docker 不可用时以退出码 3 记为 skip。该入口只核对声明参数，不证明逃逸路径不可行。
 
 ### T10 取消、重启和延迟回包导致跨任务副作用（TB3、TB5、TB7）
 

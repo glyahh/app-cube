@@ -30,6 +30,8 @@ public class ImportProperties {
     private Duration sourceTimeout = Duration.ofMinutes(15);
     private int maxFiles = 10_000;
     private long maxSourceBytes = 1024L * 1024 * 1024;
+    /** 每个工作区保留的合入快照条数；超出的已收口快照按时间清理。 */
+    private int snapshotRetain = 20;
     private long maxMetadataBytes = 8L * 1024 * 1024;
     private int maxPendingPerUser = 2;
     private int maxPendingGlobal = 20;

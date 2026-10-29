@@ -86,6 +86,8 @@ class Settings:
     workspace: WorkspaceSettings
     log_level: str
     postgres_dsn: str
+    # 正式环境要求 Agent 持久化可用；为真时启动失败直接退出，不降级内存。
+    require_persistent: bool = False
 
 
 def validate_proxy_config(enabled: bool, proxy_url: str) -> None:
@@ -132,4 +134,5 @@ def load_settings() -> Settings:
         ),
         log_level=get_env("AGENT_LOG_LEVEL", "INFO"),
         postgres_dsn=os.environ.get("AGENT_POSTGRES_DSN", ""),
+        require_persistent=get_env_bool("AGENT_REQUIRE_PERSISTENT", False),
     )

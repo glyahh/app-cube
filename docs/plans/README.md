@@ -21,5 +21,6 @@
 - [开发、测试与验证衔接：专项设计](project-development-workflow-design.md)
 - [已有项目导入：开发设计草案](project-import-design.md)
 - [启动后端的小步实施与测试](project-import-startup-backend-steps.md)
+- [修复计划：从自证交付转向可复跑证据](remediation-plan-20261029.md)
 
 - [temp 清理方案与归档执行记录](temp-cleanup-20261021.md)

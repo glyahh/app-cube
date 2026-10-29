@@ -3,6 +3,9 @@ spring:
     import: optional:file:target/integration-empty.properties[.properties]
   main:
     allow-bean-definition-overriding: true
+app:
+  security:
+    allowed-origin-patterns: http://127.0.0.1:5173
 agent:
   runtime:
     python-executable: python
