@@ -313,9 +313,9 @@ Docker 不可用时脚本以专用退出码 3 结束并写明 skip，不报告�
      - `COMMITTED`：当前文件哈希必须等于 `afterHashes` 才直接覆盖；不一致且 `force=false` 时拒绝并列出差异文件。
      - `PENDING` / `FAILED`：合入未完成，直接恢复；恢复前把当前哈希记入 `recoveryHashes` 供审计，不要求 `force`。
 
-   - 每条快照存 `.glyahh/snapshots/{snapshotId}/manifest.json` 与 `files/` 下的原文件副本，保留相对路径。
+   - 每条快照存 `{stagingRoot 同级的 project_edit_snapshots}/{snapshotId}/manifest.json` 与 `files/` 下的原文件副本，保留相对路径。不能放在工作区 `.glyahh/` 下：发布流程会把整个工作区目录移走再换入候选，快照会随旧目录进入 backup 并在清理时丢失。
    - 只处理传入的相对路径；路径经 `WorkspacePathResolver` 校验，拒绝逃逸与链接。
-   - 排除 `.glyahh`、`.git`、`.scratch`。
+   - 快照根在工作区外，天然不参与发布、检索与版本摘要；仍需拒绝符号链接与越界路径。
    - 快照目录不参与发布、检索与版本摘要。
 
 2. 新增 `runtime/SnapshotRecord.java`：`id`、`status`（`PENDING/COMMITTED/FAILED`）、`createdAt`、`reason`、`Map<String, String> beforeHashes`、`Map<String, String> afterHashes`、`Map<String, String> recoveryHashes`。
@@ -510,8 +510,22 @@ P0 不完成不进入 P1。P1 未确认生产域名不上线。P2 无 Docker 时
 - 可以替代 IDE 或云端托管 agent。
 - 性能、稳定性或安全已经达到生产标准。
 
-## 15. 变更记录
+## 15. 实施记录（2026-10-29）
+
+已在分支 `feat/remediation-evidence` 完成离线可执行部分：
+
+- P0：`scripts/verify-baseline.ps1`、`scripts/checks/summarize-test-results.py`、解析测试 5 项；基线结果见 `docs/reports/evidence/20261029-p0-baseline/`。
+- P1：`SecurityProperties`、REST 与 WS 共用来源白名单、空值与 `*` 拒绝启动、Cookie 显式 HttpOnly 与 SameSite；`CorsConfigTest`、`AgentWebSocketConfigTest` 通过。
+- P2：`verify-sandbox-isolation.ps1`、`assert-sandbox-inspect.py`、6 项断言测试；本机无 Docker，运行时证据阻塞。
+- P3：`AGENT_REQUIRE_PERSISTENT` 接入 settings，主 Agent 预检失败即退出，启动脚本设置该变量；3 项启动门禁测试通过。主 Agent 的 `worker.ready` 帧未新增，P3b 保持可选。
+- P4：新增 `WorkspaceSnapshotService`、`SnapshotRecord`、V51 迁移与账本 `snapshot_id` 绑定；合入前创建快照、失败标记、成功后写入 `afterHashes`；`WorkspaceVersioner.contentVersion` 与测试通过。现有 `ImportAgentPublication.recover()` 与 `ImportStartupSnapshotStore` 不变，快照只补字节证据。
+- P5：`benchmarks/` 5 个本地任务、`agent_driver.py`、`run-benchmark.py` 与 `.ps1`；seed 全红、参考修复全绿的评分自检通过，真实模型执行阻塞。
+
+验证：Java 897 项通过，Python 682 通过 7 跳过，前端 295 项通过。未执行真实模型、Docker、PostgreSQL 与浏览器验收。
+
+## 16. 变更记录
 
 - 2026-10-29 初稿。依据当日源码核对，未执行任何阶段。
 - 2026-10-29 修订。按 review 修正 11 处：P5 增加 stdio 驱动脚本并调整工期；P1 默认来源改为空、由 local profile 覆盖；P2 改用运行时 uid 判定；P3 复用现有持久化异常与导入 ready 通道，拆出可选 P3b；P4 补快照状态机与 `afterHashes` 写入时机；证据产物改到 `docs/reports/evidence/`；统一脚本路径与 `grade` 结构；补不稳定测试处理；修正行号与文件数。
+- 2026-10-29 实施。完成 P0、P1、P3、P4、P5 的代码与离线测试；P2 与 P3 的运行时验收因 Docker、PostgreSQL 缺失记为阻塞；P5 真实模型执行未进行。
 - 2026-10-29 二次修订。按复审修正 11 处：P4 补 V51 迁移、`bindSnapshot` 与账本记录变更，说明快照与 `recover()` 的执行顺序，阶段总览同步产出项；删掉 `restore` 重复且冲突的判定；P5 解释器改用绝对路径；现状表补导入容器 `--network none`；P2 不再要求核对不建容器的类；P3 状态标志改走 stderr；验收口径补阶段状态定义（完成／阻塞／未开始）；日期占位符统一；工期改为 3 周；P1 补来源列表清洗规则。

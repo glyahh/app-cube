@@ -28,7 +28,13 @@ public class ImportAgentEditLedger {
         }
     }
     public record Row(Entry identity,String state,long revision,boolean cancelRequested,
-                      String resources,String cleanup,String publishPhase,boolean stopConfirmed) { }
+                      String resources,String cleanup,String publishPhase,boolean stopConfirmed,String snapshotId) {
+        /** 兼容未绑定快照的调用方；快照字段为空。 */
+        public Row(Entry identity,String state,long revision,boolean cancelRequested,
+                   String resources,String cleanup,String publishPhase,boolean stopConfirmed){
+            this(identity,state,revision,cancelRequested,resources,cleanup,publishPhase,stopConfirmed,null);
+        }
+    }
 
     private final JdbcTemplate jdbc;
     public ImportAgentEditLedger(JdbcTemplate jdbc){this.jdbc=jdbc;}
@@ -474,6 +480,16 @@ public class ImportAgentEditLedger {
         }catch(java.io.IOException error){throw conflict();}
     }
 
+    /** 绑定合入前的文件快照；只为尚未绑定快照的 COMMITTING 记录写入一次。 */
+    public Row bindSnapshot(Row row,String snapshotId){
+        var e=row.identity();
+        if(jdbc.update("""
+            UPDATE biz.project_import_agent_edit SET snapshot_id=?,revision=revision+1,update_time=now()
+            WHERE edit_id=? AND owner_id=? AND revision=? AND state='COMMITTING' AND snapshot_id IS NULL
+            """,snapshotId,e.id(),e.ownerId(),row.revision())!=1)throw conflict();
+        return require(e.id(),e.ownerId());
+    }
+
     public Row publicationPhase(Row row,String previous,String next,com.fasterxml.jackson.databind.JsonNode journal){
         var e=row.identity();
         if(!java.util.Set.of("CANDIDATE_READY","OLD_MOVED","NEW_MOVED").contains(next))throw conflict();
@@ -617,7 +633,8 @@ public class ImportAgentEditLedger {
             row.getLong("config_revision"),row.getLong("context_epoch"),row.getObject("executor_id",UUID.class),row.getLong("executor_pid"),
             row.getTimestamp("executor_start").toInstant(),row.getTimestamp("expires_at").toInstant());
         return new Row(identity,row.getString("state"),row.getLong("revision"),row.getBoolean("cancel_requested"),
-            row.getString("resources_json"),row.getString("cleanup"),row.getString("publish_phase"),row.getBoolean("stop_confirmed"));
+            row.getString("resources_json"),row.getString("cleanup"),row.getString("publish_phase"),row.getBoolean("stop_confirmed"),
+            row.getString("snapshot_id"));
     }
     private static MyException conflict(){return new MyException(ErrorCode.CONFLICT_ERROR,"编辑任务资格或版本已变化，请重新确认。");}
 }

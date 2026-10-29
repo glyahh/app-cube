@@ -1,0 +1,89 @@
+{
+  "generatedAt": "2026-10-29T03:02:50.553047+00:00",
+  "mode": "grade-only",
+  "solutionApplied": false,
+  "tasks": [
+    {
+      "id": "01-java-bug-fix",
+      "ok": false,
+      "agentExecuted": false,
+      "driverOk": null,
+      "driverOutput": null,
+      "grades": [
+        {
+          "cmd": "javac -d out src/Calculator.java src/CalculatorTest.java && java -cp out CalculatorTest",
+          "ok": false,
+          "exitCode": 1,
+          "missingFiles": [],
+          "stderr": "add failed\n"
+        }
+      ]
+    },
+    {
+      "id": "02-frontend-bug-fix",
+      "ok": false,
+      "agentExecuted": false,
+      "driverOk": null,
+      "driverOutput": null,
+      "grades": [
+        {
+          "cmd": "node --test sum.test.mjs",
+          "ok": false,
+          "exitCode": 1,
+          "missingFiles": [],
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "03-dependency-upgrade",
+      "ok": false,
+      "agentExecuted": false,
+      "driverOk": null,
+      "driverOutput": null,
+      "grades": [
+        {
+          "cmd": "node --test use.test.mjs",
+          "ok": false,
+          "exitCode": 1,
+          "missingFiles": [],
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "04-api-failure-repro",
+      "ok": false,
+      "agentExecuted": false,
+      "driverOk": null,
+      "driverOutput": null,
+      "grades": [
+        {
+          "cmd": "node --test handler.test.mjs",
+          "ok": false,
+          "exitCode": 1,
+          "missingFiles": [],
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "05-import-then-test",
+      "ok": false,
+      "agentExecuted": false,
+      "driverOk": null,
+      "driverOutput": null,
+      "grades": [
+        {
+          "cmd": "node --test string-utils.test.mjs",
+          "ok": false,
+          "exitCode": 1,
+          "missingFiles": [],
+          "stderr": ""
+        }
+      ]
+    }
+  ],
+  "ok": false,
+  "elapsedMs": 1578
+}

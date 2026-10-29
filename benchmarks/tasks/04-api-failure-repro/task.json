@@ -1,0 +1,19 @@
+{
+  "id": "04-api-failure-repro",
+  "repo": "local-fixture",
+  "commit": "seed",
+  "prompt": "/health 接口返回 500，测试失败。先复现，再修复 handler，不要修改测试。",
+  "setup": [],
+  "grade": [
+    {
+      "cmd": "node --test handler.test.mjs",
+      "expectExit": 0,
+      "files": []
+    }
+  ],
+  "timeoutSec": 300,
+  "maxAttempts": 2,
+  "model": "configured",
+  "backend": "local_shell",
+  "notes": "评分只认测试退出码，不认日志里的完成声明。"
+}

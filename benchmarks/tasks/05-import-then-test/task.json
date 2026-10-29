@@ -1,0 +1,19 @@
+{
+  "id": "05-import-then-test",
+  "repo": "local-fixture",
+  "commit": "seed",
+  "prompt": "这个已有项目的代码测试失败。先运行测试，定位原因并修复实现，不要修改测试文件。",
+  "setup": [],
+  "grade": [
+    {
+      "cmd": "node --test string-utils.test.mjs",
+      "expectExit": 0,
+      "files": []
+    }
+  ],
+  "timeoutSec": 300,
+  "maxAttempts": 2,
+  "model": "configured",
+  "backend": "local_shell",
+  "notes": "模拟导入已有工程后的最小任务；评分只认测试退出码。"
+}
