@@ -21,6 +21,14 @@ AGENT_DIR = REPO_ROOT / "agent"
 TERMINAL = "__end__"
 
 
+def execution_ok(events: list[dict]) -> bool:
+    """终止帧只表示协议结束；成功还要看错误帧与 run.completed 状态。"""
+    if any(frame.get("event") == "error" for frame in events):
+        return False
+    completed = [frame for frame in events if frame.get("event") == "run.completed"]
+    return bool(completed) and completed[-1].get("status") == "succeeded"
+
+
 def build_request(workspace: Path, prompt: str, mode: str = "edit") -> dict:
     # agent/core/runtime.py 用 root / name 解析实际工作区，所以 root 必须是父目录。
     workspace = workspace.resolve()
@@ -113,7 +121,8 @@ def run(command: list[str], workspace: Path, prompt: str, timeout: int, mode: st
 
     return {
         "ok": not timed_out and protocol_error is None
-              and any(frame.get("event") == TERMINAL for frame in events),
+              and any(frame.get("event") == TERMINAL for frame in events)
+              and execution_ok(events),
         "timedOut": timed_out,
         "protocolError": protocol_error,
         "exitCode": exit_code,

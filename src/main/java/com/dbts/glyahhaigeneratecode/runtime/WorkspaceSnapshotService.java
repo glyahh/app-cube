@@ -71,7 +71,11 @@ public class WorkspaceSnapshotService {
         SnapshotRecord record = read(directory);
         Map<String, String> after = new LinkedHashMap<>();
         for (String relative : record.beforeHashes().keySet()) {
-            after.put(relative, sha256(resolve(workspace, relative)));
+            Path target = resolve(workspace, relative);
+            // 合入删除文件是合法结果：缺失即不写入 afterHashes，恢复时按“应缺失”比较。
+            if (Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)) {
+                after.put(relative, sha256(target));
+            }
         }
         write(directory, new SnapshotRecord(record.id(), SnapshotRecord.Status.COMMITTED,
                 record.createdAt(), record.workspace(), record.reason(),
@@ -97,12 +101,15 @@ public class WorkspaceSnapshotService {
         SnapshotRecord record = read(directory);
         Map<String, String> current = new LinkedHashMap<>();
         for (String relative : record.beforeHashes().keySet()) {
-            current.put(relative, sha256(resolve(workspace, relative)));
+            Path target = resolve(workspace, relative);
+            if (Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)) {
+                current.put(relative, sha256(target));
+            }
         }
         if (record.status() == SnapshotRecord.Status.COMMITTED && !force) {
-            List<String> changed = current.entrySet().stream()
-                    .filter(entry -> !Objects.equals(entry.getValue(), record.afterHashes().get(entry.getKey())))
-                    .map(Map.Entry::getKey).sorted().toList();
+            List<String> changed = record.beforeHashes().keySet().stream()
+                    .filter(relative -> !Objects.equals(current.get(relative), record.afterHashes().get(relative)))
+                    .sorted().toList();
             if (!changed.isEmpty()) {
                 throw new IOException("SNAPSHOT_CONTENT_CHANGED: " + String.join(",", changed));
             }

@@ -11,8 +11,24 @@ SPEC.loader.exec_module(driver)
 COMPLETE = '''
 import json, sys
 sys.stdin.readline()
-for event in ("run.started", "text.message", "__end__"):
+for event in ("run.started", "text.message"):
     print(json.dumps({"v": 1, "seq": 0, "event": event}), flush=True)
+print(json.dumps({"v": 1, "seq": 0, "event": "run.completed", "status": "succeeded"}), flush=True)
+print(json.dumps({"v": 1, "seq": 0, "event": "__end__"}), flush=True)
+'''
+
+FAILED = '''
+import json, sys
+sys.stdin.readline()
+print(json.dumps({"v": 1, "seq": 0, "event": "run.completed", "status": "failed"}), flush=True)
+print(json.dumps({"v": 1, "seq": 0, "event": "__end__"}), flush=True)
+'''
+
+ERROR_FRAME = '''
+import json, sys
+sys.stdin.readline()
+print(json.dumps({"v": 1, "seq": 0, "event": "error", "code": "INTERNAL"}), flush=True)
+print(json.dumps({"v": 1, "seq": 0, "event": "__end__"}), flush=True)
 '''
 
 NO_END = '''
@@ -51,6 +67,17 @@ def test_missing_end_is_not_ok(tmp_path):
     result = driver.run(script(tmp_path, NO_END), tmp_path, 'do it', 5)
     assert result['ok'] is False
     assert result['timedOut'] is False
+
+
+def test_failed_completion_is_not_ok(tmp_path):
+    result = driver.run(script(tmp_path, FAILED), tmp_path, 'do it', 5)
+    assert result['ok'] is False
+    assert result['events'][-1]['event'] == '__end__'
+
+
+def test_error_frame_is_not_ok(tmp_path):
+    result = driver.run(script(tmp_path, ERROR_FRAME), tmp_path, 'do it', 5)
+    assert result['ok'] is False
 
 
 def test_non_json_frame_is_reported(tmp_path):

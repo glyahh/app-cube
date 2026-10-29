@@ -88,6 +88,20 @@ class WorkspaceSnapshotServiceTest {
     }
 
     @Test
+    void deletedFileIsRestoredAfterCommit() throws IOException {
+        write("a.txt", "before");
+        WorkspaceSnapshotService service = new WorkspaceSnapshotService(
+                workspace.resolveSibling(workspace.getFileName() + "-snapshots"), 20);
+        SnapshotRecord snapshot = service.create(workspace, List.of("a.txt"), "test");
+
+        Files.delete(workspace.resolve("a.txt"));
+        service.markCommitted(workspace, snapshot.id());
+        service.restore(workspace, snapshot.id(), false);
+
+        assertEquals("before", Files.readString(workspace.resolve("a.txt")));
+    }
+
+    @Test
     void snapshotDirectoryDoesNotChangeContentVersion() throws IOException {
         write("a.txt", "x");
         WorkspaceVersioner versioner = new WorkspaceVersioner(new com.dbts.glyahhaigeneratecode.config.WorkspaceProperties());
