@@ -50,6 +50,12 @@ def evaluate(data, mode):
     return checks
 
 
+def load_inspect(path):
+    """读取 docker inspect；Windows PowerShell 5.1 的 UTF8 带 BOM，必须用 utf-8-sig。"""
+    data = json.loads(Path(path).read_text(encoding='utf-8-sig'))
+    return data[0] if isinstance(data, list) else data
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--inspect', type=Path, required=True)
@@ -58,9 +64,7 @@ def main():
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
 
-    data = json.loads(args.inspect.read_text(encoding='utf-8'))
-    if isinstance(data, list):
-        data = data[0]
+    data = load_inspect(args.inspect)
     checks = evaluate(data, args.mode)
 
     # 生成模式必须取得实际 uid；拿不到就不能声称运行用户已核对。

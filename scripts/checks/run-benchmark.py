@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -49,22 +51,42 @@ def changed_protected_files(task: dict, seed_root: Path, workspace: Path) -> lis
     return changed
 
 
+def terminate_tree(process: subprocess.Popen) -> None:
+    """超时后必须终止整棵进程树；shell 退出不代表 Java/Node 子进程退出。"""
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True)
+    else:
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+
+
 def run_grade(task: dict, workspace: Path) -> list[dict]:
     results = []
     for grade in task.get("grade", []):
         timeout = grade.get("timeoutSec", task.get("timeoutSec", 900))
+        process = subprocess.Popen(grade["cmd"], cwd=workspace, shell=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, start_new_session=(os.name != "nt"))
         try:
-            completed = subprocess.run(grade["cmd"], cwd=workspace, shell=True,
-                                       capture_output=True, text=True, timeout=timeout)
+            _, stderr = process.communicate(timeout=timeout)
             missing = [name for name in grade.get("files", []) if not (workspace / name).exists()]
             results.append({
                 "cmd": grade["cmd"],
-                "ok": completed.returncode == grade.get("expectExit", 0) and not missing,
-                "exitCode": completed.returncode,
+                "ok": process.returncode == grade.get("expectExit", 0) and not missing,
+                "exitCode": process.returncode,
                 "missingFiles": missing,
-                "stderr": completed.stderr[-1000:],
+                "stderr": stderr[-1000:],
             })
         except subprocess.TimeoutExpired:
+            terminate_tree(process)
             results.append({"cmd": grade["cmd"], "ok": False, "exitCode": None,
                             "missingFiles": [], "stderr": "timeout"})
     return results

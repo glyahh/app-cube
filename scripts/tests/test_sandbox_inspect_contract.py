@@ -63,6 +63,15 @@ def test_import_accepts_expected_mounts():
     assert failed(sandbox.evaluate(data, 'import')) == set()
 
 
+def test_inspect_with_utf8_bom_is_readable(tmp_path):
+    path = tmp_path / 'inspect.json'
+    path.write_bytes(b'\xef\xbb\xbf' + json.dumps([inspect_record()]).encode('utf-8'))
+
+    data = sandbox.load_inspect(path)
+
+    assert data['HostConfig']['NetworkMode'] == 'bridge'
+
+
 if __name__ == '__main__':
     import pytest
     raise SystemExit(pytest.main([__file__]))

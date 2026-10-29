@@ -1,5 +1,7 @@
-"""基准评分：受保护文件被改动时必须判失败。"""
+"""基准评分：受保护文件被改动时必须判失败，超时必须终止整棵进程树。"""
 import importlib.util
+import sys
+import time
 from pathlib import Path
 
 SPEC = importlib.util.spec_from_file_location(
@@ -50,3 +52,28 @@ def test_missing_seed_protected_file_is_configuration_error(tmp_path):
         assert 'absent.mjs' in str(error)
     else:
         raise AssertionError('缺少 seed 文件时应报配置错误')
+
+
+def test_timeout_kills_descendant_process(tmp_path):
+    marker = tmp_path / 'marker.txt'
+    child = tmp_path / 'child.py'
+    child.write_text(
+        "import time, pathlib\n"
+        "time.sleep(2)\n"
+        f"pathlib.Path(r'{marker}').write_text('late')\n",
+        encoding='utf-8',
+    )
+    parent = tmp_path / 'parent.py'
+    parent.write_text(
+        "import subprocess, sys, time\n"
+        f"subprocess.Popen([sys.executable, r'{child}'])\n"
+        "time.sleep(30)\n",
+        encoding='utf-8',
+    )
+    task = {'grade': [{'cmd': f'"{sys.executable}" "{parent}"', 'timeoutSec': 1, 'expectExit': 0}]}
+
+    results = runner.run_grade(task, tmp_path)
+
+    assert results[0]['ok'] is False
+    time.sleep(3)
+    assert not marker.exists()
