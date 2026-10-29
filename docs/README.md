@@ -112,6 +112,7 @@ docs/
 - [开发、测试与验证衔接：专项设计](plans/project-development-workflow-design.md)
 - [已有项目导入：开发设计草案](plans/project-import-design.md)
 - [启动后端的小步实施与测试](plans/project-import-startup-backend-steps.md)
+- [修复计划：从自证交付转向可复跑证据](plans/remediation-plan-20261029.md)
 
 ### 测试计划与机器清单
 
