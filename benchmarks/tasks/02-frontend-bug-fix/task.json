@@ -15,5 +15,8 @@
   "maxAttempts": 2,
   "model": "configured",
   "backend": "local_shell",
-  "notes": "评分只认 node --test 的退出码。"
+  "notes": "评分只认 node --test 的退出码。",
+  "protected": [
+    "sum.test.mjs"
+  ]
 }

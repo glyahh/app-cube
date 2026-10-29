@@ -15,5 +15,8 @@
   "maxAttempts": 2,
   "model": "configured",
   "backend": "local_shell",
-  "notes": "评分只认测试退出码，不认日志里的完成声明。"
+  "notes": "评分只认测试退出码，不认日志里的完成声明。",
+  "protected": [
+    "handler.test.mjs"
+  ]
 }

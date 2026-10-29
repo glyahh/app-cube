@@ -484,7 +484,7 @@ public class ImportAgentEditLedger {
     public Row bindSnapshot(Row row,String snapshotId){
         var e=row.identity();
         if(jdbc.update("""
-            UPDATE biz.project_import_agent_edit SET snapshot_id=?,revision=revision+1,update_time=now()
+            UPDATE biz.project_import_agent_edit SET snapshot_id=CAST(? AS uuid),revision=revision+1,update_time=now()
             WHERE edit_id=? AND owner_id=? AND revision=? AND state='COMMITTING' AND snapshot_id IS NULL
             """,snapshotId,e.id(),e.ownerId(),row.revision())!=1)throw conflict();
         return require(e.id(),e.ownerId());

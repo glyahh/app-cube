@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
@@ -25,6 +26,27 @@ def load_tasks(selected: set[str]) -> list[dict]:
     if missing:
         raise SystemExit(f"未知任务: {', '.join(sorted(missing))}")
     return tasks
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(8192), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def changed_protected_files(task: dict, seed_root: Path, workspace: Path) -> list[str]:
+    """Agent 改了测试或 vendor 文件时，评分不能算通过。"""
+    changed = []
+    for name in task.get('protected', []):
+        source = seed_root / name
+        target = workspace / name
+        if not source.is_file():
+            raise SystemExit(f'protected file missing in seed: {name}')
+        if not target.is_file() or sha256(target) != sha256(source):
+            changed.append(name)
+    return changed
 
 
 def run_grade(task: dict, workspace: Path) -> list[dict]:
@@ -53,11 +75,13 @@ def run_task(task: dict, work_root: Path, skip_agent: bool, apply_solution: bool
     if workspace.exists():
         shutil.rmtree(workspace)
     task_root = TASK_ROOT / task["id"]
-    shutil.copytree(task_root / task.get("seed", "seed"), workspace)
+    seed = task_root / task.get("seed", "seed")
+    shutil.copytree(seed, workspace)
     if apply_solution:
         solution = task_root / "solution"
         if solution.is_dir():
             shutil.copytree(solution, workspace, dirs_exist_ok=True)
+    protected_changed = changed_protected_files(task, seed, workspace)
 
     driver_ok = None
     driver_output = work_root / f"{task['id']}-driver.json"
@@ -70,13 +94,14 @@ def run_task(task: dict, work_root: Path, skip_agent: bool, apply_solution: bool
         driver_ok = completed.returncode == 0
 
     grades = run_grade(task, workspace)
-    ok = all(grade["ok"] for grade in grades) and (driver_ok is not False)
+    ok = not protected_changed and all(grade["ok"] for grade in grades) and (driver_ok is not False)
     return {
         "id": task["id"],
         "ok": ok,
         "agentExecuted": not skip_agent,
         "driverOk": driver_ok,
         "driverOutput": str(driver_output) if driver_output.exists() else None,
+        "protectedChanged": protected_changed,
         "grades": grades,
     }
 

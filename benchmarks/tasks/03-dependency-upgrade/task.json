@@ -15,5 +15,10 @@
   "maxAttempts": 2,
   "model": "configured",
   "backend": "local_shell",
-  "notes": "评分只认测试退出码；vendor 与测试由 seed 固定。"
+  "notes": "评分只认测试退出码；vendor 与测试由 seed 固定。",
+  "protected": [
+    "use.test.mjs",
+    "vendor/greet-v1.mjs",
+    "vendor/greet-v2.mjs"
+  ]
 }

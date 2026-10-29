@@ -15,5 +15,8 @@
   "maxAttempts": 2,
   "model": "configured",
   "backend": "local_shell",
-  "notes": "模拟导入已有工程后的最小任务；评分只认测试退出码。"
+  "notes": "模拟导入已有工程后的最小任务；评分只认测试退出码。",
+  "protected": [
+    "string-utils.test.mjs"
+  ]
 }

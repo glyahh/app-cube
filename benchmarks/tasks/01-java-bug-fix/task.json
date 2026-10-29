@@ -15,5 +15,8 @@
   "maxAttempts": 2,
   "model": "configured",
   "backend": "local_shell",
-  "notes": "评分只认编译与测试退出码；测试文件不允许改动。"
+  "notes": "评分只认编译与测试退出码；测试文件不允许改动。",
+  "protected": [
+    "src/CalculatorTest.java"
+  ]
 }

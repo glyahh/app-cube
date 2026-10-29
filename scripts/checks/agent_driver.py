@@ -122,7 +122,7 @@ def main() -> int:
     args = parser.parse_args()
 
     command = shlex.split(args.agent_command) if args.agent_command else [sys.executable, "-m", "app"]
-    result = run(command, args.workspace.toAbsolutePath(), args.prompt, args.timeout, args.mode)
+    result = run(command, args.workspace.resolve(), args.prompt, args.timeout, args.mode)
     text = json.dumps(result, ensure_ascii=False, indent=2)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
