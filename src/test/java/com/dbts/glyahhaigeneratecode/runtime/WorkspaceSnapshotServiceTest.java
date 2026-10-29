@@ -102,6 +102,26 @@ class WorkspaceSnapshotServiceTest {
     }
 
     @Test
+    void cleanupKeepsSnapshotsPerWorkspace() throws IOException {
+        Path other = workspace.resolveSibling(workspace.getFileName() + "-other");
+        Files.createDirectories(other);
+        write("a.txt", "a");
+        Files.writeString(other.resolve("b.txt"), "b");
+        WorkspaceSnapshotService service = new WorkspaceSnapshotService(
+                workspace.resolveSibling(workspace.getFileName() + "-snapshots"), 1);
+
+        SnapshotRecord a1 = service.create(workspace, List.of("a.txt"), "a1");
+        service.markCommitted(workspace, a1.id());
+        SnapshotRecord b1 = service.create(other, List.of("b.txt"), "b1");
+        service.markCommitted(other, b1.id());
+        SnapshotRecord a2 = service.create(workspace, List.of("a.txt"), "a2");
+
+        assertFalse(service.find(a1.id()).isPresent());
+        assertTrue(service.find(b1.id()).isPresent());
+        assertTrue(service.find(a2.id()).isPresent());
+    }
+
+    @Test
     void snapshotDirectoryDoesNotChangeContentVersion() throws IOException {
         write("a.txt", "x");
         WorkspaceVersioner versioner = new WorkspaceVersioner(new com.dbts.glyahhaigeneratecode.config.WorkspaceProperties());

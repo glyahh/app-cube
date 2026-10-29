@@ -64,8 +64,11 @@ class ImportAgentPublicationTest {
     }
     @Test void recoverNewMoveWithoutPhaseWriteRestoresOriginalDirectory()throws Exception{recover(true,false);}
     @Test void committedRecoveryKeepsNewDirectoryAndOnlyClearsBackup()throws Exception{recover(true,true);}
+    @Test void committedRecoveryWithEditedSourceKeepsSnapshotPending()throws Exception{recover(true,true,true);}
 
-    void recover(boolean newMoved,boolean committed)throws Exception{
+    void recover(boolean newMoved,boolean committed)throws Exception{recover(newMoved,committed,false);}
+
+    void recover(boolean newMoved,boolean committed,boolean editedBeforeRecover)throws Exception{
         var properties=new ImportProperties();properties.setStagingRoot(root.resolve("imports"));
         var ledger=mock(ImportAgentEditLedger.class);var paths=mock(WorkspacePathResolver.class);var volumes=mock(ImportDiskVolume.class);
         var publication=new ImportAgentPublication(ledger,mock(ImportWorkspaceCoordinator.class),paths,volumes,properties);
@@ -90,6 +93,12 @@ class ImportAgentPublicationTest {
         var journal=new ObjectMapper().createObjectNode().put("source",source.toString()).put("folder",folder.toString())
                 .put("candidate",candidate.toString()).put("backup",backup.toString()).put("originalHash",original).put("publishedHash",updated);
         when(paths.outputDir(101L,CodeGenTypeEnum.AUTO)).thenReturn(source);when(ledger.publicationJournal(row)).thenReturn(journal);
+        if(editedBeforeRecover){
+            Files.writeString(source.resolve("app.py"),"user edit");
+            assertThrows(IOException.class,()->publication.recover(row));
+            assertEquals(SnapshotRecord.Status.PENDING,snapshotService.find(snapshotId).orElseThrow().status());
+            return;
+        }
         publication.recover(row);
         assertEquals(committed?"fixed":"original",Files.readString(source.resolve("app.py")));
         assertTrue(Files.isDirectory(source.resolve("空 目录")));assertFalse(Files.exists(folder));

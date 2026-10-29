@@ -141,7 +141,8 @@ public final class ImportAgentPublication {
                 ||!candidate.toString().equals(journal.path("candidate").asText())||!backup.toString().equals(journal.path("backup").asText())
                 ||!e.sourceHash().equals(journal.path("originalHash").asText()))throw new IOException("PUBLICATION_IDENTITY_INVALID");
         for(Path path:List.of(source,folder,candidate,backup))ProjectImportStaging.guardManagedPath(path);
-        if("COMMITTED".equals(row.publishPhase())){markSnapshotCommitted(row,source);finishCommitted(row,journal,source,folder,backup);return;}
+        // 先完成内容核验与清理，再补写快照；核验失败时保持快照原状，不把用户新内容当成合入结果。
+        if("COMMITTED".equals(row.publishPhase())){finishCommitted(row,journal,source,folder,backup);markSnapshotCommitted(row,source);return;}
         // 未提交：移动实际发生但阶段未写入时，仍能从备份/新目录摘要确定恢复方向。
         if(Files.exists(backup,LinkOption.NOFOLLOW_LINKS)){
             requireHash(e.id(),backup,e.sourceHash());

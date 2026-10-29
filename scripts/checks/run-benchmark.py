@@ -92,6 +92,11 @@ def run_grade(task: dict, workspace: Path) -> list[dict]:
     return results
 
 
+def driver_env(task: dict) -> dict:
+    """任务声明的后端必须覆盖操作者环境，否则同一任务会随本地配置切换执行面。"""
+    return {**os.environ, "AGENT_SANDBOX_BACKEND": task.get("backend", "local_shell")}
+
+
 def run_task(task: dict, work_root: Path, skip_agent: bool, apply_solution: bool) -> dict:
     workspace = work_root / task["id"]
     if workspace.exists():
@@ -112,7 +117,8 @@ def run_task(task: dict, work_root: Path, skip_agent: bool, apply_solution: bool
             [sys.executable, str(DRIVER), "--workspace", str(workspace),
              "--prompt", task["prompt"], "--timeout", str(task.get("timeoutSec", 900)),
              "--output", str(driver_output)],
-            capture_output=True, text=True, timeout=task.get("timeoutSec", 900) + 60)
+            capture_output=True, text=True, timeout=task.get("timeoutSec", 900) + 60,
+            env=driver_env(task))
         driver_ok = completed.returncode == 0
 
     grades = run_grade(task, workspace)

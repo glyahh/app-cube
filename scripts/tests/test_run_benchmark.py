@@ -54,6 +54,13 @@ def test_missing_seed_protected_file_is_configuration_error(tmp_path):
         raise AssertionError('缺少 seed 文件时应报配置错误')
 
 
+def test_driver_env_forces_task_backend(monkeypatch):
+    monkeypatch.setenv('AGENT_SANDBOX_BACKEND', 'docker')
+
+    assert runner.driver_env({'backend': 'local_shell'})['AGENT_SANDBOX_BACKEND'] == 'local_shell'
+    assert runner.driver_env({})['AGENT_SANDBOX_BACKEND'] == 'local_shell'
+
+
 def test_timeout_kills_descendant_process(tmp_path):
     marker = tmp_path / 'marker.txt'
     child = tmp_path / 'child.py'

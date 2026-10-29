@@ -61,7 +61,7 @@ public class WorkspaceSnapshotService {
                 Instant.now().toString(), workspace.toAbsolutePath().normalize().toString(), reason,
                 before, Map.of(), Map.of());
         write(directory, record);
-        cleanup(id);
+        cleanup(workspace, id);
         return record;
     }
 
@@ -130,12 +130,13 @@ public class WorkspaceSnapshotService {
         return Files.isDirectory(directory) ? Optional.of(read(directory)) : Optional.empty();
     }
 
-    private void cleanup(String keep) throws IOException {
+    private void cleanup(Path workspace, String keep) throws IOException {
+        String current = workspace.toAbsolutePath().normalize().toString();
         List<Path> candidates;
         try (Stream<Path> stream = Files.list(root)) {
             candidates = stream.filter(Files::isDirectory)
                     .filter(path -> !path.getFileName().toString().equals(keep))
-                    .filter(this::removable)
+                    .filter(path -> closable(path, current))
                     .sorted(Comparator.comparingLong(this::modified).reversed())
                     .toList();
         }
@@ -144,9 +145,11 @@ public class WorkspaceSnapshotService {
         }
     }
 
-    private boolean removable(Path directory) {
+    /** 只清理同一工作区的已收口快照；多个应用共用快照根目录。 */
+    private boolean closable(Path directory, String workspace) {
         try {
-            return read(directory).status() != SnapshotRecord.Status.PENDING;
+            SnapshotRecord record = read(directory);
+            return record.status() != SnapshotRecord.Status.PENDING && workspace.equals(record.workspace());
         } catch (IOException error) {
             log.warn("快照清单不可读，保留不删 {}: {}", directory, error.getMessage());
             return false;
