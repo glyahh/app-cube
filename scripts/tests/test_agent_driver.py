@@ -67,7 +67,16 @@ def test_timeout_kills_process(tmp_path):
 
 def test_request_contains_contract_fields(tmp_path):
     request = driver.build_request(tmp_path, 'fix it')
-    assert request['workspace']['root'] == str(tmp_path)
+    # runtime.resolve_workspace 使用 root / name，root 必须是父目录。
+    assert request['workspace']['root'] == str(tmp_path.parent)
+    assert request['workspace']['name'] == tmp_path.name
+    assert (Path(request['workspace']['root']) / request['workspace']['name']).resolve() == tmp_path.resolve()
     assert request['input']['message'] == 'fix it'
     for key in ('v', 'runId', 'threadId', 'appId', 'userId', 'roundId', 'traceId'):
         assert key in request
+
+
+def test_thread_id_is_unique_per_run(tmp_path):
+    first = driver.build_request(tmp_path, 'a')['threadId']
+    second = driver.build_request(tmp_path, 'b')['threadId']
+    assert first != second

@@ -77,7 +77,10 @@ public final class ImportAgentPublication {
                 outputs.plan(row,proof);
                 row=ledger.beginPublication(row,journal,authorized);
                 // 合入前记录受影响文件的字节；快照只作证据与恢复，不替代目录移动状态机。
-                snapshot=snapshotService.create(source,inventory.files().keySet(),"publication");
+                // authorized 包含被删除的路径，inventory 只含保留文件；两者并集才能覆盖删除。
+                var snapshotPaths=new LinkedHashSet<String>(authorized);
+                snapshotPaths.addAll(inventory.files().keySet());
+                snapshot=snapshotService.create(source,snapshotPaths,"publication");
                 row=ledger.bindSnapshot(row,snapshot.id());
                 stage="MATERIALIZE";
                 Files.createDirectory(folder);Files.createDirectory(candidate);

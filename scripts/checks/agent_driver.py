@@ -22,10 +22,12 @@ TERMINAL = "__end__"
 
 
 def build_request(workspace: Path, prompt: str, mode: str = "edit") -> dict:
+    # agent/core/runtime.py 用 root / name 解析实际工作区，所以 root 必须是父目录。
+    workspace = workspace.resolve()
     return {
         "v": 1,
         "runId": str(uuid.uuid4().int % 10 ** 18),
-        "threadId": "app:bench",
+        "threadId": f"app:bench:{uuid.uuid4()}",
         "appId": "bench",
         "userId": "bench",
         "roundId": str(uuid.uuid4().int % 10 ** 18),
@@ -33,7 +35,7 @@ def build_request(workspace: Path, prompt: str, mode: str = "edit") -> dict:
         "modelRoute": "configured",
         "allowProxyFallback": False,
         "workspace": {
-            "root": str(workspace),
+            "root": str(workspace.parent),
             "name": workspace.name,
             "codeGenType": "project",
             "mode": mode,
@@ -70,6 +72,14 @@ def run(command: list[str], workspace: Path, prompt: str, timeout: int, mode: st
     )
     events: list[dict] = []
     protocol_error = None
+    stderr_lines: list[str] = []
+
+    def drain_stderr() -> None:
+        # stderr 必须从一开始就被排空：Agent 的日志全在这里，管道写满会阻塞子进程。
+        for line in process.stderr:
+            stderr_lines.append(line)
+            if len(stderr_lines) > 2000:
+                del stderr_lines[:1000]
 
     def reader() -> None:
         nonlocal protocol_error
@@ -86,6 +96,8 @@ def run(command: list[str], workspace: Path, prompt: str, timeout: int, mode: st
             if frame.get("event") == TERMINAL:
                 return
 
+    stderr_thread = threading.Thread(target=drain_stderr, daemon=True)
+    stderr_thread.start()
     thread = threading.Thread(target=reader, daemon=True)
     thread.start()
     try:
@@ -95,7 +107,8 @@ def run(command: list[str], workspace: Path, prompt: str, timeout: int, mode: st
         timed_out = thread.is_alive()
     finally:
         terminate(process)
-        stderr = process.stderr.read() if process.stderr else ""
+        stderr_thread.join(timeout=5)
+        stderr = "".join(stderr_lines)[-4000:]
         exit_code = process.wait(timeout=10)
 
     return {

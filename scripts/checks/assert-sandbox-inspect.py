@@ -63,7 +63,11 @@ def main():
         data = data[0]
     checks = evaluate(data, args.mode)
 
-    if args.uid is not None:
+    # 生成模式必须取得实际 uid；拿不到就不能声称运行用户已核对。
+    if args.mode == 'generate':
+        checks.append({'name': 'runtime-uid', 'ok': args.uid is not None and args.uid != 0,
+                       'actual': args.uid, 'expected': '!= 0'})
+    elif args.uid is not None:
         checks.append({'name': 'runtime-uid', 'ok': args.uid != 0, 'actual': args.uid,
                        'expected': '!= 0'})
 
