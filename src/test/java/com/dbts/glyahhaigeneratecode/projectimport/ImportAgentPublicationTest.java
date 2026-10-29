@@ -1,5 +1,7 @@
 package com.dbts.glyahhaigeneratecode.projectimport;
 
+import com.dbts.glyahhaigeneratecode.runtime.SnapshotRecord;
+import com.dbts.glyahhaigeneratecode.runtime.WorkspaceSnapshotService;
 import com.dbts.glyahhaigeneratecode.service.support.WorkspacePathResolver;
 import com.dbts.glyahhaigeneratecode.model.enums.CodeGenTypeEnum;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -62,8 +64,11 @@ class ImportAgentPublicationTest {
     }
     @Test void recoverNewMoveWithoutPhaseWriteRestoresOriginalDirectory()throws Exception{recover(true,false);}
     @Test void committedRecoveryKeepsNewDirectoryAndOnlyClearsBackup()throws Exception{recover(true,true);}
+    @Test void committedRecoveryWithEditedSourceKeepsSnapshotPending()throws Exception{recover(true,true,true);}
 
-    void recover(boolean newMoved,boolean committed)throws Exception{
+    void recover(boolean newMoved,boolean committed)throws Exception{recover(newMoved,committed,false);}
+
+    void recover(boolean newMoved,boolean committed,boolean editedBeforeRecover)throws Exception{
         var properties=new ImportProperties();properties.setStagingRoot(root.resolve("imports"));
         var ledger=mock(ImportAgentEditLedger.class);var paths=mock(WorkspacePathResolver.class);var volumes=mock(ImportDiskVolume.class);
         var publication=new ImportAgentPublication(ledger,mock(ImportWorkspaceCoordinator.class),paths,volumes,properties);
@@ -76,13 +81,32 @@ class ImportAgentPublicationTest {
         Files.writeString(newest.resolve("app.py"),"fixed");Files.createDirectory(newest.resolve("空 目录"));
         String updated=snapshots.describe(id,newest,()->true).contentHash();
         var entry=new ImportAgentEditLedger.Entry(id,7,101,UUID.randomUUID(),"201",original,0,0,UUID.randomUUID(),Long.MAX_VALUE,Instant.EPOCH,Instant.now().plusSeconds(60));
-        var row=new ImportAgentEditLedger.Row(entry,"RECOVERY_REQUIRED",9,!committed,"[{\"state\":\"RELEASED\"}]","PENDING",committed?"COMMITTED":"CANDIDATE_READY",true);
+        final WorkspaceSnapshotService snapshotService;
+        final String snapshotId;
+        if(committed){
+            snapshotService=new WorkspaceSnapshotService(root.resolve("project_edit_snapshots"),20);
+            snapshotId=snapshotService.create(backup,List.of("app.py"),"recovery-test").id();
+        }else{
+            snapshotService=null;snapshotId=null;
+        }
+        var row=new ImportAgentEditLedger.Row(entry,"RECOVERY_REQUIRED",9,!committed,"[{\"state\":\"RELEASED\"}]","PENDING",committed?"COMMITTED":"CANDIDATE_READY",true,snapshotId);
         var journal=new ObjectMapper().createObjectNode().put("source",source.toString()).put("folder",folder.toString())
                 .put("candidate",candidate.toString()).put("backup",backup.toString()).put("originalHash",original).put("publishedHash",updated);
         when(paths.outputDir(101L,CodeGenTypeEnum.AUTO)).thenReturn(source);when(ledger.publicationJournal(row)).thenReturn(journal);
+        if(editedBeforeRecover){
+            Files.writeString(source.resolve("app.py"),"user edit");
+            assertThrows(IOException.class,()->publication.recover(row));
+            assertEquals(SnapshotRecord.Status.PENDING,snapshotService.find(snapshotId).orElseThrow().status());
+            return;
+        }
         publication.recover(row);
         assertEquals(committed?"fixed":"original",Files.readString(source.resolve("app.py")));
         assertTrue(Files.isDirectory(source.resolve("空 目录")));assertFalse(Files.exists(folder));
+        if(committed){
+            assertEquals(SnapshotRecord.Status.COMMITTED,snapshotService.find(snapshotId).orElseThrow().status());
+            Files.writeString(source.resolve("app.py"),"user edit");
+            assertThrows(IOException.class,()->snapshotService.restore(source,snapshotId,false));
+        }
         verify(ledger).finishPublication(row,committed);verifyNoInteractions(volumes);
     }
 }

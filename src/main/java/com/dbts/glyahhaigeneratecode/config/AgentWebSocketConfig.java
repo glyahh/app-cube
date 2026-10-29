@@ -14,7 +14,7 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
  * <p>用原生 {@code WebSocketHandler}，不上 STOMP —— STOMP 带订阅与代理一整套协议，
  * 而这里的消息模型是「一个 run 一条流」，用不上。
  *
- * <p>跨域策略与 {@link CorsConfig} 保持一致。注意**握手拦截器必须挂上**：
+ * <p>跨域策略与 {@link CorsConfig} 共用 {@link SecurityProperties}。注意**握手拦截器必须挂上**：
  * 它是 WebSocket 路径唯一的鉴权点（{@code @MyRole} 切不到 handler）。
  */
 @Configuration
@@ -27,11 +27,14 @@ public class AgentWebSocketConfig implements WebSocketConfigurer {
 
     private final AgentWebSocketHandler agentWebSocketHandler;
     private final AgentHandshakeInterceptor agentHandshakeInterceptor;
+    private final SecurityProperties securityProperties;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        // 先校验来源，配置缺失时立即失败，不依赖注册器的中间状态。
+        String[] origins = securityProperties.requireAllowedOriginPatterns();
         registry.addHandler(agentWebSocketHandler, ENDPOINT)
                 .addInterceptors(agentHandshakeInterceptor)
-                .setAllowedOriginPatterns("*");
+                .setAllowedOriginPatterns(origins);
     }
 }

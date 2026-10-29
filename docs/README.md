@@ -44,6 +44,7 @@ docs/
 | [plans/](plans/README.md) | 17 | 设计与实施方案 |
 | [tests/](tests/README.md) | 8 | 测试计划与机器清单 |
 | [reports/](reports/README.md) | 43 | 验收、性能与故障报告 |
+| [reports/evidence/](reports/evidence/README.md) | 4 | 修复计划各阶段证据 |
 | [reviews/](reviews/README.md) | 5 | 前端预览与评审 |
 | [guides/](guides/README.md) | 3 | 启动与操作指南 |
 | [research/](research/README.md) | 4 | 技术调研 |
@@ -112,6 +113,7 @@ docs/
 - [开发、测试与验证衔接：专项设计](plans/project-development-workflow-design.md)
 - [已有项目导入：开发设计草案](plans/project-import-design.md)
 - [启动后端的小步实施与测试](plans/project-import-startup-backend-steps.md)
+- [修复计划：从自证交付转向可复跑证据](plans/remediation-plan-20261029.md)
 
 ### 测试计划与机器清单
 

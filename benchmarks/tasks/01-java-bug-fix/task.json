@@ -1,0 +1,22 @@
+{
+  "id": "01-java-bug-fix",
+  "repo": "local-fixture",
+  "commit": "seed",
+  "prompt": "Calculator.add 返回了错误结果。运行 src 下的测试，定位并修复它，不要修改测试。",
+  "setup": [],
+  "grade": [
+    {
+      "cmd": "javac -d out src/Calculator.java src/CalculatorTest.java && java -cp out CalculatorTest",
+      "expectExit": 0,
+      "files": []
+    }
+  ],
+  "timeoutSec": 300,
+  "maxAttempts": 2,
+  "model": "configured",
+  "backend": "local_shell",
+  "notes": "评分只认编译与测试退出码；测试文件不允许改动。",
+  "protected": [
+    "src/CalculatorTest.java"
+  ]
+}

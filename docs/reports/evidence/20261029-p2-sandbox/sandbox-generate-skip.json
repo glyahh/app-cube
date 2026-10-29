@@ -1,0 +1,6 @@
+﻿{
+    "status":  "skip",
+    "generatedAt":  "2026-10-29T10:47:49.5038829+08:00",
+    "reason":  "docker CLI 不可用",
+    "mode":  "generate"
+}

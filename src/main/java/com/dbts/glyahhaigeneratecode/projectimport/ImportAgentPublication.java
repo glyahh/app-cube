@@ -3,6 +3,8 @@ package com.dbts.glyahhaigeneratecode.projectimport;
 import com.dbts.glyahhaigeneratecode.exception.ErrorCode;
 import com.dbts.glyahhaigeneratecode.exception.MyException;
 import com.dbts.glyahhaigeneratecode.model.enums.CodeGenTypeEnum;
+import com.dbts.glyahhaigeneratecode.runtime.SnapshotRecord;
+import com.dbts.glyahhaigeneratecode.runtime.WorkspaceSnapshotService;
 import com.dbts.glyahhaigeneratecode.service.support.ProjectImportStaging;
 import com.dbts.glyahhaigeneratecode.service.support.WorkspacePathResolver;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,12 +29,14 @@ public final class ImportAgentPublication {
     private final ImportAgentCandidateVerifier verifier;
     private final Path privateRoot;
     private final ImportAgentOutputResources outputs;
+    private final WorkspaceSnapshotService snapshotService;
     private final ObjectMapper json=new ObjectMapper();
 
     public ImportAgentPublication(ImportAgentEditLedger ledger,ImportWorkspaceCoordinator coordinator,WorkspacePathResolver paths,
             ImportDiskVolume volumes,ImportProperties properties)throws IOException{
         this.ledger=ledger;this.coordinator=coordinator;this.paths=paths;this.volumes=volumes;
         outputs=new ImportAgentOutputResources(ledger,volumes,properties);
+        snapshotService=new WorkspaceSnapshotService(properties.getStagingRoot().resolveSibling("project_edit_snapshots"),properties.getSnapshotRetain());
         privateRoot=properties.getStagingRoot().resolveSibling("project_edit_publish").toAbsolutePath().normalize();
         new ProjectImportStaging(privateRoot,List.of(Path.of("temp/code_output"),Path.of("temp/code_deploy"),properties.getStagingRoot()));
         snapshots=new ImportStartupSnapshotStore(properties.getStagingRoot().resolveSibling("project_edit_private"),
@@ -49,11 +53,12 @@ public final class ImportAgentPublication {
         coordinator.withLock(observed.identity().appId(),()->{
             var row=ledger.require(editId,ownerId);var e=row.identity();
             if(!ledger.qualifiedSealing(row)||!current(e)||!requestedEligible.getAsBoolean())throw conflict();
+            Path source=paths.outputDir(e.appId(),CodeGenTypeEnum.AUTO).toAbsolutePath().normalize();
+            SnapshotRecord snapshot=null;
             String stage="PREPARE";
             try{
                 // 1. 再读独立验证回执，登记发布路径后才分配同文件系统候选。
                 var proof=ledger.candidateProof(row);long bytes=json.readTree(row.resources()).get(0).path("diskBytes").asLong();
-                Path source=paths.outputDir(e.appId(),CodeGenTypeEnum.AUTO).toAbsolutePath().normalize();
                 Path folder=privateRoot.resolve(editId.toString()),candidate=folder.resolve("candidate"),backup=folder.resolve("backup");
                 ProjectImportStaging.guardManagedPath(folder);
                 if(Files.exists(folder,LinkOption.NOFOLLOW_LINKS)||!Files.getFileStore(source).equals(Files.getFileStore(privateRoot)))throw conflict();
@@ -71,6 +76,12 @@ public final class ImportAgentPublication {
                         .put("candidate",candidate.toString()).put("backup",backup.toString()).put("originalHash",e.sourceHash());
                 outputs.plan(row,proof);
                 row=ledger.beginPublication(row,journal,authorized);
+                // 合入前记录受影响文件的字节；快照只作证据与恢复，不替代目录移动状态机。
+                // authorized 包含被删除的路径，inventory 只含保留文件；两者并集才能覆盖删除。
+                var snapshotPaths=new LinkedHashSet<String>(authorized);
+                snapshotPaths.addAll(inventory.files().keySet());
+                snapshot=snapshotService.create(source,snapshotPaths,"publication");
+                row=ledger.bindSnapshot(row,snapshot.id());
                 stage="MATERIALIZE";
                 Files.createDirectory(folder);Files.createDirectory(candidate);
                 final UUID id=editId;BooleanSupplier eligible=()->{
@@ -97,8 +108,14 @@ public final class ImportAgentPublication {
                 stage="FINAL_CLEANUP";
                 // 3. 数据库提交后不回滚新源码；确认资源释放和备份清理后才标记业务成功。
                 finishCommitted(row,journal,source,folder,backup);
+                try{snapshotService.markCommitted(source,snapshot.id());}
+                catch(IOException markError){log.warn("合入后快照标记未写入 edit={}",editId);}
                 return null;
             }catch(IOException|RuntimeException error){
+                if(snapshot!=null){
+                    try{snapshotService.markFailed(source,snapshot.id(),stage);}
+                    catch(IOException markError){log.warn("快照失败标记未写入 edit={}",editId);}
+                }
                 if(error instanceof AccessDeniedException denied){
                     String name=denied.getFile()==null?"":Path.of(denied.getFile()).getFileName().toString();
                     String category=List.of(".env","app.py","empty.txt").contains(name)?name:"OTHER_NODE";
@@ -124,7 +141,8 @@ public final class ImportAgentPublication {
                 ||!candidate.toString().equals(journal.path("candidate").asText())||!backup.toString().equals(journal.path("backup").asText())
                 ||!e.sourceHash().equals(journal.path("originalHash").asText()))throw new IOException("PUBLICATION_IDENTITY_INVALID");
         for(Path path:List.of(source,folder,candidate,backup))ProjectImportStaging.guardManagedPath(path);
-        if("COMMITTED".equals(row.publishPhase())){finishCommitted(row,journal,source,folder,backup);return;}
+        // 先完成内容核验与清理，再补写快照；核验失败时保持快照原状，不把用户新内容当成合入结果。
+        if("COMMITTED".equals(row.publishPhase())){finishCommitted(row,journal,source,folder,backup);markSnapshotCommitted(row,source);return;}
         // 未提交：移动实际发生但阶段未写入时，仍能从备份/新目录摘要确定恢复方向。
         if(Files.exists(backup,LinkOption.NOFOLLOW_LINKS)){
             requireHash(e.id(),backup,e.sourceHash());
@@ -138,6 +156,13 @@ public final class ImportAgentPublication {
         requireHash(e.id(),source,e.sourceHash());
         removeTree(candidate);if(Files.exists(folder,LinkOption.NOFOLLOW_LINKS))Files.delete(folder);
         outputs.finish(row,false);row=release(row);ledger.finishPublication(row,false);
+    }
+
+    /** 重启恢复的已提交分支补写快照终态，避免快照停留在 PENDING 后跳过内容冲突检查。 */
+    private void markSnapshotCommitted(ImportAgentEditLedger.Row row,Path source){
+        if(row.snapshotId()==null||row.snapshotId().isBlank())return;
+        try{snapshotService.markCommitted(source,row.snapshotId());}
+        catch(IOException error){log.warn("恢复后快照标记未写入 edit={}",row.identity().id());}
     }
 
     private void finishCommitted(ImportAgentEditLedger.Row row,com.fasterxml.jackson.databind.JsonNode journal,Path source,Path folder,Path backup)throws IOException{

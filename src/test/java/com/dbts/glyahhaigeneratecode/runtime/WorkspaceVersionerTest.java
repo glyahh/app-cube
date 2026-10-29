@@ -86,6 +86,40 @@ class WorkspaceVersionerTest {
         assertNotEquals(before, versioner.version(workspace));
     }
 
+    @Test
+    @DisplayName("内容版本忽略修改时间")
+    void contentVersionIgnoresTimestampChanges() throws IOException {
+        write("a.txt", "same bytes");
+        String before = versioner.contentVersion(workspace);
+
+        Path file = workspace.resolve("a.txt");
+        Files.setLastModifiedTime(file, FileTime.fromMillis(System.currentTimeMillis() + 10_000));
+
+        assertEquals(before, versioner.contentVersion(workspace));
+    }
+
+    @Test
+    @DisplayName("内容版本随字节变化")
+    void contentVersionChangesWithBytes() throws IOException {
+        write("a.txt", "one");
+        String before = versioner.contentVersion(workspace);
+
+        write("a.txt", "two");
+        assertNotEquals(before, versioner.contentVersion(workspace));
+    }
+
+    @Test
+    @DisplayName("内容版本排除平台目录与依赖目录")
+    void contentVersionIgnoresExcludedDirectories() throws IOException {
+        write("a.txt", "x");
+        String before = versioner.contentVersion(workspace);
+
+        write(".glyahh/runner.sh", "#!/bin/sh");
+        write("node_modules/pkg/index.js", "module.exports = {}");
+
+        assertEquals(before, versioner.contentVersion(workspace));
+    }
+
     private void write(String relative, String content) throws IOException {
         Path target = workspace.resolve(relative);
         Files.createDirectories(target.getParent());

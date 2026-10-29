@@ -84,9 +84,11 @@ def handle_line(line: str, settings, *, import_only=False, import_runner=None) -
         emitter.end()
 
 
-def main(*, require_persistent=False, import_only=False, on_ready=None, import_runner=None) -> int:
+def main(*, require_persistent: bool | None = None, import_only=False, on_ready=None, import_runner=None) -> int:
     settings = load_settings()
     _configure_logging(settings.log_level)
+    if require_persistent is None:
+        require_persistent = settings.require_persistent
 
     # 启动预检：提前初始化持久化层，打出明确状态。
     # 不等到第一个请求 —— 那时候失败信息会和业务日志混在一起不好找。
@@ -123,6 +125,7 @@ def _precheck_persistence(settings, *, require_persistent=False) -> None:
         loop.run_until_complete(get_store(settings.postgres_dsn, require_persistent=require_persistent))
     except Exception as exc:
         if require_persistent:
+            logger.error("persistence: unavailable (%s)", type(exc).__name__)
             raise RuntimeError("POSTGRES_PERSISTENCE_UNAVAILABLE") from None
         # 不阻断启动 —— 降级逻辑已在 get_checkpointer 内部处理
         logger.warning("持久化预检异常：%s", exc)
